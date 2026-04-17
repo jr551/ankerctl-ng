@@ -2,7 +2,9 @@ package gcode
 
 import (
 	"bytes"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestPatchGCodeTime(t *testing.T) {
@@ -70,6 +72,66 @@ func TestExtractLayerCount(t *testing.T) {
 			got, ok := ExtractLayerCount([]byte(tt.in))
 			if got != tt.want || ok != tt.wantHas {
 				t.Fatalf("ExtractLayerCount() = (%d,%v), want (%d,%v)", got, ok, tt.want, tt.wantHas)
+			}
+		})
+	}
+}
+
+// TestGCodeRegex_NoReDoS verifies that the package-level compiled regexps do
+// not exhibit catastrophic backtracking (ReDoS) on adversarial user-controlled
+// GCode file content (CodeQL #24 / CWE-1333).
+//
+// These patterns run on uploaded GCode files, so the inputs are user-controlled.
+// Each test feeds a 1000-character worst-case string and asserts the match
+// completes within 500 ms — exponential backtracking would exceed this by orders
+// of magnitude.
+func TestGCodeRegex_NoReDoS(t *testing.T) {
+	const deadline = 500 * time.Millisecond
+
+	tests := []struct {
+		name    string
+		pattern string // for documentation only; we call the pre-compiled vars
+		input   func() string
+		match   func(s string) bool
+	}{
+		{
+			// estimatedTimePattern: `(?i);\s*estimated printing time[^=]*=\s*(.*)`
+			// Worst-case: prefix almost-matches the literal then fails at '='.
+			name:    "estimatedTimePattern adversarial",
+			pattern: `(?i);\s*estimated printing time[^=]*=\s*(.*)`,
+			input:   func() string { return "; estimated printing time" + strings.Repeat("x", 1000) },
+			match:   func(s string) bool { return estimatedTimePattern.MatchString(s) },
+		},
+		{
+			// timeTokenPattern: `(?i)(\d+)\s*([dhms])`
+			// Worst-case: all digits, no trailing unit letter.
+			name:    "timeTokenPattern adversarial",
+			pattern: `(?i)(\d+)\s*([dhms])`,
+			input:   func() string { return strings.Repeat("9", 1000) },
+			match:   func(s string) bool { return timeTokenPattern.MatchString(s) },
+		},
+		{
+			// layerCountPatterns[1]: `(?i)^;\s*total layer(?:s)?\s*(?:number|count)?\s*[=:]\s*(\d+)`
+			// Worst-case: matches prefix up to the number anchor, then fails.
+			name:    "layerCountPattern[1] adversarial",
+			pattern: `(?i)^;\s*total layer(?:s)?\s*(?:number|count)?\s*[=:]\s*(\d+)`,
+			input:   func() string { return ";total layers number count" + strings.Repeat(" ", 1000) },
+			match:   func(s string) bool { return layerCountPatterns[1].MatchString(s) },
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			input := tc.input()
+			done := make(chan bool, 1)
+			go func() {
+				done <- tc.match(input)
+			}()
+			select {
+			case <-done:
+				// completed within deadline — pass
+			case <-time.After(deadline):
+				t.Errorf("regexp %q took longer than %v on 1000-char adversarial input — possible ReDoS", tc.pattern, deadline)
 			}
 		})
 	}

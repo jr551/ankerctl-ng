@@ -3,6 +3,7 @@ package web
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	mw "github.com/django1982/ankerctl/internal/web/middleware"
@@ -38,6 +39,42 @@ func TestRegisterRoutes_VersionEndpoint(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+}
+
+// TestRecoverer_NoStackTraceInResponse verifies that chimw.Recoverer does not
+// write panic details or stack traces into the HTTP response body (CodeQL #25 /
+// CWE-209). On panic the response must be exactly HTTP 500 with an empty body —
+// all diagnostic output goes to stderr, never to the client.
+func TestRecoverer_NoStackTraceInResponse(t *testing.T) {
+	r := chi.NewRouter()
+	r.Use(chimw.Recoverer)
+	r.Get("/panic", func(w http.ResponseWriter, req *http.Request) {
+		panic("intentional test panic: internal state exposed")
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/panic", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusInternalServerError)
+	}
+
+	body := w.Body.String()
+	// These substrings would indicate a stack trace or panic message leaking
+	// into the response body — any of them present is a security defect.
+	leakIndicators := []string{
+		"goroutine",
+		"panic",
+		"runtime/debug",
+		".go:",
+		"internal state exposed",
+	}
+	for _, indicator := range leakIndicators {
+		if strings.Contains(body, indicator) {
+			t.Errorf("response body leaks internal detail %q: body = %q", indicator, body)
+		}
 	}
 }
 

@@ -84,6 +84,7 @@ var printControlAllowlist = map[int]struct{}{
 	2: {}, // stop
 	3: {}, // pause
 	4: {}, // resume
+
 }
 
 // PrinterControl sends print-control commands.
