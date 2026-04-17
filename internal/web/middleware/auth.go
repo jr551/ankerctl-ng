@@ -9,15 +9,37 @@ import (
 )
 
 var protectedGETPaths = map[string]bool{
-	"/api/ankerctl/server/reload":       true,
-	"/api/debug/state":                  true,
-	"/api/debug/logs":                   true,
-	"/api/debug/services":               true,
-	"/api/settings/mqtt":                true,
-	"/api/settings/filament-service":    true,
-	"/api/notifications/settings":       true,
-	"/api/printers":                     true,
-	"/api/history":                      true,
+	"/api/ankerctl/server/reload":             true,
+	"/api/console/logs":                       true,
+	"/api/debug/state":                        true,
+	"/api/debug/logs":                         true,
+	"/api/debug/services":                     true,
+	"/api/camera/frame":                       true,
+	"/api/camera/stream":                      true,
+	"/api/snapshot":                           true,
+	"/api/settings/mqtt":                      true,
+	"/api/settings/filament-service":          true,
+	"/api/settings/filament-service/advanced": true,
+	"/api/settings/timelapse":                 true,
+	"/api/settings/camera":                    true,
+	"/api/notifications/settings":             true,
+	"/api/printers":                           true,
+	"/api/printer/bed-leveling":               true,
+	"/api/printer/bed-leveling/last":          true,
+	"/api/printer/settings-summary":           true,
+	"/api/printer/z-offset":                   true,
+	"/api/filaments":                          true,
+	"/api/filaments/service/swap":             true,
+	"/api/history":                            true,
+	"/api/timelapses":                         true,
+	"/api/timelapse-snapshots":                true,
+}
+
+// protectedGETPrefixes covers dynamic path segments that require auth on all sub-paths.
+var protectedGETPrefixes = []string{
+	"/api/debug/",
+	"/api/timelapse/",
+	"/api/timelapse-snapshot/",
 }
 
 var setupPaths = map[string]bool{
@@ -89,10 +111,15 @@ func isPublicMethod(method string) bool {
 }
 
 func isProtectedGETPath(path string) bool {
-	if strings.HasPrefix(path, "/api/debug/") {
+	if protectedGETPaths[path] {
 		return true
 	}
-	return protectedGETPaths[path]
+	for _, prefix := range protectedGETPrefixes {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func stripAPIKeyParam(u *url.URL) string {
