@@ -79,6 +79,18 @@ type VideoProfile struct {
 // RenderFunc is the function signature for template rendering.
 type RenderFunc func(w http.ResponseWriter, name string, data any) error
 
+// GCodeArchiverIface is the surface the handler needs from service.GCodeArchiver.
+// Keeping it as an interface avoids an import cycle and makes the handler testable.
+type GCodeArchiverIface interface {
+	Archive(filename string, data []byte) (relpath string, size int64, err error)
+	ReadArchive(relpath string) ([]byte, error)
+	Exists(relpath string) bool
+	// ReadThumbnail returns the embedded PNG thumbnail for an archived GCode file,
+	// or nil, nil when no thumbnail was stored.
+	// Python reference: web/service/history.py PrintHistory.get_thumbnail_path
+	ReadThumbnail(archiveRelpath string) ([]byte, error)
+}
+
 // StateReloader is implemented by the Server to refresh in-memory login state
 // from disk after a login or logout without a full process restart.
 type StateReloader interface {
@@ -118,6 +130,10 @@ type Handler struct {
 	// lanDiscoveryFunc overrides ppppclient.DiscoverLANIP for testing.
 	// If nil, the real ppppclient.DiscoverLANIP is used.
 	lanDiscoveryFunc func(ctx context.Context, duid string) (net.IP, error)
+
+	// gcodeArchiver is optional; when set, uploaded GCode files are stored on
+	// disk and the resulting path is written back to the history row.
+	gcodeArchiver GCodeArchiverIface
 }
 
 // New creates a handler bundle.
@@ -165,6 +181,12 @@ func (h *Handler) WithShutdownTrigger(t ShutdownTrigger) {
 
 func (h *Handler) WithUploadMaxBytes(n int64) {
 	h.uploadMaxBytes = n
+}
+
+// WithGCodeArchiver attaches the GCode archiver. Must be called before the
+// server starts accepting requests.
+func (h *Handler) WithGCodeArchiver(a GCodeArchiverIface) {
+	h.gcodeArchiver = a
 }
 
 // ResolveLogDir determines the log directory once at startup.

@@ -153,6 +153,113 @@ func TestRingBufferHandler_FormatsTimestamp(t *testing.T) {
 	}
 }
 
+// ---- Snapshot / Entries tests ----
+
+func TestRingBuffer_Entries_MonotonicIDs(t *testing.T) {
+	r := NewRingBuffer(5)
+	r.Append("a")
+	r.Append("b")
+	r.Append("c")
+
+	entries := r.Entries()
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(entries))
+	}
+	for i, e := range entries {
+		wantID := i + 1
+		if e.ID != wantID {
+			t.Errorf("entries[%d].ID = %d, want %d", i, e.ID, wantID)
+		}
+	}
+}
+
+func TestRingBuffer_Snapshot_InitialLoad(t *testing.T) {
+	r := NewRingBuffer(10)
+	for i := 0; i < 7; i++ {
+		r.Append(fmt.Sprintf("line%d", i))
+	}
+
+	res := r.Snapshot(3, -1)
+	if len(res.Entries) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(res.Entries))
+	}
+	if res.Entries[0].Text != "line4" {
+		t.Errorf("first of last-3 should be line4, got %q", res.Entries[0].Text)
+	}
+	if res.Truncated {
+		t.Error("Truncated should be false for initial load with enough capacity")
+	}
+	if res.MaxLines != 10 {
+		t.Errorf("MaxLines = %d, want 10", res.MaxLines)
+	}
+}
+
+func TestRingBuffer_Snapshot_Polling(t *testing.T) {
+	r := NewRingBuffer(20)
+	for i := 0; i < 5; i++ {
+		r.Append(fmt.Sprintf("msg%d", i))
+	}
+
+	// Get first batch: entries 1–5.
+	res := r.Snapshot(100, -1)
+	if len(res.Entries) != 5 {
+		t.Fatalf("initial snapshot: expected 5, got %d", len(res.Entries))
+	}
+	after := res.NextAfter // == 5
+
+	// Append more; poll for new entries only.
+	r.Append("msg5")
+	r.Append("msg6")
+
+	res2 := r.Snapshot(100, after)
+	if len(res2.Entries) != 2 {
+		t.Fatalf("poll snapshot: expected 2 new entries, got %d", len(res2.Entries))
+	}
+	if res2.Entries[0].Text != "msg5" {
+		t.Errorf("first new entry = %q, want msg5", res2.Entries[0].Text)
+	}
+}
+
+func TestRingBuffer_Snapshot_TruncationFlag(t *testing.T) {
+	r := NewRingBuffer(10)
+	for i := 0; i < 10; i++ {
+		r.Append(fmt.Sprintf("x%d", i))
+	}
+	// Wrap around, losing older entries.
+	for i := 0; i < 3; i++ {
+		r.Append(fmt.Sprintf("y%d", i))
+	}
+
+	// Poll from an id that was evicted.
+	res := r.Snapshot(100, 1)
+	if !res.Truncated {
+		t.Error("expected Truncated=true when after_id points to evicted entry")
+	}
+}
+
+func TestRingBuffer_Snapshot_LimitClamped(t *testing.T) {
+	r := NewRingBuffer(5)
+	r.Append("a")
+	r.Append("b")
+	r.Append("c")
+
+	res := r.Snapshot(0, -1) // limit=0 → clamped to 1
+	if len(res.Entries) != 1 {
+		t.Fatalf("limit=0 should return 1 entry, got %d", len(res.Entries))
+	}
+}
+
+func TestRingBuffer_Snapshot_Empty(t *testing.T) {
+	r := NewRingBuffer(100)
+	res := r.Snapshot(200, -1)
+	if len(res.Entries) != 0 {
+		t.Fatalf("empty buffer should return 0 entries, got %d", len(res.Entries))
+	}
+	if res.FirstID != 0 || res.LastID != 0 {
+		t.Errorf("empty: FirstID=%d LastID=%d, want 0,0", res.FirstID, res.LastID)
+	}
+}
+
 // sliceEqual compares two string slices element by element.
 func sliceEqual(a, b []string) bool {
 	if len(a) != len(b) {

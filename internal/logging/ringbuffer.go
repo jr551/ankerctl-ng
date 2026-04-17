@@ -11,11 +11,32 @@ import (
 // It is designed to be embedded as an slog.Handler so that all structured
 // log records are captured in memory and can be served via the debug log viewer.
 type RingBuffer struct {
-	mu   sync.RWMutex
-	buf  []string
-	cap  int
-	head int // index of the oldest entry (write head wraps here)
-	size int // number of valid entries currently stored
+	mu     sync.RWMutex
+	buf    []string
+	ids    []int // parallel slice: monotonic ID per slot
+	cap    int
+	head   int // index of the oldest entry (write head wraps here)
+	size   int // number of valid entries currently stored
+	nextID int // next ID to assign (starts at 1)
+}
+
+// LogEntry is a single console log line with a stable monotonic ID.
+type LogEntry struct {
+	ID   int    `json:"id"`
+	Text string `json:"text"`
+}
+
+// Snapshot returns a Python-compatible console log response.
+// limit caps the number of returned entries (1–maxLines).
+// afterID, if >= 0, returns only entries with ID > afterID.
+// Pass afterID = -1 to get the most recent `limit` entries (same as after_id=None).
+type SnapshotResult struct {
+	Entries    []LogEntry `json:"entries"`
+	FirstID    int        `json:"first_id"`
+	LastID     int        `json:"last_id"`
+	NextAfter  int        `json:"next_after"`
+	Truncated  bool       `json:"truncated"`
+	MaxLines   int        `json:"max_lines"`
 }
 
 // NewRingBuffer creates a RingBuffer with the given capacity.
@@ -25,8 +46,10 @@ func NewRingBuffer(capacity int) *RingBuffer {
 		capacity = 1
 	}
 	return &RingBuffer{
-		buf: make([]string, capacity),
-		cap: capacity,
+		buf:    make([]string, capacity),
+		ids:    make([]int, capacity),
+		cap:    capacity,
+		nextID: 1,
 	}
 }
 
@@ -36,6 +59,8 @@ func (r *RingBuffer) Append(line string) {
 	defer r.mu.Unlock()
 
 	r.buf[r.head] = line
+	r.ids[r.head] = r.nextID
+	r.nextID++
 	r.head = (r.head + 1) % r.cap
 	if r.size < r.cap {
 		r.size++
@@ -76,6 +101,94 @@ func (r *RingBuffer) Tail(n int) []string {
 // String returns all stored lines joined by newlines.
 func (r *RingBuffer) String() string {
 	return strings.Join(r.Lines(), "\n")
+}
+
+// Entries returns all stored entries in chronological order (oldest first).
+// Each entry carries its monotonic ID and the line text.
+func (r *RingBuffer) Entries() []LogEntry {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	if r.size == 0 {
+		return nil
+	}
+	out := make([]LogEntry, r.size)
+	if r.size < r.cap {
+		for i := 0; i < r.size; i++ {
+			out[i] = LogEntry{ID: r.ids[i], Text: r.buf[i]}
+		}
+	} else {
+		n := 0
+		for i := r.head; i < r.cap; i++ {
+			out[n] = LogEntry{ID: r.ids[i], Text: r.buf[i]}
+			n++
+		}
+		for i := 0; i < r.head; i++ {
+			out[n] = LogEntry{ID: r.ids[i], Text: r.buf[i]}
+			n++
+		}
+	}
+	return out
+}
+
+// Snapshot returns a Python-compatible console-log response.
+// limit caps the returned entries (clamped to 1–capacity).
+// afterID ≥ 0 returns only entries with ID > afterID (polling mode).
+// afterID < 0 returns the most recent `limit` entries (initial-load mode).
+func (r *RingBuffer) Snapshot(limit int, afterID int) SnapshotResult {
+	all := r.Entries()
+
+	if limit < 1 {
+		limit = 1
+	}
+	if limit > r.cap {
+		limit = r.cap
+	}
+
+	firstID, lastID := 0, 0
+	if len(all) > 0 {
+		firstID = all[0].ID
+		lastID = all[len(all)-1].ID
+	}
+
+	var selected []LogEntry
+	truncated := false
+
+	if afterID < 0 {
+		// Initial load: return the most recent `limit` entries.
+		if len(all) > limit {
+			selected = all[len(all)-limit:]
+		} else {
+			selected = all
+		}
+	} else {
+		// Polling: return entries with ID > afterID.
+		if len(all) > 0 && afterID < firstID-1 {
+			truncated = true
+		}
+		for _, e := range all {
+			if e.ID > afterID {
+				selected = append(selected, e)
+			}
+		}
+		if len(selected) > limit {
+			truncated = true
+			selected = selected[len(selected)-limit:]
+		}
+	}
+
+	if selected == nil {
+		selected = []LogEntry{}
+	}
+
+	return SnapshotResult{
+		Entries:   selected,
+		FirstID:   firstID,
+		LastID:    lastID,
+		NextAfter: lastID,
+		Truncated: truncated,
+		MaxLines:  r.cap,
+	}
 }
 
 // --- slog.Handler implementation ---

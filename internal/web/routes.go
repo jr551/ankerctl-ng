@@ -3,6 +3,7 @@ package web
 import (
 	"net/http"
 
+	"github.com/django1982/ankerctl/internal/service"
 	"github.com/django1982/ankerctl/internal/web/handler"
 	"github.com/django1982/ankerctl/internal/web/ws"
 )
@@ -26,6 +27,11 @@ func (s *Server) registerRoutes() {
 	h.WithLogDir(handler.ResolveLogDir())
 	h.WithVersion(s.appVersion)
 
+	// Attach GCode archiver when a config directory is available.
+	if s.config != nil {
+		h.WithGCodeArchiver(service.NewGCodeArchiver(s.config.ConfigDir()))
+	}
+
 	// Static files — vendor assets get long-lived caching; our own JS/CSS
 	// must not be cached because they change with every rebuild (embed.FS
 	// always reports ModTime=0, so the browser may serve stale content).
@@ -42,7 +48,10 @@ func (s *Server) registerRoutes() {
 	r.Get("/api/health", h.Health)
 	r.Get("/api/version", h.Version)
 	r.Get("/api/ankerctl/version", h.AppVersion)
-	r.Get("/api/snapshot", h.Snapshot)
+	// /api/snapshot: captures from VideoQueue and archives to the Snapshots tab.
+	r.Get("/api/snapshot", h.SnapshotCapture)
+	// Console log viewer (B6): always registered — path is in protectedGETPaths.
+	r.Get("/api/console/logs", h.ConsoleLogs)
 
 	// Config
 	r.Post("/api/ankerctl/config/upload", h.ConfigUpload)
@@ -65,6 +74,7 @@ func (s *Server) registerRoutes() {
 	r.Get("/api/printer/z-offset", h.ZOffsetGet)
 	r.Post("/api/printer/z-offset", h.ZOffsetSet)
 	r.Post("/api/printer/z-offset/nudge", h.ZOffsetNudge)
+	r.Post("/api/printer/z-offset/refresh", h.ZOffsetRefresh)
 
 	// Upload
 	r.Post("/api/files/local", h.SlicerUpload)
@@ -87,6 +97,8 @@ func (s *Server) registerRoutes() {
 	// History
 	r.Get("/api/history", h.HistoryList)
 	r.Delete("/api/history", h.HistoryClear)
+	r.Post("/api/history/{id}/reprint", h.HistoryReprint)
+	r.Get("/api/history/{id}/thumbnail", h.HistoryThumbnail)
 
 	// Filaments
 	r.Get("/api/filaments", h.FilamentList)
@@ -108,6 +120,19 @@ func (s *Server) registerRoutes() {
 	r.Get("/api/timelapses", h.TimelapseList)
 	r.Get("/api/timelapse/{filename}", h.TimelapseDownload)
 	r.Delete("/api/timelapse/{filename}", h.TimelapseDelete)
+
+	// Timelapse snapshot gallery (B3)
+	r.Get("/api/timelapse-snapshots", h.TimelapseSnapshotsList)
+	r.Get("/api/timelapse-snapshot/{collection_id}/{filename}", h.TimelapseSnapshotDownload)
+	r.Delete("/api/timelapse-snapshot/{collection_id}", h.TimelapseSnapshotCollectionDelete)
+	r.Delete("/api/timelapse-snapshot/{collection_id}/{filename}", h.TimelapseSnapshotDelete)
+
+	// Manual timelapse controls (B3)
+	r.Post("/api/timelapse/current/start", h.TimelapseCurrentStart)
+	r.Post("/api/timelapse/current/dismiss", h.TimelapseCurrentDismiss)
+	r.Post("/api/timelapse/current/pause", h.TimelapseCurrentPause)
+	r.Post("/api/timelapse/current/resume", h.TimelapseCurrentResume)
+	r.Post("/api/timelapse/current/stop", h.TimelapseCurrentStop)
 
 	// Debug routes are only mounted when dev mode is on.
 	if s.devMode {
