@@ -99,6 +99,16 @@ type HomeAssistantConfig struct {
 	NodeID          string `json:"node_id"`
 }
 
+// PrintHistoryConfig holds print history pruning settings.
+// These values are read from environment variables and default to the same
+// values as the hardcoded constants in internal/db.
+// NOTE: the DB layer (internal/db/history.go) currently uses its own constants.
+// This struct is the canonical source for future plumbing.
+type PrintHistoryConfig struct {
+	RetentionDays int `json:"retention_days"`
+	MaxEntries    int `json:"max_entries"`
+}
+
 // FilamentServiceConfig holds filament service behaviour settings.
 //
 // AllowLegacySwap enables the legacy automatic unload/load swap flow.
@@ -196,6 +206,15 @@ func DefaultHomeAssistantConfig() HomeAssistantConfig {
 		MQTTPassword:    envString("HA_MQTT_PASSWORD", ""),
 		DiscoveryPrefix: envString("HA_MQTT_DISCOVERY_PREFIX", "homeassistant"),
 		NodeID:          "ankermake_m5",
+	}
+}
+
+// DefaultPrintHistoryConfig returns the default print history configuration,
+// reading overrides from environment variables.
+func DefaultPrintHistoryConfig() PrintHistoryConfig {
+	return PrintHistoryConfig{
+		RetentionDays: envInt("PRINT_HISTORY_RETENTION_DAYS", 90),
+		MaxEntries:    envInt("PRINT_HISTORY_MAX_ENTRIES", 500),
 	}
 }
 
