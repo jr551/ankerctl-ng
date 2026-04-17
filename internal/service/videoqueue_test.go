@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -161,4 +162,66 @@ func waitForVideoControllerStart(t *testing.T, controller *mockVideoController, 
 	starts := controller.start
 	controller.mu.Unlock()
 	t.Fatalf("start count = %d, want > 0", starts)
+}
+
+func TestScrubURLCredentials(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		contains []string // strings that MUST be present in the output
+		missing  []string // strings that MUST NOT be present in the output
+	}{
+		{
+			name:     "rtsp userinfo is redacted",
+			input:    `open rtsp://alice:s3cret@cam.local:554/live failed`,
+			contains: []string{"rtsp://", "cam.local", "/live", "***"},
+			missing:  []string{"alice", "s3cret"},
+		},
+		{
+			name:     "apikey query param is redacted",
+			input:    `ffmpeg error opening http://127.0.0.1:4470/video?for_timelapse=1&apikey=SECRETTOKEN12345`,
+			contains: []string{"http://127.0.0.1:4470/video", "apikey=", "***"},
+			missing:  []string{"SECRETTOKEN12345"},
+		},
+		{
+			name:     "token and password params are redacted",
+			input:    `https://host/api?token=abc123&password=hunter2&keep=me`,
+			contains: []string{"host/api", "keep=me", "***"},
+			missing:  []string{"abc123", "hunter2"},
+		},
+		{
+			name:     "non-URL text is untouched",
+			input:    "ffmpeg: no such file or directory",
+			contains: []string{"ffmpeg: no such file or directory"},
+			missing:  nil,
+		},
+		{
+			name:     "empty string is untouched",
+			input:    "",
+			contains: nil,
+			missing:  nil,
+		},
+		{
+			name:     "https userinfo is redacted",
+			input:    `GET https://user:pw@example.com/path?x=1 200 OK`,
+			contains: []string{"https://", "example.com", "/path", "***"},
+			missing:  []string{"user", "pw"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := scrubURLCredentials(tt.input)
+			for _, want := range tt.contains {
+				if !strings.Contains(got, want) {
+					t.Errorf("scrubURLCredentials(%q) missing %q; got %q", tt.input, want, got)
+				}
+			}
+			for _, forbid := range tt.missing {
+				if strings.Contains(got, forbid) {
+					t.Errorf("scrubURLCredentials(%q) leaked %q; got %q", tt.input, forbid, got)
+				}
+			}
+		})
+	}
 }

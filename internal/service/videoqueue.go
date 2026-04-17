@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -480,10 +481,50 @@ func defaultFFmpegRunner(ctx context.Context, args []string) error {
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("ffmpeg: %w (%s)", err, strings.TrimSpace(string(out)))
+		// ffmpeg echoes the full input URL (including query string with apikey,
+		// or userinfo like rtsp://user:pass@host) into its stderr. The combined
+		// output becomes part of the error string which in turn can surface in
+		// HTTP responses and logs, so we scrub credentials before returning.
+		return fmt.Errorf("ffmpeg: %w (%s)", err, scrubURLCredentials(strings.TrimSpace(string(out))))
 	}
 	return nil
 }
+
+// urlRegex matches common URL schemes that ffmpeg accepts as input. We scan
+// for these to redact credentials in error output.
+var urlRegex = regexp.MustCompile(`(?i)\b(?:https?|rtsp|rtmp|rtmps|ftp|tcp|udp|srt)://[^\s"'<>|]+`)
+
+// scrubURLCredentials replaces user:password userinfo components and known
+// sensitive query parameters (apikey, api_key, token, password) in any URL
+// found in s with "***". It returns s unchanged if no URL-like substring
+// is found. This is a best-effort defensive scrub for log / error output —
+// callers should still avoid logging raw URLs when possible.
+func scrubURLCredentials(s string) string {
+	if s == "" {
+		return s
+	}
+	return urlRegex.ReplaceAllStringFunc(s, redactURL)
+}
+
+// redactURL returns a copy of raw with userinfo and sensitive query params
+// replaced with a REDACTED marker. We operate on the raw string rather than
+// url.Parse/url.String round-tripping because the latter percent-encodes the
+// marker (e.g. *** → %2A%2A%2A) which hurts readability in error messages.
+func redactURL(raw string) string {
+	out := credsPattern.ReplaceAllString(raw, "${1}***@")
+	out = sensitiveParamPattern.ReplaceAllString(out, "${1}=***")
+	return out
+}
+
+// credsPattern matches the userinfo component (user[:pass]@) of a URL, with
+// the scheme captured in group 1 so we can re-emit it. Userinfo runs from
+// after "://" up to "@" and must not contain "/" or whitespace.
+var credsPattern = regexp.MustCompile(`(?i)(\b(?:https?|rtsp|rtmp|rtmps|ftp|tcp|udp|srt)://)[^/@\s"'<>]+@`)
+
+// sensitiveParamPattern matches query-string entries whose name is in
+// sensitiveQueryParams (apikey, api_key, token, password, passwd, secret).
+// The value runs until the next "&", whitespace or end-of-string.
+var sensitiveParamPattern = regexp.MustCompile(`(?i)\b(apikey|api_key|token|password|passwd|secret)=[^&\s"'<>]*`)
 
 func videoLoopbackURL() string {
 	host := strings.TrimSpace(os.Getenv("ANKERCTL_HOST"))
