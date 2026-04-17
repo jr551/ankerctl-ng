@@ -192,6 +192,74 @@ func TestSecureEquals_SameContent(t *testing.T) {
 	}
 }
 
+func TestAuth_ProtectedGETPaths_TableDriven(t *testing.T) {
+	apiKey := "test-api-key-1234"
+	state := &authTestState{apiKey: apiKey, login: true, sm: NewSessionManager([]byte("secret"))}
+	h := Auth(state)(okHandler())
+
+	paths := []string{
+		"/api/console/logs",
+		"/api/camera/frame",
+		"/api/camera/stream",
+		"/api/snapshot",
+		"/api/settings/filament-service/advanced",
+		"/api/settings/timelapse",
+		"/api/settings/camera",
+		"/api/printer/bed-leveling",
+		"/api/printer/bed-leveling/last",
+		"/api/printer/settings-summary",
+		"/api/printer/z-offset",
+		"/api/filaments",
+		"/api/filaments/service/swap",
+		"/api/timelapses",
+		"/api/timelapse-snapshots",
+		"/api/timelapse/123/download",
+		"/api/timelapse-snapshot/abc/frame",
+		"/api/debug/mqtt-trace",
+	}
+
+	for _, path := range paths {
+		t.Run("protected_"+path, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, path, nil)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			if w.Code != http.StatusUnauthorized {
+				t.Errorf("GET %s without auth: got %d, want 401", path, w.Code)
+			}
+		})
+		t.Run("allowed_with_key_"+path, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, path, nil)
+			r.Header.Set("X-Api-Key", apiKey)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			if w.Code != http.StatusOK {
+				t.Errorf("GET %s with valid API key: got %d, want 200", path, w.Code)
+			}
+		})
+	}
+}
+
+func TestAuth_OpenGETPaths_NotBlocked(t *testing.T) {
+	state := &authTestState{apiKey: "test-api-key-1234", login: true, sm: NewSessionManager([]byte("secret"))}
+	h := Auth(state)(okHandler())
+
+	openPaths := []string{
+		"/api/health",
+		"/api/printer/status",
+		"/api/ankerctl/version",
+	}
+	for _, path := range openPaths {
+		t.Run(path, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, path, nil)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			if w.Code != http.StatusOK {
+				t.Errorf("GET %s without auth: got %d, want 200 (should be open)", path, w.Code)
+			}
+		})
+	}
+}
+
 func TestAuth_StaticPath_AlwaysAllowed(t *testing.T) {
 	state := &authTestState{apiKey: "test-api-key-1234", login: true, sm: NewSessionManager([]byte("secret"))}
 	h := Auth(state)(okHandler())
