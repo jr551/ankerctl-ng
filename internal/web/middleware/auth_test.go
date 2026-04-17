@@ -204,3 +204,107 @@ func TestAuth_StaticPath_AlwaysAllowed(t *testing.T) {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
 	}
 }
+
+// TestAuth_ProtectedGETPaths_TableDriven covers every entry in
+// protectedGETPaths/protectedGETPrefixes to ensure parity with the Python
+// _PROTECTED_GET_PATHS set. Each protected path must 401 without a key and 200
+// with a valid X-Api-Key header.
+func TestAuth_ProtectedGETPaths_TableDriven(t *testing.T) {
+	const apiKey = "test-api-key-1234"
+
+	cases := []struct {
+		name string
+		path string
+	}{
+		{"server_reload", "/api/ankerctl/server/reload"},
+		{"console_logs", "/api/console/logs"},
+		{"debug_state", "/api/debug/state"},
+		{"debug_logs", "/api/debug/logs"},
+		{"debug_services", "/api/debug/services"},
+		{"debug_prefix_dynamic", "/api/debug/some/subpath"},
+		{"camera_frame", "/api/camera/frame"},
+		{"camera_stream", "/api/camera/stream"},
+		{"snapshot", "/api/snapshot"},
+		{"settings_mqtt", "/api/settings/mqtt"},
+		{"settings_filament_service", "/api/settings/filament-service"},
+		{"settings_filament_service_advanced", "/api/settings/filament-service/advanced"},
+		{"settings_timelapse", "/api/settings/timelapse"},
+		{"settings_camera", "/api/settings/camera"},
+		{"notifications_settings", "/api/notifications/settings"},
+		{"printers", "/api/printers"},
+		{"printer_bed_leveling", "/api/printer/bed-leveling"},
+		{"printer_bed_leveling_last", "/api/printer/bed-leveling/last"},
+		{"printer_settings_summary", "/api/printer/settings-summary"},
+		{"printer_z_offset", "/api/printer/z-offset"},
+		{"filaments", "/api/filaments"},
+		{"filaments_service_swap", "/api/filaments/service/swap"},
+		{"history", "/api/history"},
+		{"timelapses", "/api/timelapses"},
+		{"timelapse_snapshots", "/api/timelapse-snapshots"},
+		{"timelapse_prefix_dynamic", "/api/timelapse/123"},
+		{"timelapse_snapshot_prefix_dynamic", "/api/timelapse-snapshot/abc.jpg"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name+"_denies_without_auth", func(t *testing.T) {
+			state := &authTestState{apiKey: apiKey, login: true, sm: NewSessionManager([]byte("secret"))}
+			h := Auth(state)(okHandler())
+
+			r := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+
+			if w.Code != http.StatusUnauthorized {
+				t.Fatalf("GET %s: status = %d, want %d", tc.path, w.Code, http.StatusUnauthorized)
+			}
+		})
+
+		t.Run(tc.name+"_allows_with_apikey_header", func(t *testing.T) {
+			state := &authTestState{apiKey: apiKey, login: true, sm: NewSessionManager([]byte("secret"))}
+			h := Auth(state)(okHandler())
+
+			r := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			r.Header.Set("X-Api-Key", apiKey)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("GET %s with key: status = %d, want %d", tc.path, w.Code, http.StatusOK)
+			}
+		})
+	}
+}
+
+// TestAuth_OpenGETPaths_TableDriven verifies that paths NOT in the protected
+// set remain reachable without auth (regression guard against over-tightening).
+func TestAuth_OpenGETPaths_TableDriven(t *testing.T) {
+	const apiKey = "test-api-key-1234"
+
+	cases := []struct {
+		name string
+		path string
+	}{
+		{"health", "/api/health"},
+		{"config_upload_get", "/api/ankerctl/config/upload"},
+		{"config_login_get", "/api/ankerctl/config/login"},
+		{"root", "/"},
+		{"static_asset", "/static/app.js"},
+		// Adjacent but distinct path — must NOT be caught by a naive prefix match.
+		{"printer_root_not_a_match", "/api/printer/status"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			state := &authTestState{apiKey: apiKey, login: true, sm: NewSessionManager([]byte("secret"))}
+			h := Auth(state)(okHandler())
+
+			r := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("GET %s: status = %d, want %d", tc.path, w.Code, http.StatusOK)
+			}
+		})
+	}
+}

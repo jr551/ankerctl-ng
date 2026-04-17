@@ -1,0 +1,39 @@
+services:
+    ankerctl:
+        # Use 'build: .' to build locally instead of pulling from the registry.
+        # build: .
+        image: ghcr.io/django1982/ankerctl:latest
+        container_name: ankerctl
+        restart: unless-stopped
+
+        # host-mode networking is required for PPPP UDP communication with the
+        # printer: PPPP uses asymmetric UDP on port 32108 (LAN discovery) and
+        # 32100 (session). Bridge-mode NAT breaks this protocol.
+        network_mode: host
+
+        # Load environment variables from .env file.
+        # Copy .env.example to .env and adjust values as needed.
+        env_file:
+            - .env
+
+        volumes:
+            # Printer config, API key, and SQLite database.
+            - ankerctl_config:/home/ankerctl/.ankerctl
+            # Timelapse captures and snapshot files.
+            - ankerctl_captures:/captures
+            # Log files (only written when ANKERCTL_LOG_DIR=/logs is set).
+            - ankerctl_logs:/logs
+
+        # Health check against the /api/health endpoint.
+        # start_period gives the process time to load config and open the DB.
+        healthcheck:
+            test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:4470/api/health"]
+            interval: 30s
+            timeout: 5s
+            start_period: 20s
+            retries: 3
+
+volumes:
+    ankerctl_config:
+    ankerctl_captures:
+    ankerctl_logs:
