@@ -316,6 +316,71 @@ func TestAuth_QueryAPIKey_POST_RedirectsOnMatch(t *testing.T) {
 	}
 }
 
+// TestAuth_WebSocketPaths_RequireAuth verifies that all /ws/* endpoints are
+// treated as protected GET paths and reject unauthenticated requests.
+func TestAuth_WebSocketPaths_RequireAuth(t *testing.T) {
+	paths := []string{
+		"/ws/video",
+		"/ws/mqtt",
+		"/ws/upload",
+		"/ws/ctrl",
+		"/ws/pppp-state",
+	}
+	state := &authTestState{apiKey: "test-api-key-1234", login: true, sm: NewSessionManager([]byte("secret"))}
+	h := Auth(state)(okHandler())
+
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, path, nil)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			if w.Code != http.StatusUnauthorized {
+				t.Fatalf("path %s: status = %d, want %d (WS paths must require auth)", path, w.Code, http.StatusUnauthorized)
+			}
+		})
+	}
+}
+
+// TestAuth_WebSocketUpgrade_QueryAPIKey_PassesThrough verifies that a WS
+// upgrade request with a valid ?apikey= parameter is passed directly to the
+// handler instead of being redirected. An HTTP redirect terminates the WebSocket
+// handshake and the browser WS client cannot recover from it.
+func TestAuth_WebSocketUpgrade_QueryAPIKey_PassesThrough(t *testing.T) {
+	state := &authTestState{apiKey: "test-api-key-1234", login: true, sm: NewSessionManager([]byte("secret"))}
+	h := Auth(state)(okHandler())
+
+	r := httptest.NewRequest(http.MethodGet, "/ws/video?apikey=test-api-key-1234", nil)
+	r.Header.Set("Upgrade", "websocket")
+	r.Header.Set("Connection", "Upgrade")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+
+	// Must NOT redirect (3xx) — the upgrader sees 200 and proceeds with the WS handshake.
+	if w.Code == http.StatusFound || w.Code == http.StatusMovedPermanently {
+		t.Fatalf("WS upgrade with valid ?apikey= must not redirect, got %d", w.Code)
+	}
+	if w.Code != http.StatusOK {
+		t.Fatalf("WS upgrade with valid ?apikey= should pass through, got %d", w.Code)
+	}
+}
+
+// TestAuth_NonWebSocketUpgrade_QueryAPIKey_Redirects verifies that a plain
+// HTTP GET (no Upgrade header) with ?apikey= still gets the session-cookie
+// redirect behaviour for browser flows.
+func TestAuth_NonWebSocketUpgrade_QueryAPIKey_Redirects(t *testing.T) {
+	state := &authTestState{apiKey: "test-api-key-1234", login: true, sm: NewSessionManager([]byte("secret"))}
+	h := Auth(state)(okHandler())
+
+	r := httptest.NewRequest(http.MethodGet, "/api/history?apikey=test-api-key-1234", nil)
+	// No Upgrade header — plain browser redirect flow.
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+
+	if w.Code != http.StatusFound {
+		t.Fatalf("plain GET with ?apikey= should redirect to set session cookie, got %d", w.Code)
+	}
+}
+
 func TestAuth_CaseSensitiveAPIKey(t *testing.T) {
 	state := &authTestState{apiKey: "MySecretKey12345", login: true, sm: NewSessionManager([]byte("secret"))}
 	h := Auth(state)(okHandler())

@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -328,12 +329,28 @@ func (h *Handler) loadFilamentServiceConfig() model.FilamentServiceConfig {
 	return fs
 }
 
+// swapTokenMatches reports whether the candidate token matches the stored swap
+// token using a constant-time comparison. This prevents a timing side-channel
+// that would otherwise let an attacker brute-force the 24-hex-char token by
+// measuring response latency differences across confirm/cancel requests.
+// Must be called with filamentSwapMu held.
+func swapTokenMatches(candidate string) bool {
+	if filamentSwapValue == nil {
+		return false
+	}
+	// subtle.ConstantTimeCompare requires equal-length slices; tokens are
+	// always 24 chars (12 random bytes hex-encoded), so lengths will match
+	// in the normal case. We use it unconditionally — it returns 0 for
+	// unequal lengths, which is the correct reject behaviour.
+	return subtle.ConstantTimeCompare([]byte(candidate), []byte(filamentSwapValue.Token)) == 1
+}
+
 // swapStateUpdate applies updates to the global swap state under the mutex.
 // A no-op when no state exists or the token doesn't match.
 func swapStateUpdate(token string, fn func(s *filamentSwapState)) {
 	filamentSwapMu.Lock()
 	defer filamentSwapMu.Unlock()
-	if filamentSwapValue == nil || filamentSwapValue.Token != token {
+	if !swapTokenMatches(token) {
 		return
 	}
 	fn(filamentSwapValue)
@@ -344,7 +361,7 @@ func swapStateUpdate(token string, fn func(s *filamentSwapState)) {
 func swapStateClear(token string) *filamentSwapState {
 	filamentSwapMu.Lock()
 	defer filamentSwapMu.Unlock()
-	if filamentSwapValue == nil || filamentSwapValue.Token != token {
+	if !swapTokenMatches(token) {
 		return nil
 	}
 	copy := *filamentSwapValue
@@ -356,7 +373,7 @@ func swapStateClear(token string) *filamentSwapState {
 func swapStateGet(token string) *filamentSwapState {
 	filamentSwapMu.Lock()
 	defer filamentSwapMu.Unlock()
-	if filamentSwapValue == nil || filamentSwapValue.Token != token {
+	if !swapTokenMatches(token) {
 		return nil
 	}
 	copy := *filamentSwapValue
