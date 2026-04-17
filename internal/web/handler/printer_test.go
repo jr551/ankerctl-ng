@@ -292,6 +292,72 @@ func TestPrinterAutolevel_ServiceUnavailable(t *testing.T) {
 	}
 }
 
+// TestPrinterControl_Allowlist verifies that only the four documented control
+// values (0, 2, 3, 4) are accepted and all others are rejected with 400.
+// This mirrors the Python allowlist check in web/__init__.py line 3554.
+func TestPrinterControl_Allowlist(t *testing.T) {
+	tests := []struct {
+		name       string
+		value      int
+		wantStatus int
+		wantMsg    string
+	}{
+		// Valid values — allowlist accepts these; service is unavailable so the
+		// allowlist check succeeds but the call stops at 503, proving validation
+		// passed through to the service layer.
+		{name: "start (0)", value: 0, wantStatus: http.StatusServiceUnavailable},
+		{name: "stop (2)", value: 2, wantStatus: http.StatusServiceUnavailable},
+		{name: "pause (3)", value: 3, wantStatus: http.StatusServiceUnavailable},
+		{name: "resume (4)", value: 4, wantStatus: http.StatusServiceUnavailable},
+		// Invalid values — must be rejected before reaching service layer.
+		{name: "state indicator (1)", value: 1, wantStatus: http.StatusBadRequest, wantMsg: "Invalid control value"},
+		{name: "out of range (5)", value: 5, wantStatus: http.StatusBadRequest, wantMsg: "Invalid control value"},
+		{name: "large positive (99)", value: 99, wantStatus: http.StatusBadRequest, wantMsg: "Invalid control value"},
+		{name: "negative (-1)", value: -1, wantStatus: http.StatusBadRequest, wantMsg: "Invalid control value"},
+		{name: "negative (-99)", value: -99, wantStatus: http.StatusBadRequest, wantMsg: "Invalid control value"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h := &Handler{svc: service.NewServiceManager()}
+			body, _ := json.Marshal(map[string]int{"value": tc.value})
+			req := httptest.NewRequest(http.MethodPost, "/api/printer/control", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rr := httptest.NewRecorder()
+
+			h.PrinterControl(rr, req)
+
+			if rr.Code != tc.wantStatus {
+				t.Errorf("value=%d: status = %d, want %d (body: %s)",
+					tc.value, rr.Code, tc.wantStatus, rr.Body.String())
+			}
+			if tc.wantMsg != "" && !strings.Contains(rr.Body.String(), tc.wantMsg) {
+				t.Errorf("value=%d: body = %q, want to contain %q",
+					tc.value, rr.Body.String(), tc.wantMsg)
+			}
+		})
+	}
+}
+
+// TestPrinterControl_AllowlistCompleteness verifies the allowlist map contains
+// exactly the four documented values and no others.
+func TestPrinterControl_AllowlistCompleteness(t *testing.T) {
+	expected := map[int]string{
+		0: "start",
+		2: "stop",
+		3: "pause",
+		4: "resume",
+	}
+	if len(printControlAllowlist) != len(expected) {
+		t.Errorf("printControlAllowlist has %d entries, want %d", len(printControlAllowlist), len(expected))
+	}
+	for v, label := range expected {
+		if _, ok := printControlAllowlist[v]; !ok {
+			t.Errorf("printControlAllowlist missing value %d (%s)", v, label)
+		}
+	}
+}
+
 func TestPrinterGCode_UnsafeGCodeBlocking(t *testing.T) {
 	// This test verifies that the unsafeGCodePrefixes check works at the
 	// normalization/parsing level. We cannot fully test the IsPrinting path

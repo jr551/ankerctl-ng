@@ -72,6 +72,13 @@ func (h *Handler) PrinterGCode(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+// printControlAllowlist restricts ct=1008 values to the official eufyMake commands.
+// 0=start, 2=stop, 3=pause, 4=resume. Value 1 is an internal state indicator,
+// not a user-accessible command; all others are undefined firmware behavior.
+var printControlAllowlist = map[int]struct{}{
+	0: {}, 2: {}, 3: {}, 4: {},
+}
+
 // PrinterControl sends print-control commands.
 // Body: {"value": <int>}  (matches Python; value=0 is valid — idle state)
 func (h *Handler) PrinterControl(w http.ResponseWriter, r *http.Request) {
@@ -89,6 +96,10 @@ func (h *Handler) PrinterControl(w http.ResponseWriter, r *http.Request) {
 	var value int
 	if err := json.Unmarshal(rawVal, &value); err != nil {
 		h.writeError(w, http.StatusBadRequest, "Value must be an integer")
+		return
+	}
+	if _, allowed := printControlAllowlist[value]; !allowed {
+		h.writeError(w, http.StatusBadRequest, "Invalid control value")
 		return
 	}
 	mqtt, ok := h.mqttQueue()
