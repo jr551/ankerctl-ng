@@ -59,6 +59,7 @@ func (s *Server) registerRoutes() {
 	r.Post("/api/printer/gcode", h.PrinterGCode)
 	r.Post("/api/printer/control", h.PrinterControl)
 	r.Post("/api/printer/autolevel", h.PrinterAutolevel)
+	r.Post("/api/printer/home", h.PrinterHome)
 	r.Get("/api/printer/bed-leveling", h.BedLevelingLive)
 	r.Get("/api/printer/bed-leveling/last", h.BedLevelingLast)
 	r.Get("/api/printer/z-offset", h.ZOffsetGet)

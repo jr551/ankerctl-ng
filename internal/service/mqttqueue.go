@@ -723,6 +723,50 @@ func (q *MqttQueue) SendAutoLeveling(ctx context.Context) error {
 	return nil
 }
 
+// homeAxisValue maps a validated axis name to the MQTT value used by
+// ZZ_MQTT_CMD_MOVE_ZERO (ct=1026).  The firmware on the M5 homes XY as part
+// of the Z-home sequence, so "all" is routed through "z" exactly as the
+// official eufyMake app does.
+//
+// Axis mapping (confirmed against Python reference web/service/mqtt.py):
+//   xy → value 0
+//   z  → value 2  (also used for "all")
+var homeAxisValue = map[string]int{
+	"xy": 0,
+	"z":  2,
+}
+
+// SendHome sends a MOVE_ZERO command (ct=1026) to home the specified axes.
+// axis must be "all", "xy", or "z".  "all" is mapped to "z" because the
+// M5 firmware homes XY as part of the Z homing sequence (identical to
+// the Python send_home implementation).
+func (q *MqttQueue) SendHome(ctx context.Context, axis string) error {
+	axis = strings.ToLower(strings.TrimSpace(axis))
+	if axis == "" || axis == "all" {
+		axis = "z"
+	}
+	value, ok := homeAxisValue[axis]
+	if !ok {
+		return fmt.Errorf("mqttqueue: unsupported home axis: %q", axis)
+	}
+
+	q.mu.Lock()
+	c := q.client
+	q.mu.Unlock()
+	if c == nil {
+		return errors.New("mqttqueue: mqtt client not connected")
+	}
+
+	cmd := map[string]any{
+		"commandType": int(protocol.MqttCmdMoveZero),
+		"value":       value,
+	}
+	if err := c.Command(ctx, cmd); err != nil {
+		return fmt.Errorf("mqttqueue: send home: %w", err)
+	}
+	return nil
+}
+
 // SetLight toggles printer light.
 func (q *MqttQueue) SetLight(ctx context.Context, on bool) error {
 	q.mu.Lock()
