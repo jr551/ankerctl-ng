@@ -11,7 +11,7 @@ import (
 func TestRecordStart_Basic(t *testing.T) {
 	d := openTestDB(t)
 
-	id, err := d.RecordStart("cube.gcode", "task-001")
+	id, err := d.RecordStart("cube.gcode", "task-001", "", 0)
 	if err != nil {
 		t.Fatalf("RecordStart: %v", err)
 	}
@@ -27,7 +27,7 @@ func TestRecordStart_PlaceholderFilter(t *testing.T) {
 
 	cases := []string{"unknown", "unknown.gcode", "", "  "}
 	for _, name := range cases {
-		id, err := d.RecordStart(name, "")
+		id, err := d.RecordStart(name, "", "", 0)
 		if err != nil {
 			t.Errorf("RecordStart(%q): unexpected error: %v", name, err)
 		}
@@ -42,12 +42,12 @@ func TestRecordStart_PlaceholderFilter(t *testing.T) {
 func TestRecordStart_Resume(t *testing.T) {
 	d := openTestDB(t)
 
-	id1, err := d.RecordStart("cube.gcode", "task-abc")
+	id1, err := d.RecordStart("cube.gcode", "task-abc", "", 0)
 	if err != nil {
 		t.Fatalf("first RecordStart: %v", err)
 	}
 
-	id2, err := d.RecordStart("cube.gcode", "task-abc")
+	id2, err := d.RecordStart("cube.gcode", "task-abc", "", 0)
 	if err != nil {
 		t.Fatalf("second RecordStart (resume): %v", err)
 	}
@@ -70,12 +70,12 @@ func TestRecordStart_Resume(t *testing.T) {
 func TestRecordStart_OrphanClose(t *testing.T) {
 	d := openTestDB(t)
 
-	_, err := d.RecordStart("first.gcode", "task-1")
+	_, err := d.RecordStart("first.gcode", "task-1", "", 0)
 	if err != nil {
 		t.Fatalf("first RecordStart: %v", err)
 	}
 
-	_, err = d.RecordStart("second.gcode", "task-2")
+	_, err = d.RecordStart("second.gcode", "task-2", "", 0)
 	if err != nil {
 		t.Fatalf("second RecordStart: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestRecordStart_OrphanClose(t *testing.T) {
 func TestRecordFinish(t *testing.T) {
 	d := openTestDB(t)
 
-	_, err := d.RecordStart("cube.gcode", "task-fin")
+	_, err := d.RecordStart("cube.gcode", "task-fin", "", 0)
 	if err != nil {
 		t.Fatalf("RecordStart: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestRecordFinish(t *testing.T) {
 func TestRecordFail(t *testing.T) {
 	d := openTestDB(t)
 
-	_, err := d.RecordStart("fail_job.gcode", "task-fail")
+	_, err := d.RecordStart("fail_job.gcode", "task-fail", "", 0)
 	if err != nil {
 		t.Fatalf("RecordStart: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestClearHistory(t *testing.T) {
 	d := openTestDB(t)
 
 	for i := range 5 {
-		_, err := d.RecordStart(fmt.Sprintf("job%d.gcode", i), "")
+		_, err := d.RecordStart(fmt.Sprintf("job%d.gcode", i), "", "", 0)
 		if err != nil {
 			t.Fatalf("RecordStart %d: %v", i, err)
 		}
@@ -200,7 +200,7 @@ func TestGetHistory_Pagination(t *testing.T) {
 
 	// Insert 10 jobs (each new one closes the previous as 'interrupted').
 	for i := range 10 {
-		_, err := d.RecordStart(fmt.Sprintf("job%d.gcode", i), fmt.Sprintf("t%d", i))
+		_, err := d.RecordStart(fmt.Sprintf("job%d.gcode", i), fmt.Sprintf("t%d", i), "", 0)
 		if err != nil {
 			t.Fatalf("RecordStart %d: %v", i, err)
 		}
@@ -243,7 +243,7 @@ func TestRetention_90Days(t *testing.T) {
 	}
 
 	// Trigger prune by inserting a new record.
-	_, err = d.RecordStart("new.gcode", "")
+	_, err = d.RecordStart("new.gcode", "", "", 0)
 	if err != nil {
 		t.Fatalf("RecordStart: %v", err)
 	}
@@ -277,7 +277,7 @@ func TestRetention_500Cap(t *testing.T) {
 	}
 
 	// Trigger pruning via RecordStart.
-	_, err := d.RecordStart("trigger.gcode", "")
+	_, err := d.RecordStart("trigger.gcode", "", "", 0)
 	if err != nil {
 		t.Fatalf("RecordStart: %v", err)
 	}

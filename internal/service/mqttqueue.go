@@ -410,7 +410,7 @@ func (q *MqttQueue) handleCT1044(payload map[string]any) {
 	q.mu.Unlock()
 
 	if shouldRecord && q.history != nil {
-		if _, err := q.history.RecordStart(filename, ""); err != nil {
+		if _, err := q.history.RecordStart(filename, "", "", 0); err != nil {
 			q.log.Warn("history record start failed", "filename", filename, "err", err)
 		}
 	}
@@ -464,7 +464,7 @@ func (q *MqttQueue) handleCT1000(payload map[string]any) {
 	}
 
 	if shouldRecord && q.history != nil {
-		if _, err := q.history.RecordStart(filename, ""); err != nil {
+		if _, err := q.history.RecordStart(filename, "", "", 0); err != nil {
 			q.log.Warn("history record start failed", "filename", filename, "err", err)
 		}
 	}
@@ -594,6 +594,55 @@ func (q *MqttQueue) NudgeZOffset(ctx context.Context, deltaMM float64) error {
 
 	targetSteps := *currentSteps + deltaSteps
 	return q.sendZOffsetDelta(ctx, deltaMM, targetSteps)
+}
+
+// RefreshZOffset sends a status query to the printer and waits up to 5 seconds
+// for a fresh ct=1021 reply. Returns the current Z-offset in millimeters.
+//
+// Python reference: web/service/mqtt.py MqttQueue.refresh_z_offset
+func (q *MqttQueue) RefreshZOffset(ctx context.Context) (float64, error) {
+	q.mu.Lock()
+	c := q.client
+	// Record the current update-channel generation so we only accept values
+	// that arrive after our status query — matching Python's after_seq logic.
+	q.mu.Unlock()
+
+	if c == nil {
+		return 0, errors.New("mqttqueue: mqtt client not connected")
+	}
+
+	// Drain any stale notification so the first receive is definitely post-query.
+	select {
+	case <-q.zAxisRecoupCh:
+	default:
+	}
+
+	// Send a status query to trigger a fresh ct=1021 reply from the printer.
+	// Python: self._send_status_query()
+	queryCmd := map[string]any{
+		"commandType": int(protocol.MqttCmdAppQueryStatus),
+		"value":       0,
+	}
+	if err := c.Query(ctx, queryCmd); err != nil {
+		q.log.Warn("z-offset refresh: status query failed (non-fatal)", "err", err)
+	}
+
+	deadline, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	for {
+		select {
+		case <-deadline.Done():
+			return 0, fmt.Errorf("mqttqueue: z-offset refresh timeout (no ct=1021 received)")
+		case <-q.zAxisRecoupCh:
+			q.mu.Lock()
+			current := q.zAxisRecoup
+			q.mu.Unlock()
+			if current != nil {
+				return float64(*current) * 0.01, nil
+			}
+		}
+	}
 }
 
 func (q *MqttQueue) sendZOffsetDelta(ctx context.Context, deltaMM float64, targetSteps int) error {
