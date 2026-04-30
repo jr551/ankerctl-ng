@@ -304,11 +304,9 @@ func TestReadMJPEGFrames_CtxCancel(t *testing.T) {
 	}
 
 	// Read one frame to confirm the pipeline is alive, then cancel.
-	select {
-	case _, ok := <-frames:
-		if !ok {
-			t.Fatal("channel closed before receiving any frame")
-		}
+	_, ok := <-frames
+	if !ok {
+		t.Fatal("channel closed before receiving any frame")
 	}
 	cancel()
 
