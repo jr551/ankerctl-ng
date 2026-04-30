@@ -96,6 +96,10 @@ func (s *Server) registerRoutes() {
 	r.Get("/api/settings/camera", h.SettingsCameraGet)
 	r.Post("/api/settings/camera", h.SettingsCameraUpdate)
 
+	// Camera streaming (B5)
+	r.Get("/api/camera/frame", h.CameraFrame)
+	r.Get("/api/camera/stream", h.CameraStream)
+
 	// History
 	r.Get("/api/history", h.HistoryList)
 	r.Delete("/api/history", h.HistoryClear)
