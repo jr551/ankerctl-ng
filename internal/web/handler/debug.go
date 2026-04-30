@@ -83,6 +83,44 @@ func (h *Handler) DebugSimulate(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+// ConsoleLogs returns a Python-compatible paginated snapshot of the in-memory
+// ring buffer. Query params: ?limit=N (1–1000, default 200), ?after=ID (polling).
+// Path: GET /api/console/logs
+func (h *Handler) ConsoleLogs(w http.ResponseWriter, r *http.Request) {
+	limit := 200
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil && v > 0 {
+			limit = v
+		}
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+
+	afterID := -1 // < 0 means "give me the most recent N lines" (initial load)
+	if raw := r.URL.Query().Get("after"); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil {
+			afterID = v
+		}
+	}
+
+	if h.logRing == nil {
+		// No ring buffer attached — return empty but valid response.
+		h.writeJSON(w, http.StatusOK, map[string]any{
+			"entries":    []any{},
+			"first_id":   0,
+			"last_id":    0,
+			"next_after": 0,
+			"truncated":  false,
+			"max_lines":  0,
+		})
+		return
+	}
+
+	result := h.logRing.Snapshot(limit, afterID)
+	h.writeJSON(w, http.StatusOK, result)
+}
+
 const liveLogFilename = "live.log"
 
 // DebugLogsList lists log files. It always includes a virtual "live.log" entry

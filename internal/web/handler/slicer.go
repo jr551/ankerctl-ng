@@ -84,9 +84,37 @@ func (h *Handler) SlicerUpload(w http.ResponseWriter, r *http.Request) {
 	if userName == "" {
 		userName = "ankerctl"
 	}
+	// Archive GCode before starting the upload so the history row can store
+	// the archive path immediately.  Failures are non-fatal — we log and
+	// continue; the printer still gets its file.
+	var archiveRelpath string
+	var archiveSize int64
+	if h.gcodeArchiver != nil {
+		rel, sz, archErr := h.gcodeArchiver.Archive(hdr.Filename, data)
+		if archErr != nil {
+			h.log.Warn("slicer upload: gcode archive failed", "err", archErr)
+		} else {
+			archiveRelpath = rel
+			archiveSize = sz
+		}
+	}
+
 	if err := ft.SendFile(r.Context(), hdr.Filename, userName, userID, data, rateLimit, startPrint); err != nil {
 		h.writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
+	}
+
+	// If archiving succeeded and we have a DB, back-fill the latest history
+	// row for this file so that reprint works.
+	if archiveRelpath != "" && h.db != nil {
+		// FORGE-NOTE: We record archive info without a task_id here because
+		// the MQTT task_id arrives asynchronously; SetArchiveInfo uses COALESCE
+		// so it will not overwrite an existing value.
+		if rowID, err := h.db.RecordStart(hdr.Filename, "", archiveRelpath, archiveSize); err != nil {
+			h.log.Warn("slicer upload: failed to record history start with archive", "err", err)
+		} else if rowID != 0 {
+			h.log.Debug("slicer upload: archive stored in history", "row_id", rowID, "relpath", archiveRelpath)
+		}
 	}
 
 	// Python parity: return effective rate and source after successful upload.

@@ -114,6 +114,32 @@ func (h *Handler) ZOffsetNudge(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ZOffsetRefresh triggers a live status query to the printer and returns the
+// freshly-read Z-offset value from ct=1021.
+//
+// POST /api/printer/z-offset/refresh
+//
+// Python reference: web/__init__.py app_api_printer_z_offset_refresh
+func (h *Handler) ZOffsetRefresh(w http.ResponseWriter, r *http.Request) {
+	mqtt, ok := h.mqttQueue()
+	if !ok {
+		h.writeError(w, http.StatusServiceUnavailable, "MQTT service unavailable")
+		return
+	}
+
+	offsetMM, err := mqtt.RefreshZOffset(r.Context())
+	if err != nil {
+		h.writeError(w, http.StatusGatewayTimeout, err.Error())
+		return
+	}
+
+	h.writeJSON(w, http.StatusOK, map[string]any{
+		"status":      "ok",
+		"message":     "Read live Z-offset from MQTT ct=1021.",
+		"z_offset_mm": offsetMM,
+	})
+}
+
 // borrowMqttQueue borrows the mqttqueue service via the ServiceManager.
 // The caller must defer h.svc.Return("mqttqueue").
 func (h *Handler) borrowMqttQueue() (*service.MqttQueue, error) {

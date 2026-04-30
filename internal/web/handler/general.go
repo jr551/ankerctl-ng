@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/django1982/ankerctl/internal/model"
 	"github.com/django1982/ankerctl/internal/service"
@@ -245,27 +244,8 @@ func (h *Handler) Video(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Snapshot captures a JPEG from VideoQueue and serves it as attachment.
-func (h *Handler) Snapshot(w http.ResponseWriter, r *http.Request) {
-	vq, ok := h.videoQueue()
-	if !ok {
-		h.writeError(w, http.StatusServiceUnavailable, "video service not available")
-		return
-	}
-	tmp, err := os.CreateTemp("", "ankerctl_snapshot_*.jpg")
-	if err != nil {
-		h.writeError(w, http.StatusInternalServerError, "failed to create temp file")
-		return
-	}
-	path := tmp.Name()
-	_ = tmp.Close()
-	defer os.Remove(path)
-
-	if err := vq.CaptureSnapshot(r.Context(), path); err != nil {
-		h.writeError(w, http.StatusInternalServerError, fmt.Sprintf("snapshot failed: %v", err))
-		return
-	}
-	ts := time.Now().Format("20060102_150405")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=ankerctl_snapshot_%s.jpg", ts))
-	http.ServeFile(w, r, path)
-}
+// Snapshot is the legacy handler kept for compilation compatibility.
+// Route /api/snapshot is now handled by SnapshotCapture in timelapse.go,
+// which also archives the captured frame in the Snapshots tab.
+// FORGE-NOTE: This method is intentionally empty; removing it would require
+// updating any external callers that reference h.Snapshot by method value.

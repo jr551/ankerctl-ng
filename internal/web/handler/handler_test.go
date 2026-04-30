@@ -107,7 +107,7 @@ func TestGeneralEndpoints(t *testing.T) {
 
 func TestHistoryShape(t *testing.T) {
 	h := newTestHandler(t)
-	_, err := h.db.RecordStart("part.gcode", "task-1")
+	_, err := h.db.RecordStart("part.gcode", "task-1", "", 0)
 	if err != nil {
 		t.Fatalf("RecordStart: %v", err)
 	}
