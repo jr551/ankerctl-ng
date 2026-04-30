@@ -1,13 +1,69 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/django1982/ankerctl/internal/db"
 	"github.com/django1982/ankerctl/internal/model"
 )
+
+// thumbnailRelpath returns the conventional thumbnail path for an archive relpath.
+// Mirrors GCodeArchiver.ThumbnailRelpath — kept here to avoid a service import in handler.
+func thumbnailRelpath(archiveRelpath string) string {
+	if archiveRelpath == "" {
+		return ""
+	}
+	return archiveRelpath + ".thumbnail.png"
+}
+
+// historyEntryJSON converts a PrintRecord into the full JSON shape expected by
+// the Python reference (web/__init__.py app_api_history).
+//
+// Python fields added beyond the original Go stub:
+//   - thumbnail_url:        "/api/history/{id}/thumbnail" or null
+//   - thumbnail_available:  bool — true when the thumbnail file exists on disk
+//   - printer_name:         null (Phase C will add per-printer isolation)
+//   - archive_relpath:      pass-through from DB row
+//   - archive_size:         pass-through from DB row
+//   - failure_reason:       pass-through from DB row
+func historyEntryJSON(rec *db.PrintRecord, archiver GCodeArchiverIface) map[string]any {
+	row := map[string]any{
+		"id":              rec.ID,
+		"filename":        rec.Filename,
+		"status":          rec.Status,
+		"started_at":      rec.StartedAt,
+		"finished_at":     rec.FinishedAt,
+		"duration_sec":    rec.DurationSec,
+		"progress":        rec.Progress,
+		// Extended fields matching Python response shape
+		"printer_name":    nil, // FORGE-NOTE: per-printer isolation deferred to Phase C
+		"archive_relpath": rec.ArchiveRelpath,
+		"archive_size":    rec.ArchiveSize,
+		"failure_reason":  rec.FailureReason,
+	}
+
+	// thumbnail_available: true when the thumbnail file actually exists on disk.
+	// thumbnail_url: absolute URL path to the thumbnail endpoint, or null.
+	thumbAvailable := false
+	if archiver != nil && rec.ArchiveRelpath != nil && *rec.ArchiveRelpath != "" {
+		thumbRelpath := thumbnailRelpath(*rec.ArchiveRelpath)
+		if archiver.Exists(thumbRelpath) {
+			thumbAvailable = true
+		}
+	}
+	row["thumbnail_available"] = thumbAvailable
+	if thumbAvailable {
+		row["thumbnail_url"] = fmt.Sprintf("/api/history/%d/thumbnail", rec.ID)
+	} else {
+		row["thumbnail_url"] = nil
+	}
+
+	return row
+}
 
 // HistoryList returns print history.
 // Response shape matches Python: {"entries": [...], "total": N}.
@@ -51,15 +107,7 @@ func (h *Handler) HistoryList(w http.ResponseWriter, r *http.Request) {
 
 	entries := make([]map[string]any, 0, len(records))
 	for _, rec := range records {
-		row := map[string]any{
-			"id":           rec.ID,
-			"filename":     rec.Filename,
-			"status":       rec.Status,
-			"started_at":   rec.StartedAt,
-			"finished_at":  rec.FinishedAt,
-			"duration_sec": rec.DurationSec,
-			"progress":     rec.Progress,
-		}
+		row := historyEntryJSON(&rec, h.gcodeArchiver)
 		entries = append(entries, row)
 	}
 	h.writeJSON(w, http.StatusOK, map[string]any{"entries": entries, "total": total})
@@ -125,6 +173,19 @@ func (h *Handler) HistoryReprint(w http.ResponseWriter, r *http.Request) {
 		if cfg.UploadRateMbps > 0 {
 			rateLimit = cfg.UploadRateMbps
 		}
+	}
+
+	// Pre-flight: refuse reprint when the printer is already busy.
+	// Python: if mqtt.is_printing or mqtt.has_pending_print_start → 409
+	// Placed after DB/archive validation so 404/500 take precedence over 503/409.
+	mqtt, mqttOK := h.mqttQueue()
+	if !mqttOK {
+		h.writeError(w, http.StatusServiceUnavailable, "MQTT service unavailable — printer not connected")
+		return
+	}
+	if mqtt.IsPrinting() {
+		h.writeError(w, http.StatusConflict, "printer is busy")
+		return
 	}
 
 	// Borrow services (same pattern as SlicerUpload).

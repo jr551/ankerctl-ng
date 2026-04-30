@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/django1982/ankerctl/internal/service"
@@ -12,8 +13,26 @@ const (
 	zOffsetMaxMM = 10.0
 )
 
+// zOffsetShape builds the nested z_offset object matching the Python
+// _serialize_z_offset_state shape:
+//
+//	{"mm": <float>, "display": "<n.2f> mm", "available": true}
+//
+// target_mm is always null — we do not expose pending target state.
+func zOffsetShape(mm float64) map[string]any {
+	return map[string]any{
+		"mm":        mm,
+		"target_mm": nil,
+		"available": true,
+		"display":   fmt.Sprintf("%.2f mm", mm),
+	}
+}
+
 // ZOffsetGet returns the current Z-offset in millimeters.
 // GET /api/printer/z-offset
+//
+// Python reference: web/__init__.py app_api_printer_z_offset
+// Response shape: {"status":"ok","z_offset":{"mm":N,"target_mm":null,"available":true,"display":"N.NN mm"}}
 func (h *Handler) ZOffsetGet(w http.ResponseWriter, r *http.Request) {
 	mqtt, ok := h.mqttQueue()
 	if !ok {
@@ -28,7 +47,8 @@ func (h *Handler) ZOffsetGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeJSON(w, http.StatusOK, map[string]any{
-		"z_offset_mm": offset,
+		"status":   "ok",
+		"z_offset": zOffsetShape(offset),
 	})
 }
 
@@ -68,8 +88,8 @@ func (h *Handler) ZOffsetSet(w http.ResponseWriter, r *http.Request) {
 
 	offset, _ := mqtt.ZOffsetMM()
 	h.writeJSON(w, http.StatusOK, map[string]any{
-		"status":      "ok",
-		"z_offset_mm": offset,
+		"status":   "ok",
+		"z_offset": zOffsetShape(offset),
 	})
 }
 
@@ -109,8 +129,8 @@ func (h *Handler) ZOffsetNudge(w http.ResponseWriter, r *http.Request) {
 
 	offset, _ := mqtt.ZOffsetMM()
 	h.writeJSON(w, http.StatusOK, map[string]any{
-		"status":      "ok",
-		"z_offset_mm": offset,
+		"status":   "ok",
+		"z_offset": zOffsetShape(offset),
 	})
 }
 
@@ -134,9 +154,9 @@ func (h *Handler) ZOffsetRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeJSON(w, http.StatusOK, map[string]any{
-		"status":      "ok",
-		"message":     "Read live Z-offset from MQTT ct=1021.",
-		"z_offset_mm": offsetMM,
+		"status":   "ok",
+		"message":  fmt.Sprintf("Read live Z-offset %.2f mm from MQTT 1021.", offsetMM),
+		"z_offset": zOffsetShape(offsetMM),
 	})
 }
 
