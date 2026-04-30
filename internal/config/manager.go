@@ -289,6 +289,7 @@ func MergeConfigPreferences(existing, newConfig *model.Config) *model.Config {
 	newConfig.Notifications = existing.Notifications
 	newConfig.Timelapse = existing.Timelapse
 	newConfig.HomeAssistant = existing.HomeAssistant
+	newConfig.Camera = existing.Camera
 
 	return newConfig
 }

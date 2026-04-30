@@ -17,6 +17,7 @@ type Config struct {
 	HomeAssistant      HomeAssistantConfig    `json:"-"`
 	FilamentService    FilamentServiceConfig  `json:"-"`
 	Appearance         AppearanceConfig       `json:"-"`
+	Camera             CameraConfig           `json:"-"`
 }
 
 // configJSON is the JSON wire format for Config.
@@ -31,6 +32,7 @@ type configJSON struct {
 	HomeAssistant      json.RawMessage `json:"home_assistant,omitempty"`
 	FilamentService    json.RawMessage `json:"filament_service,omitempty"`
 	Appearance         json.RawMessage `json:"appearance,omitempty"`
+	Camera             json.RawMessage `json:"camera,omitempty"`
 }
 
 // NewConfig creates a Config with default settings.
@@ -45,6 +47,7 @@ func NewConfig(account *Account, printers []Printer) *Config {
 		HomeAssistant:      DefaultHomeAssistantConfig(),
 		FilamentService:    DefaultFilamentServiceConfig(),
 		Appearance:         DefaultAppearanceConfig(),
+		Camera:             DefaultCameraConfig(),
 	}
 }
 
@@ -103,6 +106,11 @@ func (c Config) MarshalJSON() ([]byte, error) {
 		return nil, fmt.Errorf("marshal appearance: %w", err)
 	}
 
+	cameraData, err := json.Marshal(c.Camera)
+	if err != nil {
+		return nil, fmt.Errorf("marshal camera: %w", err)
+	}
+
 	return json.Marshal(configJSON{
 		Type:               "Config",
 		Account:            accountData,
@@ -114,6 +122,7 @@ func (c Config) MarshalJSON() ([]byte, error) {
 		HomeAssistant:      haData,
 		FilamentService:    fsData,
 		Appearance:         appData,
+		Camera:             cameraData,
 	})
 }
 
@@ -198,6 +207,17 @@ func (c *Config) UnmarshalJSON(data []byte) error {
 	if raw.Appearance != nil && string(raw.Appearance) != "null" {
 		if err := json.Unmarshal(raw.Appearance, &c.Appearance); err != nil {
 			c.Appearance = DefaultAppearanceConfig()
+		}
+	}
+
+	// Camera with defaults merge
+	c.Camera = DefaultCameraConfig()
+	if raw.Camera != nil && string(raw.Camera) != "null" {
+		if err := json.Unmarshal(raw.Camera, &c.Camera); err != nil {
+			c.Camera = DefaultCameraConfig()
+		}
+		if c.Camera.PerPrinter == nil {
+			c.Camera.PerPrinter = map[string]PrinterCameraEntry{}
 		}
 	}
 
