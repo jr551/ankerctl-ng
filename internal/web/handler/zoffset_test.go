@@ -97,6 +97,22 @@ func TestZOffsetGetNoService(t *testing.T) {
 	}
 }
 
+func TestZOffsetShape(t *testing.T) {
+	shape := zOffsetShape(1.23)
+	if shape["mm"] != 1.23 {
+		t.Errorf("mm: got %v, want 1.23", shape["mm"])
+	}
+	if shape["target_mm"] != nil {
+		t.Errorf("target_mm: got %v, want nil", shape["target_mm"])
+	}
+	if shape["available"] != true {
+		t.Errorf("available: got %v, want true", shape["available"])
+	}
+	if shape["display"] != "1.23 mm" {
+		t.Errorf("display: got %v, want '1.23 mm'", shape["display"])
+	}
+}
+
 func TestZOffsetSetValidation(t *testing.T) {
 	h := &Handler{}
 
