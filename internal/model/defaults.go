@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 // DefaultUploadRateMbps is the default upload speed limit.
@@ -125,6 +126,76 @@ type FilamentServiceConfig struct {
 // AppearanceConfig holds appearance/theming settings.
 type AppearanceConfig struct {
 	AccentColor string `json:"accent_color"`
+}
+
+// PrintersWithoutCamera lists model codes that have no built-in camera.
+// Comparison is case-insensitive. Matches Python's PRINTERS_WITHOUT_CAMERA set.
+var PrintersWithoutCamera = map[string]struct{}{"V8110": {}}
+
+// CameraSourcePrinter and CameraSourceExternal are the two valid source values.
+const (
+	CameraSourcePrinter  = "printer"
+	CameraSourceExternal = "external"
+)
+
+// ExternalCameraSettings holds the external camera configuration.
+type ExternalCameraSettings struct {
+	Name        string `json:"name"`
+	StreamURL   string `json:"stream_url"`
+	SnapshotURL string `json:"snapshot_url"`
+	RefreshSec  int    `json:"refresh_sec"`
+}
+
+// PrinterCameraEntry holds per-printer camera source settings.
+type PrinterCameraEntry struct {
+	Source   string                 `json:"source"`
+	External ExternalCameraSettings `json:"external"`
+}
+
+// CameraConfig is the top-level camera configuration persisted in config.json.
+// It mirrors Python's `default_camera_config`: `{"per_printer": {}}`.
+type CameraConfig struct {
+	PerPrinter map[string]PrinterCameraEntry `json:"per_printer"`
+}
+
+// DefaultCameraConfig returns the default camera configuration.
+func DefaultCameraConfig() CameraConfig {
+	return CameraConfig{PerPrinter: map[string]PrinterCameraEntry{}}
+}
+
+// DefaultExternalCameraSettings returns default external camera settings.
+func DefaultExternalCameraSettings() ExternalCameraSettings {
+	return ExternalCameraSettings{RefreshSec: 3}
+}
+
+// PrinterSupportsCamera returns true when the printer model has a built-in camera.
+func PrinterSupportsCamera(model string) bool {
+	if model == "" {
+		return false
+	}
+	_, noCam := PrintersWithoutCamera[strings.ToUpper(model)]
+	return !noCam
+}
+
+// ResolvedCameraSettings is the computed camera state returned by the API.
+// Mirrors Python's resolve_camera_settings() return value.
+type ResolvedCameraSettings struct {
+	PrinterIndex    int                    `json:"printer_index"`
+	PrinterName     string                 `json:"printer_name,omitempty"`
+	PrinterSN       string                 `json:"printer_sn,omitempty"`
+	Source          string                 `json:"source"`
+	ConfiguredSource string               `json:"configured_source"`
+	EffectiveSource string                 `json:"effective_source"`
+	PrinterSupported bool                  `json:"printer_supported"`
+	FeatureAvailable bool                  `json:"feature_available"`
+	Detail          string                 `json:"detail"`
+	External        ResolvedExternalCamera `json:"external"`
+}
+
+// ResolvedExternalCamera embeds ExternalCameraSettings with an added Configured flag.
+type ResolvedExternalCamera struct {
+	ExternalCameraSettings
+	Configured bool `json:"configured"`
 }
 
 // filamentServiceManualSwapMinTempC and filamentServiceManualSwapMaxTempC are the

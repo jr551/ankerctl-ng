@@ -93,6 +93,8 @@ func (s *Server) registerRoutes() {
 	r.Post("/api/settings/filament-service", h.SettingsFilamentServiceUpdate)
 	r.Get("/api/settings/appearance", h.SettingsAppearanceGet)
 	r.Post("/api/settings/appearance", h.SettingsAppearanceUpdate)
+	r.Get("/api/settings/camera", h.SettingsCameraGet)
+	r.Post("/api/settings/camera", h.SettingsCameraUpdate)
 
 	// History
 	r.Get("/api/history", h.HistoryList)
