@@ -57,7 +57,7 @@ func (h *Handler) CameraFrame(w http.ResponseWriter, r *http.Request) {
 	}
 	tmpPath := tmp.Name()
 	_ = tmp.Close()
-	defer os.Remove(tmpPath)
+	defer func() { _ = os.Remove(tmpPath) }()
 
 	switch effective {
 	case model.CameraSourcePrinter:
