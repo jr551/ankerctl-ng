@@ -30,6 +30,11 @@ func TestTimelapseStatus_Idle(t *testing.T) {
 }
 
 func TestManualStart_Success(t *testing.T) {
+	// ManualStart now calls ffmpegAvailable() as a pre-flight check.
+	// Skip gracefully when ffmpeg is not installed in the test environment.
+	if ffmpegAvailable() != nil {
+		t.Skip("ffmpeg not available")
+	}
 	svc := newTestTimelapseService(t)
 	// Enable so StartCapture does something.
 	svc.enabled = true
