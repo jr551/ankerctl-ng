@@ -175,6 +175,19 @@ func (h *Handler) HistoryReprint(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Pre-flight: refuse reprint when the printer is already busy.
+	// Python: if mqtt.is_printing or mqtt.has_pending_print_start → 409
+	// Placed after DB/archive validation so 404/500 take precedence over 503/409.
+	mqtt, mqttOK := h.mqttQueue()
+	if !mqttOK {
+		h.writeError(w, http.StatusServiceUnavailable, "MQTT service unavailable — printer not connected")
+		return
+	}
+	if mqtt.IsPrinting() {
+		h.writeError(w, http.StatusConflict, "printer is busy")
+		return
+	}
+
 	// Borrow services (same pattern as SlicerUpload).
 	if _, err := h.svc.Borrow("ppppservice"); err != nil {
 		h.writeError(w, http.StatusServiceUnavailable, "pppp service unavailable")
