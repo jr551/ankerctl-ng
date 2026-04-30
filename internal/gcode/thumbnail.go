@@ -34,7 +34,7 @@ func ExtractThumbnail(data []byte) ([]byte, error) {
 
 	var (
 		bestImage []byte
-		bestArea  int = -1
+		bestArea = -1
 
 		currentArea  int
 		currentLines []string

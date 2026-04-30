@@ -350,7 +350,7 @@ func (d *DB) GetEntry(id int64) (*PrintRecord, error) {
 	if err != nil {
 		return nil, fmt.Errorf("GetEntry query: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	records, err := scanHistoryRows(rows)
 	if err != nil {

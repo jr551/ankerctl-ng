@@ -259,7 +259,7 @@ func (h *Handler) SnapshotCapture(w http.ResponseWriter, r *http.Request) {
 	}
 	tmpPath := tmp.Name()
 	_ = tmp.Close()
-	defer os.Remove(tmpPath)
+	defer func() { _ = os.Remove(tmpPath) }()
 
 	if err := vq.CaptureSnapshot(r.Context(), tmpPath); err != nil {
 		h.writeError(w, http.StatusInternalServerError, fmt.Sprintf("snapshot failed: %v", err))
@@ -270,9 +270,8 @@ func (h *Handler) SnapshotCapture(w http.ResponseWriter, r *http.Request) {
 
 	// Best-effort: archive the snapshot so it appears in the Snapshots tab.
 	if tl, tlOK := h.timelapse(); tlOK {
-		if _, _, archErr := tl.SaveManualSnapshot(tmpPath, takenAt); archErr != nil {
-			// Non-fatal — still return the image to the caller.
-		}
+		// Non-fatal — still return the image to the caller even if archiving fails.
+		_, _, _ = tl.SaveManualSnapshot(tmpPath, takenAt)
 	}
 
 	ts := takenAt.Format("20060102_150405")

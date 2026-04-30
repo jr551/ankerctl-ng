@@ -337,9 +337,8 @@ func (s *TimelapseService) SaveManualSnapshot(sourcePath string, takenAt time.Ti
 		Status:     "manual",
 		FrameCount: 1,
 	}
-	if err := writeSnapshotMeta(archiveDir, m); err != nil {
-		// Non-fatal — collection is still usable without meta.
-	}
+	// Non-fatal — collection is still usable without meta.
+	_ = writeSnapshotMeta(archiveDir, m)
 	return collectionID, frameName, nil
 }
 
@@ -399,12 +398,12 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 	out, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 	if _, err := io.Copy(out, in); err != nil {
 		return err
 	}
