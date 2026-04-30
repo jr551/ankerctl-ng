@@ -43,14 +43,27 @@ func (s *TimelapseService) Status() TimelapseStatus {
 }
 
 // ManualStart triggers a timelapse capture for the given print filename.
-// Returns the current filename or an error if a capture is already active.
+// Returns the current filename or an error if a capture is already active,
+// timelapse is disabled, or ffmpeg is not available.
+//
+// StartCapture itself is fire-and-forget (async command channel). ManualStart
+// performs synchronous pre-flight checks for the conditions that would cause
+// startCaptureLocked to silently no-op, so callers get an actionable error
+// rather than a successful-looking response that produces no capture.
 func (s *TimelapseService) ManualStart(filename string) (string, error) {
 	s.mu.Lock()
 	alreadyActive := s.active != nil
+	enabled := s.enabled
 	s.mu.Unlock()
 
 	if alreadyActive {
 		return "", fmt.Errorf("timelapse capture already in progress")
+	}
+	if !enabled {
+		return "", fmt.Errorf("timelapse is disabled")
+	}
+	if err := ffmpegAvailable(); err != nil {
+		return "", fmt.Errorf("timelapse: ffmpeg not available: %w", err)
 	}
 	if filename == "" {
 		filename = "manual_" + time.Now().Format("20060102_150405")
