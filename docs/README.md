@@ -14,7 +14,8 @@ docs/
   api/                REST API reference, WebSocket protocol, OctoPrint compat
   protocols/          MQTT, PPPP, and HTTP auth protocol documentation
   development/        Developer onboarding, build instructions, testing guide
-  agents/             Agent workflow templates and historical phase reports
+  agents/             Agent workflow templates and handoff format
+  archive/            Historical migration artefacts (phase reports, closed open-items, completed plans)
   img/                Screenshots used in README and wiki
 ```
 
@@ -27,6 +28,7 @@ docs/
 - [Development Guide](development/README.md) -- Getting started, building, testing, contributing
 - [Migration Plan](MIGRATION_PLAN.md) -- Historical 17-phase migration roadmap
 - [Migration Status](wiki/Migration-Status.md) -- Final phase summary
+- [Archive](archive/README.md) -- Historical migration artefacts (phase reports, closed open-items)
 
 ## Related Files
 

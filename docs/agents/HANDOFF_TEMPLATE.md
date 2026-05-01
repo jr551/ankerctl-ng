@@ -17,7 +17,7 @@ PRIORITY: high|medium|low
 ```text
 HANDOFF to go-migration-architect
 TASK: Implement Phase 4 auth middleware in Go.
-CONTEXT: Use docs/architecture/phase4-plan.md; keep Python auth order.
+CONTEXT: Use docs/archive/phase4-plan.md; keep Python auth order.
 EXPECTED OUTPUT: auth.go + auth_test.go with full test matrix.
 CONSTRAINTS: No new dependencies, preserve protected GET behavior.
 BLOCKERS: Go toolchain currently unavailable for local test execution.

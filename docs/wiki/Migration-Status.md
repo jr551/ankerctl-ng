@@ -92,7 +92,7 @@ All known gaps are resolved as of v1.0.0.
 
 ## QA Reports
 
-Detailed QA reports are stored in `docs/agents/reports/`:
+Detailed QA reports are stored in `docs/archive/agent-reports/`:
 
 | Date | Report | Focus |
 |------|--------|-------|

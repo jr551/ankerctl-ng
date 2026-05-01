@@ -68,7 +68,7 @@ To ensure project stability and a clean history:
 ### Migration Status
 The migration is complete. **v1.0.0 released 2026-05-01** with full 1:1 feature parity to the Python original.
 Refer to `docs/MIGRATION_PLAN.md` for the historical 17-phase roadmap and design decisions.
-Historical phase reports and reviews are archived in `docs/agents/reports/`.
+Historical phase reports and reviews are archived in `docs/archive/agent-reports/`.
 
 ## Reference Documentation
 - `README.md`: General project info.
