@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -397,6 +398,74 @@ func stringVal(m map[string]any, key string) string {
 	default:
 		return ""
 	}
+}
+
+// ImportSlicer auto-detects and imports the active slicer login cache from the
+// local machine's well-known paths (macOS/Windows only). Returns an error when
+// no valid cache file is found or the running OS is unsupported.
+//
+// POST /api/ankerctl/config/import-slicer
+//
+// Response (200): {"status":"ok","redirect":"/api/ankerctl/server/reload"}
+// Error (404): no slicer cache detected on this machine
+// Error (400): cache found but could not be parsed as valid config
+// Error (503): config manager unavailable
+//
+// (Python: app_api_ankerctl_config_import_slicer)
+func (h *Handler) ImportSlicer(w http.ResponseWriter, r *http.Request) {
+	loginPath := autodetectSlicerLoginPath()
+	if loginPath == "" {
+		h.writeError(w, http.StatusNotFound,
+			"Could not auto-detect the slicer cache. Make sure eufyMake Studio is open and signed in, then try again.")
+		return
+	}
+
+	f, err := os.Open(loginPath)
+	if err != nil {
+		slog.Warn("import-slicer: open login file", "path", loginPath, "error", err)
+		h.writeError(w, http.StatusBadRequest, "Slicer cache import failed: could not open login file")
+		return
+	}
+	defer f.Close()
+
+	var cfg model.Config
+	if err := json.NewDecoder(f).Decode(&cfg); err != nil {
+		slog.Warn("import-slicer: parse login file", "path", loginPath, "error", err)
+		h.writeError(w, http.StatusBadRequest, "Slicer cache import failed: invalid config format")
+		return
+	}
+
+	if h.cfg == nil {
+		h.writeError(w, http.StatusServiceUnavailable, "config manager unavailable")
+		return
+	}
+	if err := h.cfg.Save(&cfg); err != nil {
+		slog.Error("import-slicer: save config", "error", err)
+		h.writeError(w, http.StatusInternalServerError, "Slicer cache import failed: could not persist config")
+		return
+	}
+
+	go h.discoverAndPersistPrinterIPs(cfg.Printers)
+	h.writeJSON(w, http.StatusOK, map[string]string{
+		"status":   "ok",
+		"redirect": "/api/ankerctl/server/reload",
+	})
+}
+
+// autodetectSlicerLoginPath returns the first readable slicer login cache file
+// found on the local machine. Returns "" when the OS is unsupported or no
+// candidate exists.
+//
+// Mirrors web/platform.py autodetect_login_path() for macOS and Windows paths.
+// Linux is not supported (no local slicer login cache path exists).
+func autodetectSlicerLoginPath() string {
+	candidates := slicerLoginCandidates()
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return ""
 }
 
 // ConfigLogout deletes the stored credentials and stops all services,

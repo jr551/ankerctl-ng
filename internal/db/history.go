@@ -395,6 +395,49 @@ func (d *DB) HistoryCount() (int64, error) {
 	return count, nil
 }
 
+// DeleteEntries removes specific history entries by their IDs.
+// It returns the count of rows actually deleted.
+// Entries that do not exist are silently ignored.
+//
+// (Python: PrintHistory.delete_entries)
+func (d *DB) DeleteEntries(ids []int64) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	var deleted int64
+	err := d.withTx(func(tx *sql.Tx) error {
+		// Build parameterised IN clause: DELETE FROM print_history WHERE id IN (?,?,?)
+		placeholders := strings.Repeat("?,", len(ids))
+		placeholders = placeholders[:len(placeholders)-1] // trim trailing comma
+		query := "DELETE FROM print_history WHERE id IN (" + placeholders + ")"
+
+		args := make([]any, len(ids))
+		for i, id := range ids {
+			args[i] = id
+		}
+
+		res, err := tx.Exec(query, args...)
+		if err != nil {
+			return fmt.Errorf("DeleteEntries: %w", err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("DeleteEntries RowsAffected: %w", err)
+		}
+		deleted = n
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	d.log.Info("history: deleted entries", "requested", len(ids), "deleted", deleted)
+	return deleted, nil
+}
+
 // ClearHistory deletes all entries from print_history.
 //
 // (Python: PrintHistory.clear)
