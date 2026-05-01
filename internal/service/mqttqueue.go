@@ -69,31 +69,33 @@ type MqttQueue struct {
 
 	history *db.DB
 
-	mu                 sync.Mutex
-	client             mqttClient
-	clientFactory      mqttClientFactory
-	lastQuery          time.Time
-	queryInterval      time.Duration
-	pollInterval       time.Duration
-	printActive        bool
-	pendingHistory     bool
-	lastFilename       string
-	currentPrinterStat int
-	lastMessageTime    time.Time
-	stopRequested      bool
-	gcodeLayerCount    int
-	debugLogging       bool
-	lastStatePayload   map[string]any
-	bedLevelingGrid    map[string]any
-	printProgress      *int
-	printSpeed         *int
-	currentLayer       *int
-	totalLayers        *int
-	timeElapsed        *int
-	timeRemaining      *int
-	filamentIssue      string
-	filamentIssueCode  string
-	runoutPending      bool
+	mu                     sync.Mutex
+	client                 mqttClient
+	clientFactory          mqttClientFactory
+	lastQuery              time.Time
+	queryInterval          time.Duration
+	pollInterval           time.Duration
+	printActive            bool
+	pendingHistory         bool
+	lastFilename           string
+	currentPrinterStat     int
+	lastMessageTime        time.Time
+	stopRequested          bool
+	gcodeLayerCount        int
+	debugLogging           bool
+	lastStatePayload       map[string]any
+	bedLevelingGrid        map[string]any
+	printProgress          *int
+	printSpeed             *int
+	currentLayer           *int
+	totalLayers            *int
+	timeElapsed            *int
+	timeRemaining          *int
+	filamentIssue          string
+	filamentIssueCode      string
+	runoutPending          bool
+	pendingStoredFilePath  string
+	storedFilePreviewCache map[string]string
 
 	// Temperature tracking (populated from ct=1003 / ct=1004 messages).
 	nozzleTemp       *int
@@ -113,15 +115,16 @@ type MqttQueue struct {
 // NewMqttQueue creates a MqttQueue service.
 func NewMqttQueue(cfg *config.Manager, printerIndex int, history *db.DB, ha *HomeAssistantService, timelapse eventSink) *MqttQueue {
 	q := &MqttQueue{
-		BaseWorker:         NewBaseWorker("mqttqueue"),
-		log:                slog.With("service", "mqttqueue"),
-		history:            history,
-		queryInterval:      10 * time.Second,
-		pollInterval:       100 * time.Millisecond,
-		currentPrinterStat: -1,
-		timelapse:          timelapse,
-		bedLevelingGrid:    make(map[string]any),
-		zAxisRecoupCh:      make(chan struct{}, 1),
+		BaseWorker:             NewBaseWorker("mqttqueue"),
+		log:                    slog.With("service", "mqttqueue"),
+		history:                history,
+		queryInterval:          10 * time.Second,
+		pollInterval:           100 * time.Millisecond,
+		currentPrinterStat:     -1,
+		timelapse:              timelapse,
+		bedLevelingGrid:        make(map[string]any),
+		storedFilePreviewCache: make(map[string]string),
+		zAxisRecoupCh:          make(chan struct{}, 1),
 	}
 	// Assign ha only when non-nil to avoid the typed-nil-interface trap:
 	// a (*HomeAssistantService)(nil) stored in an eventSink interface is
@@ -204,6 +207,7 @@ func (q *MqttQueue) resetPrintStateLocked() {
 	q.filamentIssue = ""
 	q.filamentIssueCode = ""
 	q.runoutPending = false
+	q.pendingStoredFilePath = ""
 	q.nozzleTemp = nil
 	q.nozzleTempTarget = nil
 	q.bedTemp = nil
@@ -427,8 +431,12 @@ func (q *MqttQueue) handlePayload(obj map[string]any) {
 
 func (q *MqttQueue) handleCT1044(payload map[string]any) {
 	filename := extractFilename(payload)
+	previewURL := extractPreviewURL(payload)
+	filePath, _ := payload["filePath"].(string)
+	if filePath != "" && previewURL != "" && isStoredFileSourcePath(filePath) {
+		q.cacheStoredFilePreview(filePath, previewURL)
+	}
 	if filename == "" {
-		filePath, _ := payload["filePath"].(string)
 		if filePath != "" {
 			filename = filepath.Base(filePath)
 		}
@@ -469,6 +477,7 @@ func (q *MqttQueue) handleCT1000(payload map[string]any) {
 	case mqttStatePrinting:
 		if !q.printActive {
 			q.printActive = true
+			q.pendingStoredFilePath = ""
 			if q.lastFilename != "" {
 				shouldRecord = true
 				filename = q.lastFilename
@@ -477,6 +486,7 @@ func (q *MqttQueue) handleCT1000(payload map[string]any) {
 			}
 		}
 	case mqttStatePaused:
+		q.pendingStoredFilePath = ""
 		if q.runoutPending && q.filamentIssue != filamentIssueRunout {
 			q.markFilamentRunoutLocked()
 		}
@@ -534,6 +544,9 @@ func (q *MqttQueue) handlePrintSchedule(payload map[string]any) {
 	filename = firstString(msg.Name, msg.FileName, msg.Filename, msg.FileNameAlt, msg.GCode, msg.GCodeName)
 	if filename != "" {
 		q.lastFilename = filename
+		if q.pendingStoredFilePath != "" && filepath.Base(q.pendingStoredFilePath) == filename {
+			q.pendingStoredFilePath = ""
+		}
 		shouldRecord = q.printActive && q.pendingHistory
 		if shouldRecord {
 			q.pendingHistory = false
