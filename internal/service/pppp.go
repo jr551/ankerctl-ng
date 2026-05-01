@@ -412,7 +412,7 @@ func (s *PPPPService) Upload(ctx context.Context, info UploadInfo, payload []byt
 
 	// 4. Send DATA — 32KB blocks match the hardened Python blocksize.
 	const (
-		blockSize     = 1024 * 32
+		blockSize      = 1024 * 32
 		maxDataRetries = 2
 	)
 	var pos int64

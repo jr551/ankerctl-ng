@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -24,18 +23,18 @@ type stubService struct {
 	state service.RunState
 }
 
-func (s *stubService) WorkerInit()                               {}
-func (s *stubService) WorkerStart() error                        { return nil }
-func (s *stubService) WorkerRun(_ context.Context) error         { return nil }
-func (s *stubService) WorkerStop()                               {}
-func (s *stubService) Name() string                              { return s.name }
-func (s *stubService) State() service.RunState                   { return s.state }
-func (s *stubService) Start(_ context.Context)                   { s.state = service.StateRunning }
-func (s *stubService) Stop()                                     { s.state = service.StateStopped }
-func (s *stubService) Restart()                                  {}
-func (s *stubService) Shutdown()                                 {}
-func (s *stubService) Notify(_ any)                              {}
-func (s *stubService) Tap(_ func(any)) func()                    { return func() {} }
+func (s *stubService) WorkerInit()                       {}
+func (s *stubService) WorkerStart() error                { return nil }
+func (s *stubService) WorkerRun(_ context.Context) error { return nil }
+func (s *stubService) WorkerStop()                       {}
+func (s *stubService) Name() string                      { return s.name }
+func (s *stubService) State() service.RunState           { return s.state }
+func (s *stubService) Start(_ context.Context)           { s.state = service.StateRunning }
+func (s *stubService) Stop()                             { s.state = service.StateStopped }
+func (s *stubService) Restart()                          {}
+func (s *stubService) Shutdown()                         {}
+func (s *stubService) Notify(_ any)                      {}
+func (s *stubService) Tap(_ func(any)) func()            { return func() {} }
 
 // stubFileTransfer implements the Service interface AND embeds the SendFile
 // method that the handler calls via type assertion to *service.FileTransferService.
@@ -484,11 +483,4 @@ func TestSlicerUpload_ReadError(t *testing.T) {
 	if w.Code != http.StatusOK && w.Code != http.StatusBadRequest {
 		t.Fatalf("unexpected status = %d; body: %s", w.Code, w.Body.String())
 	}
-}
-
-// errorReader is a reader that always returns an error.
-type errorReader struct{}
-
-func (errorReader) Read([]byte) (int, error) {
-	return 0, io.ErrUnexpectedEOF
 }

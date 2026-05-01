@@ -11,7 +11,7 @@ type deviceStateStub struct {
 	unsupported bool
 }
 
-func (s *deviceStateStub) IsLoggedIn() bool         { return s.login }
+func (s *deviceStateStub) IsLoggedIn() bool          { return s.login }
 func (s *deviceStateStub) IsUnsupportedDevice() bool { return s.unsupported }
 
 func TestRequirePrinter_PrinterPathWithoutLogin_Returns503(t *testing.T) {
@@ -127,4 +127,3 @@ func TestRequirePrinter_WebSocketPathWithoutLogin_Returns503(t *testing.T) {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusServiceUnavailable)
 	}
 }
-

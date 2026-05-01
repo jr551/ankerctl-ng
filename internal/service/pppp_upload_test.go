@@ -461,4 +461,3 @@ func TestPPPPService_Upload_JSONHandshakePayload(t *testing.T) {
 		t.Errorf("device = %v, want \"ankerctl\"", j["device"])
 	}
 }
-

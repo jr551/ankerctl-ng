@@ -15,8 +15,8 @@ import (
 // --- mock archiver ---
 
 type mockArchiver struct {
-	data    map[string][]byte  // relpath → bytes
-	readErr map[string]error   // relpath → forced error
+	data    map[string][]byte // relpath → bytes
+	readErr map[string]error  // relpath → forced error
 }
 
 func newMockArchiver() *mockArchiver {

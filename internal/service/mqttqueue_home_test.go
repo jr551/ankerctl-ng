@@ -17,11 +17,11 @@ import (
 // as part of the Z homing sequence.
 func TestMqttQueue_SendHome(t *testing.T) {
 	cases := []struct {
-		name     string
-		axis     string
-		wantCT   int
-		wantVal  int
-		wantErr  bool
+		name    string
+		axis    string
+		wantCT  int
+		wantVal int
+		wantErr bool
 	}{
 		{name: "all axes (default)", axis: "all", wantCT: int(protocol.MqttCmdMoveZero), wantVal: 2},
 		{name: "empty string = all", axis: "", wantCT: int(protocol.MqttCmdMoveZero), wantVal: 2},

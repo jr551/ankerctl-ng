@@ -30,12 +30,12 @@ const (
 
 // Swap phase constants — used in phase-guard checks.
 const (
-	phaseHeatingUnload  = "heating_unload"
-	phaseUnloading      = "unloading"
-	phaseHeatingLoad    = "heating_load"
-	phaseLoading        = "loading"
-	phaseAwaitManual    = "await_manual_swap"
-	phaseError          = "error"
+	phaseHeatingUnload = "heating_unload"
+	phaseUnloading     = "unloading"
+	phaseHeatingLoad   = "heating_load"
+	phaseLoading       = "loading"
+	phaseAwaitManual   = "await_manual_swap"
+	phaseError         = "error"
 )
 
 // activePhases is the set of phases during which confirm/cancel are blocked (409).
@@ -50,8 +50,8 @@ var activePhases = map[string]bool{
 type filamentSwapState struct {
 	Token                  string  `json:"token"`
 	CreatedAt              int64   `json:"created_at"`
-	Mode                   string  `json:"mode"`    // "manual" | "legacy"
-	Phase                  string  `json:"phase"`   // see phase constants above
+	Mode                   string  `json:"mode"`  // "manual" | "legacy"
+	Phase                  string  `json:"phase"` // see phase constants above
 	Message                string  `json:"message"`
 	Error                  string  `json:"error"`
 	UnloadProfileID        *int64  `json:"unload_profile_id"`
@@ -196,20 +196,20 @@ func serializeFilamentSwapState(state *filamentSwapState) map[string]any {
 	}
 
 	swap := map[string]any{
-		"token":                    state.Token,
-		"created_at":               state.CreatedAt,
-		"mode":                     state.Mode,
-		"phase":                    state.Phase,
-		"message":                  nilIfEmpty(state.Message),
-		"error":                    nilIfEmpty(state.Error),
-		"unload_profile_id":        state.UnloadProfileID,
-		"unload_profile_name":      state.UnloadProfileName,
-		"load_profile_id":          state.LoadProfileID,
-		"load_profile_name":        state.LoadProfileName,
-		"unload_temp_c":            state.UnloadTempC,
-		"load_temp_c":              state.LoadTempC,
-		"unload_length_mm":         state.UnloadLengthMM,
-		"load_length_mm":           state.LoadLengthMM,
+		"token":                      state.Token,
+		"created_at":                 state.CreatedAt,
+		"mode":                       state.Mode,
+		"phase":                      state.Phase,
+		"message":                    nilIfEmpty(state.Message),
+		"error":                      nilIfEmpty(state.Error),
+		"unload_profile_id":          state.UnloadProfileID,
+		"unload_profile_name":        state.UnloadProfileName,
+		"load_profile_id":            state.LoadProfileID,
+		"load_profile_name":          state.LoadProfileName,
+		"unload_temp_c":              state.UnloadTempC,
+		"load_temp_c":                state.LoadTempC,
+		"unload_length_mm":           state.UnloadLengthMM,
+		"load_length_mm":             state.LoadLengthMM,
 		"manual_swap_preheat_temp_c": state.ManualSwapPreheatTempC,
 	}
 	return map[string]any{
@@ -697,10 +697,10 @@ func (h *Handler) FilamentServiceSwapStart(w http.ResponseWriter, r *http.Reques
 
 	// Profile/length fields are only required in legacy mode.
 	var (
-		unloadProfile *db.FilamentProfile
-		loadProfile   *db.FilamentProfile
-		unloadTempC   = preheatTempC
-		loadTempC     = preheatTempC
+		unloadProfile  *db.FilamentProfile
+		loadProfile    *db.FilamentProfile
+		unloadTempC    = preheatTempC
+		loadTempC      = preheatTempC
 		unloadLengthMM float64
 		loadLengthMM   float64
 	)
@@ -1006,9 +1006,12 @@ func (h *Handler) SettingsFilamentServiceGet(w http.ResponseWriter, _ *http.Requ
 // POST /api/settings/filament-service — auth-protected.
 //
 // Accepts both:
-//   {"filament_service": {"allow_legacy_swap": false, "manual_swap_preheat_temp_c": 140}}
+//
+//	{"filament_service": {"allow_legacy_swap": false, "manual_swap_preheat_temp_c": 140}}
+//
 // and flat form:
-//   {"allow_legacy_swap": false, "manual_swap_preheat_temp_c": 140}
+//
+//	{"allow_legacy_swap": false, "manual_swap_preheat_temp_c": 140}
 func (h *Handler) SettingsFilamentServiceUpdate(w http.ResponseWriter, r *http.Request) {
 	var raw map[string]any
 	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {

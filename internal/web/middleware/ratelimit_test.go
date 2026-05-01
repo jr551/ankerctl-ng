@@ -70,4 +70,3 @@ func TestRateLimit_WebsocketPathsAreExcluded(t *testing.T) {
 		}
 	}
 }
-

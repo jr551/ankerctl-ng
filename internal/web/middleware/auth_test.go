@@ -12,8 +12,8 @@ type authTestState struct {
 	sm     *SessionManager
 }
 
-func (s *authTestState) APIKey() string                 { return s.apiKey }
-func (s *authTestState) IsLoggedIn() bool               { return s.login }
+func (s *authTestState) APIKey() string                  { return s.apiKey }
+func (s *authTestState) IsLoggedIn() bool                { return s.login }
 func (s *authTestState) SessionManager() *SessionManager { return s.sm }
 
 func okHandler() http.Handler {
@@ -191,7 +191,6 @@ func TestSecureEquals_SameContent(t *testing.T) {
 		t.Fatal("expected false for different content")
 	}
 }
-
 
 // TestAuth_ProtectedGETPaths_TableDriven covers every entry in
 // protectedGETPaths/protectedGETPrefixes to ensure parity with the Python

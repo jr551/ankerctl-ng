@@ -305,4 +305,3 @@ func jsonResponse(status int, body string) *http.Response {
 		Header:     make(http.Header),
 	}
 }
-

@@ -248,8 +248,8 @@ func TestUnmarshalPacket_InvalidSignature(t *testing.T) {
 	key := mustHex(t, "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff")
 
 	tests := []struct {
-		name  string
-		sig   [2]byte
+		name string
+		sig  [2]byte
 	}{
 		{"all zeros", [2]byte{0x00, 0x00}},
 		{"reversed MA", [2]byte{'A', 'M'}},

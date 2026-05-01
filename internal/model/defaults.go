@@ -180,16 +180,16 @@ func PrinterSupportsCamera(model string) bool {
 // ResolvedCameraSettings is the computed camera state returned by the API.
 // Mirrors Python's resolve_camera_settings() return value.
 type ResolvedCameraSettings struct {
-	PrinterIndex    int                    `json:"printer_index"`
-	PrinterName     string                 `json:"printer_name,omitempty"`
-	PrinterSN       string                 `json:"printer_sn,omitempty"`
-	Source          string                 `json:"source"`
-	ConfiguredSource string               `json:"configured_source"`
-	EffectiveSource string                 `json:"effective_source"`
-	PrinterSupported bool                  `json:"printer_supported"`
-	FeatureAvailable bool                  `json:"feature_available"`
-	Detail          string                 `json:"detail"`
-	External        ResolvedExternalCamera `json:"external"`
+	PrinterIndex     int                    `json:"printer_index"`
+	PrinterName      string                 `json:"printer_name,omitempty"`
+	PrinterSN        string                 `json:"printer_sn,omitempty"`
+	Source           string                 `json:"source"`
+	ConfiguredSource string                 `json:"configured_source"`
+	EffectiveSource  string                 `json:"effective_source"`
+	PrinterSupported bool                   `json:"printer_supported"`
+	FeatureAvailable bool                   `json:"feature_available"`
+	Detail           string                 `json:"detail"`
+	External         ResolvedExternalCamera `json:"external"`
 }
 
 // ResolvedExternalCamera embeds ExternalCameraSettings with an added Configured flag.
@@ -201,8 +201,8 @@ type ResolvedExternalCamera struct {
 // filamentServiceManualSwapMinTempC and filamentServiceManualSwapMaxTempC are the
 // clamp bounds for ManualSwapPreheatTempC.
 const (
-	filamentServiceManualSwapMinTempC = 130
-	filamentServiceManualSwapMaxTempC = 150
+	filamentServiceManualSwapMinTempC  = 130
+	filamentServiceManualSwapMaxTempC  = 150
 	filamentServiceDefaultPreheatTempC = 140
 )
 
@@ -373,16 +373,16 @@ func DefaultFilamentSwapAdvancedConfig() map[string]any {
 			"swap_cooldown_delay_s":       cooldownDelayS,
 		},
 		"commands": map[string]any{
-			"set_nozzle_temp":  "M104 S{temp_c}",
-			"cooldown_nozzle":  "M104 S0",
-			"home_all":         "native:home_z",
-			"relative_mode":    "G91",
-			"z_lift":           "G1 Z{z_lift_mm} F{z_feedrate}",
-			"wait_for_moves":   "M400",
-			"absolute_mode":    "G90",
-			"prime":            "M83\nG1 E{prime_length_mm} F{prime_feedrate}\nM400\nM82",
-			"unload":           "M83\nG1 E-{unload_length_mm} F{unload_feedrate}\nM400\nM82",
-			"load":             "M83\nG1 E{load_length_mm} F{load_feedrate}\nM400\nM82",
+			"set_nozzle_temp": "M104 S{temp_c}",
+			"cooldown_nozzle": "M104 S0",
+			"home_all":        "native:home_z",
+			"relative_mode":   "G91",
+			"z_lift":          "G1 Z{z_lift_mm} F{z_feedrate}",
+			"wait_for_moves":  "M400",
+			"absolute_mode":   "G90",
+			"prime":           "M83\nG1 E{prime_length_mm} F{prime_feedrate}\nM400\nM82",
+			"unload":          "M83\nG1 E-{unload_length_mm} F{unload_feedrate}\nM400\nM82",
+			"load":            "M83\nG1 E{load_length_mm} F{load_feedrate}\nM400\nM82",
 		},
 		"available_variables": map[string]any{
 			"set_nozzle_temp": []string{"temp_c"},

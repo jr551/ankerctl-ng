@@ -81,13 +81,13 @@ func TestPrinterMJPEGCmd(t *testing.T) {
 	const videoURL = "http://127.0.0.1:4470/video?for_timelapse=1"
 
 	tests := []struct {
-		name        string
-		apiKey      string
-		fps         int
-		quality     int
-		scale       MJPEGScale
-		wantArgs    []string
-		wantAbsent  []string
+		name       string
+		apiKey     string
+		fps        int
+		quality    int
+		scale      MJPEGScale
+		wantArgs   []string
+		wantAbsent []string
 	}{
 		{
 			name:     "fps 0 defaults to 5",
@@ -104,11 +104,11 @@ func TestPrinterMJPEGCmd(t *testing.T) {
 			wantArgs: []string{"-q:v", "5"},
 		},
 		{
-			name:    "apiKey non-empty adds headers arg",
-			fps:     5,
-			quality: 5,
-			scale:   MJPEGScale{0, 0},
-			apiKey:  "MY_SECRET_KEY",
+			name:     "apiKey non-empty adds headers arg",
+			fps:      5,
+			quality:  5,
+			scale:    MJPEGScale{0, 0},
+			apiKey:   "MY_SECRET_KEY",
 			wantArgs: []string{"-headers", "X-Api-Key: MY_SECRET_KEY\r\n"},
 		},
 		{
@@ -166,10 +166,10 @@ func TestExternalMJPEGCmd(t *testing.T) {
 	scale := MJPEGScale{0, 0} // scale doesn't affect RTSP detection
 
 	tests := []struct {
-		name        string
-		inputURL    string
-		wantArgs    []string
-		wantAbsent  []string
+		name       string
+		inputURL   string
+		wantArgs   []string
+		wantAbsent []string
 	}{
 		{
 			name:     "rtsp:// adds rtsp_transport tcp and nobuffer args",

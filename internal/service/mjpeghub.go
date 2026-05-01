@@ -254,4 +254,3 @@ func SnapshotExternal(ctx context.Context, inputURL, outputPath string) error {
 	}
 	return nil
 }
-

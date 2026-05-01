@@ -31,12 +31,12 @@ type LogEntry struct {
 // afterID, if >= 0, returns only entries with ID > afterID.
 // Pass afterID = -1 to get the most recent `limit` entries (same as after_id=None).
 type SnapshotResult struct {
-	Entries    []LogEntry `json:"entries"`
-	FirstID    int        `json:"first_id"`
-	LastID     int        `json:"last_id"`
-	NextAfter  int        `json:"next_after"`
-	Truncated  bool       `json:"truncated"`
-	MaxLines   int        `json:"max_lines"`
+	Entries   []LogEntry `json:"entries"`
+	FirstID   int        `json:"first_id"`
+	LastID    int        `json:"last_id"`
+	NextAfter int        `json:"next_after"`
+	Truncated bool       `json:"truncated"`
+	MaxLines  int        `json:"max_lines"`
 }
 
 // NewRingBuffer creates a RingBuffer with the given capacity.

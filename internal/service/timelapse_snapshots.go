@@ -34,12 +34,12 @@ type SnapshotCollection struct {
 }
 
 type snapshotMeta struct {
-	Filename      string  `json:"filename,omitempty"`
-	VideoFilename string  `json:"video_filename,omitempty"`
-	ArchivedAt    string  `json:"archived_at,omitempty"`
-	Status        string  `json:"status,omitempty"` // "archived" | "manual"
-	SourceLabel   string  `json:"source_label,omitempty"`
-	FrameCount    int     `json:"frame_count,omitempty"`
+	Filename      string `json:"filename,omitempty"`
+	VideoFilename string `json:"video_filename,omitempty"`
+	ArchivedAt    string `json:"archived_at,omitempty"`
+	Status        string `json:"status,omitempty"` // "archived" | "manual"
+	SourceLabel   string `json:"source_label,omitempty"`
+	FrameCount    int    `json:"frame_count,omitempty"`
 }
 
 func (s *TimelapseService) snapshotArchiveBase() string {
@@ -202,7 +202,7 @@ func (s *TimelapseService) ListSnapshots() []SnapshotCollection {
 	entries, err := os.ReadDir(archiveBase)
 	if err == nil {
 		type archEntry struct {
-			path string
+			path  string
 			mtime time.Time
 		}
 		var arches []archEntry

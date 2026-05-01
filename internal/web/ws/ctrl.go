@@ -128,7 +128,7 @@ func (h *Handler) ctrlHandleMsg(conn *websocket.Conn, msg any) (stop bool) {
 		)
 		return true
 	}
-	conn.SetWriteDeadline(time.Now().Add(writeWait))
+	_ = conn.SetWriteDeadline(time.Now().Add(writeWait))
 	if err := conn.WriteJSON(msg); err != nil {
 		return true
 	}

@@ -25,7 +25,7 @@ func (h *recordHandler) Handle(_ context.Context, r slog.Record) error {
 	return nil
 }
 func (h *recordHandler) WithAttrs(_ []slog.Attr) slog.Handler { return h }
-func (h *recordHandler) WithGroup(_ string) slog.Handler       { return h }
+func (h *recordHandler) WithGroup(_ string) slog.Handler      { return h }
 
 func (h *recordHandler) last() slog.Record {
 	h.mu.Lock()

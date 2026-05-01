@@ -34,4 +34,3 @@ func TestSecurityHeaders_SetsExpectedHeaders(t *testing.T) {
 		t.Fatalf("X-XSS-Protection = %q, want empty (should not be set)", got)
 	}
 }
-

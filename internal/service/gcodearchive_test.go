@@ -15,12 +15,12 @@ func TestSanitizeArchiveFilename(t *testing.T) {
 	}{
 		{"cube.gcode", "cube.gcode"},
 		{"my model.gcode", "my model.gcode"},
-		{"../etc/passwd", "passwd"},                // only basename is kept (filepath.Base)
-		{"foo:bar?.gcode", "foo_bar_.gcode"},       // forbidden chars replaced
-		{"", "upload.gcode"},                       // empty → fallback
-		{"   ", "upload.gcode"},                    // whitespace-only → fallback
-		{"../../../etc/passwd", "passwd"},           // deep traversal: only basename
-		{"/absolute/path.gcode", "path.gcode"},     // only basename is kept
+		{"../etc/passwd", "passwd"},            // only basename is kept (filepath.Base)
+		{"foo:bar?.gcode", "foo_bar_.gcode"},   // forbidden chars replaced
+		{"", "upload.gcode"},                   // empty → fallback
+		{"   ", "upload.gcode"},                // whitespace-only → fallback
+		{"../../../etc/passwd", "passwd"},      // deep traversal: only basename
+		{"/absolute/path.gcode", "path.gcode"}, // only basename is kept
 	}
 	for _, tc := range cases {
 		got := sanitizeArchiveFilename(tc.input)

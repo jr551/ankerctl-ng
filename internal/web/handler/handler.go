@@ -24,11 +24,11 @@ import (
 // items for unsupported devices without needing to call model.IsPrinterSupported
 // from inside the template.
 type PrinterSummary struct {
-	Index   int
-	Name    string
-	SN      string
-	Model   string
-	IPAddr  string
+	Index     int
+	Name      string
+	SN        string
+	Model     string
+	IPAddr    string
 	Supported bool
 }
 

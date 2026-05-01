@@ -11,9 +11,9 @@ import (
 
 func TestZOffsetStepsConversion(t *testing.T) {
 	tests := []struct {
-		name     string
-		steps    int
-		wantMM   float64
+		name   string
+		steps  int
+		wantMM float64
 	}{
 		{"zero", 0, 0.0},
 		{"positive", 13, 0.13},
@@ -41,8 +41,8 @@ func TestZOffsetMMToSteps(t *testing.T) {
 		{"zero", 0.0, 0},
 		{"positive", 0.13, 13},
 		{"negative", -0.05, -5},
-		{"rounding up", 0.125, 13},    // rounds to nearest
-		{"rounding down", 0.124, 12},  // rounds to nearest
+		{"rounding up", 0.125, 13},   // rounds to nearest
+		{"rounding down", 0.124, 12}, // rounds to nearest
 		{"large", 10.0, 1000},
 	}
 	for _, tt := range tests {

@@ -40,4 +40,3 @@ func TestBodySizeLimit_GetIsNotLimited(t *testing.T) {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
 	}
 }
-

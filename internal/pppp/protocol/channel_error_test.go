@@ -39,7 +39,7 @@ func TestChannel_InFlightWindowReleaseAfterACK(t *testing.T) {
 	ch.maxInFlight = 3
 
 	// Enqueue 5 packets.
-	ch.Write(make([]byte, 1024*5), false)
+	_, _, _ = ch.Write(make([]byte, 1024*5), false)
 
 	// Poll fills the window to 3.
 	first := ch.Poll(time.Now())
@@ -70,9 +70,9 @@ func TestChannel_OutOfOrderAcks(t *testing.T) {
 	ch := NewChannel(1)
 
 	// Enqueue and transmit 3 packets (indices 0, 1, 2).
-	ch.Write([]byte("pkt0"), false)
-	ch.Write([]byte("pkt1"), false)
-	ch.Write([]byte("pkt2"), false)
+	_, _, _ = ch.Write([]byte("pkt0"), false)
+	_, _, _ = ch.Write([]byte("pkt1"), false)
+	_, _, _ = ch.Write([]byte("pkt2"), false)
 	ch.Poll(time.Now()) // flush backlog → txQueue
 
 	// ACK index 2 first (out of order), then 1, then 0.
@@ -88,7 +88,7 @@ func TestChannel_OutOfOrderAcks(t *testing.T) {
 
 func TestChannel_DuplicateACKIgnored(t *testing.T) {
 	ch := NewChannel(2)
-	ch.Write([]byte("data"), false)
+	_, _, _ = ch.Write([]byte("data"), false)
 	ch.Poll(time.Now())
 
 	ch.RXAck([]uint16{0}) // first ACK

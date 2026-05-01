@@ -207,12 +207,12 @@ func TestIsPrinterSupported_KnownUnsupported(t *testing.T) {
 		want  bool
 	}{
 		{"V8260", false},
-		{"v8260", false},      // case-insensitive
-		{"V8260 ", false},     // trailing space trimmed
-		{"", true},            // empty → assume supported (fail-open)
+		{"v8260", false},  // case-insensitive
+		{"V8260 ", false}, // trailing space trimmed
+		{"", true},        // empty → assume supported (fail-open)
 		{"AnkerMake M5", true},
-		{"V8110", true},       // M5C has no camera, but is supported
-		{"V6260", true},       // similar but different model
+		{"V8110", true}, // M5C has no camera, but is supported
+		{"V6260", true}, // similar but different model
 	}
 	for _, c := range cases {
 		got := IsPrinterSupported(c.model)

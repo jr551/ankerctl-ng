@@ -341,7 +341,7 @@ func TestHomeAssistantSensorValueTypes(t *testing.T) {
 			time.Sleep(60 * time.Millisecond)
 
 			published := client.getPublished()
-			stateTopic := fmt.Sprintf("ankerctl/SN_VALS/state")
+			stateTopic := "ankerctl/SN_VALS/state"
 			var lastState map[string]any
 			for i := len(published) - 1; i >= 0; i-- {
 				if published[i].topic == stateTopic {
@@ -554,14 +554,14 @@ func TestHomeAssistantDiscoveryPayloadCompleteness(t *testing.T) {
 		// Sensors with units must have unit_of_measurement.
 		if entityType == "sensor" {
 			unitsExpected := map[string]string{
-				"print_progress":    "%",
-				"print_speed":       "mm/s",
-				"nozzle_temp":       "\u00b0C",
-				"bed_temp":          "\u00b0C",
+				"print_progress":     "%",
+				"print_speed":        "mm/s",
+				"nozzle_temp":        "\u00b0C",
+				"bed_temp":           "\u00b0C",
 				"nozzle_temp_target": "\u00b0C",
-				"bed_temp_target":   "\u00b0C",
-				"time_elapsed":      "s",
-				"time_remaining":    "s",
+				"bed_temp_target":    "\u00b0C",
+				"time_elapsed":       "s",
+				"time_remaining":     "s",
 			}
 			// Extract sensor ID from topic.
 			parts := strings.Split(pub.topic, "/")

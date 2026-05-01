@@ -548,8 +548,8 @@ func (h *Handler) UploadRateUpdate(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, map[string]any{
 		"status":                       "ok",
 		"upload_rate_mbps":             rate,
-		"effective_upload_rate_mbps":    effectiveRate,
-		"effective_upload_rate_source":  effectiveSource,
+		"effective_upload_rate_mbps":   effectiveRate,
+		"effective_upload_rate_source": effectiveSource,
 	})
 }
 
