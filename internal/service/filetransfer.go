@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -65,8 +64,6 @@ type FileTransferService struct {
 	mqtt     FileTransferMqttQueue
 
 	reqCh chan uploadRequest
-
-	mu sync.RWMutex
 }
 
 // NewFileTransferService creates a FileTransferService.

@@ -341,7 +341,7 @@ func TestHomeAssistantSensorValueTypes(t *testing.T) {
 			time.Sleep(60 * time.Millisecond)
 
 			published := client.getPublished()
-			stateTopic := fmt.Sprintf("ankerctl/SN_VALS/state")
+			stateTopic := "ankerctl/SN_VALS/state"
 			var lastState map[string]any
 			for i := len(published) - 1; i >= 0; i-- {
 				if published[i].topic == stateTopic {

@@ -98,7 +98,7 @@ func (h *Handler) Video(w http.ResponseWriter, r *http.Request) {
 		case <-readDone:
 			return
 		case frame := <-out:
-			conn.SetWriteDeadline(time.Now().Add(writeWait))
+			_ = conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := conn.WriteMessage(websocket.BinaryMessage, frame); err != nil {
 				return
 			}

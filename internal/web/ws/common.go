@@ -98,7 +98,7 @@ func (h *Handler) streamJSON(r *http.Request, w http.ResponseWriter, svc service
 	defer unsub()
 
 	h.writePump(r.Context(), conn, out, func(c *websocket.Conn, msg any) error {
-		c.SetWriteDeadline(time.Now().Add(writeWait))
+		_ = c.SetWriteDeadline(time.Now().Add(writeWait))
 		return c.WriteJSON(msg)
 	})
 }
@@ -143,11 +143,4 @@ func (h *Handler) readPump(conn *websocket.Conn, done chan<- struct{}) {
 			return
 		}
 	}
-}
-
-func boolToStatus(v bool) string {
-	if v {
-		return "connected"
-	}
-	return "disconnected"
 }

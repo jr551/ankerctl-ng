@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -119,7 +120,7 @@ func TestRingBufferHandler_Enabled(t *testing.T) {
 	ring := NewRingBuffer(10)
 	h := NewRingBufferHandler(nil, ring)
 	// Without an inner handler all levels should be reported enabled.
-	if !h.Enabled(nil, slog.LevelDebug) {
+	if !h.Enabled(context.Background(), slog.LevelDebug) {
 		t.Error("expected Enabled(Debug) = true for nil inner")
 	}
 }
@@ -145,7 +146,7 @@ func TestRingBufferHandler_FormatsTimestamp(t *testing.T) {
 	ring := NewRingBuffer(5)
 	h := NewRingBufferHandler(nil, ring)
 	rec := slog.NewRecord(time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC), slog.LevelInfo, "ts-test", 0)
-	_ = h.Handle(nil, rec)
+	_ = h.Handle(context.Background(), rec)
 
 	lines := ring.Lines()
 	if !strings.HasPrefix(lines[0], "2025-01-02T03:04:05") {

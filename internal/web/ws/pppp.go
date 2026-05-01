@@ -113,7 +113,7 @@ func (h *Handler) PPPPState(w http.ResponseWriter, r *http.Request) {
 
 	pollStatus := func() {
 		now := time.Now()
-		currentStatus := "dormant"
+		var currentStatus string
 		currentServiceState := service.StateStopped
 
 		var (
@@ -230,7 +230,7 @@ func (h *Handler) PPPPState(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	h.writePump(r.Context(), conn, out, func(c *websocket.Conn, msg any) error {
-		c.SetWriteDeadline(time.Now().Add(writeWait))
+		_ = c.SetWriteDeadline(time.Now().Add(writeWait))
 		return c.WriteJSON(msg)
 	})
 }

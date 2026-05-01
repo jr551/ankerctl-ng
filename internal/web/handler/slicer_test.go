@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -484,11 +483,4 @@ func TestSlicerUpload_ReadError(t *testing.T) {
 	if w.Code != http.StatusOK && w.Code != http.StatusBadRequest {
 		t.Fatalf("unexpected status = %d; body: %s", w.Code, w.Body.String())
 	}
-}
-
-// errorReader is a reader that always returns an error.
-type errorReader struct{}
-
-func (errorReader) Read([]byte) (int, error) {
-	return 0, io.ErrUnexpectedEOF
 }

@@ -51,7 +51,7 @@ func newTemplates() (*Templates, error) {
 
 	for _, f := range files {
 		// Use the base name as the template name for sub-templates
-		name := f
+		var name string
 		if strings.HasPrefix(f, "static/tabs/") {
 			name = strings.TrimPrefix(f, "static/")
 		} else {

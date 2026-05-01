@@ -232,12 +232,3 @@ func TestManagerShutdownBlocks(t *testing.T) {
 		t.Errorf("svc2 not stopped after Shutdown: %v", s)
 	}
 }
-
-func lastEvent(s *mockService) string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if len(s.events) == 0 {
-		return ""
-	}
-	return s.events[len(s.events)-1]
-}
