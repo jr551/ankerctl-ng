@@ -51,3 +51,17 @@ Save context to a file:
 3. Generate context (`agent-context.sh`).
 4. Execute task.
 5. Update `.claude/agent-memory/<agent>/MEMORY.md` with stable learnings only.
+
+## Report Lifecycle
+
+```
+docs/agents/reports/       ← inbox: reports awaiting review
+        ↓  (after review verdict: approved / approved-with-fixes)
+docs/archive/agent-reports/ ← done: reviewed and closed
+```
+
+- Completion reports (`COMPLETION_TEMPLATE.md`) are created in `docs/agents/reports/`.
+- After Claude reviews and the verdict is **approved** or **approved-with-fixes**, the agent
+  moves both the completion report and the review report to `docs/archive/agent-reports/`.
+- Reports still in `docs/agents/reports/` = pending review.
+- Reports in `docs/archive/agent-reports/` = reviewed and closed.
