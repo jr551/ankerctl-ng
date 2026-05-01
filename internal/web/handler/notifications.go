@@ -87,7 +87,16 @@ func (h *Handler) NotificationsTest(w http.ResponseWriter, r *http.Request) {
 
 	appriseCfg := cfg.Notifications.Apprise
 	if apprisePayload != nil {
-		mergeIntoStruct(&appriseCfg, apprisePayload)
+		// Only allow overriding connection parameters for the test request.
+		// This is defense-in-depth against SSRF: even if URL validation in
+		// notifyURL() were bypassed, an attacker cannot influence templates,
+		// event flags, or other behavior through the test endpoint.
+		if v, ok := apprisePayload["server_url"].(string); ok {
+			appriseCfg.ServerURL = v
+		}
+		if v, ok := apprisePayload["key"].(string); ok {
+			appriseCfg.Key = v
+		}
 	}
 
 	var snap notifications.SnapshotCapturer

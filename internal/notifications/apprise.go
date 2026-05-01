@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -405,5 +406,20 @@ func (c *Client) notifyURL() string {
 		slog.Warn("Apprise server URL has unsupported scheme, ignoring", "url", full)
 		return ""
 	}
+	if isPrivateHost(u) {
+		slog.Warn("Apprise server URL points to private/loopback address, ignoring", "url", full)
+		return ""
+	}
 	return full
+}
+
+// isPrivateHost reports whether u's host resolves to a private, loopback, or
+// link-local address. This prevents SSRF against internal services and cloud IMDS.
+func isPrivateHost(u *url.URL) bool {
+	host := u.Hostname()
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()
+	}
+	lower := strings.ToLower(host)
+	return lower == "localhost" || strings.HasSuffix(lower, ".local")
 }
