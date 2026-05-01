@@ -4,6 +4,10 @@ Use this template when Claude reviews a Codex completion report.
 Save alongside the completion report:
 `docs/agents/reports/<same-date>-<phase>-review.md`
 
+**After review is complete** (verdict = `approved` or `approved-with-fixes`):
+move both the completion report and this review report to `docs/archive/agent-reports/`.
+This keeps `docs/agents/reports/` as the inbox for reports that still need a review.
+
 ---
 
 ```
