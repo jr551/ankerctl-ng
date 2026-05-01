@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Go reimplementation of [ankerctl](https://github.com/ankermake/ankermake-m5-protocol) — a CLI and web UI for AnkerMake M5 3D printers. The Python source lives at `/data_hdd/ankermake-m5-protocol-django1982/`. This Go rewrite targets 1:1 feature parity.
 
 **Module**: `github.com/django1982/ankerctl` (Go 1.22)
-**Migration plan**: `docs/MIGRATION_PLAN.md` — 17-phase roadmap, all phases complete (v1.0.0 released 2026-05-01). See `docs/agents/reports/` for historical phase reports/reviews.
+**Migration plan**: `docs/MIGRATION_PLAN.md` — 17-phase roadmap, all phases complete (v1.0.0 released 2026-05-01). See `docs/archive/agent-reports/` for historical phase reports/reviews.
 
 ## Common Commands
 

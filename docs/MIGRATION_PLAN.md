@@ -197,7 +197,7 @@ ankerctl_go_remake/
 ## Aktuelle Status-Matrix
 
 **Stand**: 2026-05-01 (v1.0.0 release)
-**Quelle**: Code-Stand + `agents/reports/*`
+**Quelle**: Code-Stand + `archive/agent-reports/*`
 
 | Phase | Status | Kurzkommentar |
 |---|---|---|
@@ -219,7 +219,7 @@ ankerctl_go_remake/
 | 16. Docker + CI | done | Multi-arch build, health check, CI pipeline |
 | 17. Parity-Gaps Audit | done | Issues #48–#53 abgearbeitet (siehe unten) |
 
-Historische Restpunkte (jetzt geschlossen) sind in [`agents/OPEN_ITEMS.md`](agents/OPEN_ITEMS.md) dokumentiert.
+Historische Restpunkte (jetzt geschlossen) sind in [`archive/OPEN_ITEMS.md`](archive/OPEN_ITEMS.md) dokumentiert.
 
 ---
 
