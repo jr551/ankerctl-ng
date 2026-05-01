@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	defaultVideoStallTimeout = 15 * time.Second
+	defaultVideoStallTimeout = 5 * time.Second
 	videoFPSWindow           = 5 * time.Second
 )
 
