@@ -1,8 +1,11 @@
 # ankerctl Go Migration Plan
 
-**Status**: Migration abgeschlossen (Phasen 1-16 abgeschlossen)
+**Status**: Phasen 1-16 abgeschlossen — offene Parity-Gaps (Phase 17, siehe unten)
 **Erstellt**: 2026-03-03
-**Ziel**: 1:1 Feature-Parity mit dem Python-Original (Erreicht)
+**Ziel**: 1:1 Feature-Parity mit dem Python-Original
+
+> **Parity-Audit 2026-05-01**: Automatisierter Agent-Review hat 12 fehlende Routen,
+> 5 fehlende MQTT-Handler und 2 Bugfixes identifiziert. Tracking via Issues #48–#53.
 
 ---
 
@@ -675,6 +678,66 @@ All env vars from the Python project must be supported identically:
 
 Parallelizable: Phase 2+3, Phase 5+6+7, Phase 10+11+12, Phase 14+15
 Realistic with parallelization: **~25 working days**
+
+---
+
+---
+
+## Phase 17 — Parity-Gaps (2026-05-01 Audit)
+
+Ergebnis des automatisierten Agent-Parity-Reviews gegen `web/__init__.py` und `web/service/`.
+Alle Items sind als GitHub Issues erfasst.
+
+### 17.1 — Fehlende Datei-Endpunkte (Issue #48) `HOCH`
+
+| Route | Beschreibung |
+|---|---|
+| `GET /api/files/printer` | GCode-Dateiliste auf Drucker |
+| `GET /api/files/printer/thumbnail` | GCode-Thumbnail abrufen |
+| `POST /api/files/printer/print` | Druckjob aus Drucker-Datei starten |
+
+Neuer Handler `internal/web/handler/files.go`. Thumbnail-Parser (`internal/gcode/thumbnail.go`) bereits vorhanden.
+
+### 17.2 — Fehlende MQTT ct-Handler (Issue #49) `HOCH`
+
+| ct | Name | Auswirkung |
+|---|---|---|
+| 1001 | PrintSchedule | Geplante Jobs werden nicht weitergeleitet |
+| 1006 | PrintSpeed | Speed-Updates fehlen in WS/HA |
+| 1052 | ModelLayer | Layer-Fortschritt fehlt |
+| 1085 | FilamentRunout | Filament-Alert fehlt |
+| 1086 | FilamentJam | Filament-Stau-Alert fehlt |
+
+Ergänzung in `internal/service/mqttqueue.go` switch-Block.
+
+### 17.3 — Fehlende Printer-State-Endpunkte (Issue #50) `MITTEL`
+
+`GET /api/printer/runtime-state`, `GET /api/printer/settings-summary`, `GET /api/printer/alerts`
+→ Ergänzung in `internal/web/handler/printer.go`
+
+### 17.4 — Fehlende Settings/Config-Routen (Issue #51) `MITTEL`
+
+`GET|POST /api/settings/filament-service/advanced`, `POST /api/settings/launcher-bat`,
+`POST /api/ankerctl/config/import-slicer`, `POST /api/history/delete`
+→ Ergänzung in bestehenden Handlern + `internal/web/routes.go`
+
+### 17.5 — Video-Stall-Timeout falsch (Issue #52) `BUG`
+
+`defaultVideoStallTimeout` in `internal/service/videoqueue.go`: Go=15s, Python=5s.
+One-liner fix.
+
+### 17.6 — HomeAssistant device_class unvollständig (Issue #53) `BUG`
+
+Temperatursensoren und Zeitsensoren haben kein `device_class` in Discovery-Payloads.
+Fix in `internal/service/homeassistant.go`.
+
+### Nicht-Gaps (verifiziert)
+
+- **P2PCmdType**: Go implementiert alle 5–7 aktiv genutzten Commands (101 Enum-Einträge in Python sind größtenteils nie aufgerufen)
+- **PPPP PktType**: Volle Parity (81/81)
+- **Timelapse**: Resume + Orphan-Recovery vorhanden
+- **FileTransfer**: JSON-Handshake + start_print korrekt
+- **Crypto**: AES-IV, ECDH, PPPP crypto_curse bit-exakt
 
 ---
 
