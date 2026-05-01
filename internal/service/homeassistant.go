@@ -294,12 +294,12 @@ func (s *HomeAssistantService) publishDiscovery() {
 		{"id": "print_filename", "name": "Print Filename", "value": "{{ value_json.print_filename | default('') }}"},
 		{"id": "print_layer", "name": "Print Layer", "value": "{{ value_json.print_layer | default('') }}"},
 		{"id": "print_speed", "name": "Print Speed", "unit": "mm/s", "value": "{{ value_json.print_speed | default(0) }}"},
-		{"id": "nozzle_temp", "name": "Nozzle Temperature", "unit": "°C", "value": "{{ value_json.nozzle_temp | default(0) }}"},
-		{"id": "bed_temp", "name": "Bed Temperature", "unit": "°C", "value": "{{ value_json.bed_temp | default(0) }}"},
-		{"id": "nozzle_temp_target", "name": "Nozzle Target", "unit": "°C", "value": "{{ value_json.nozzle_temp_target | default(0) }}"},
-		{"id": "bed_temp_target", "name": "Bed Target", "unit": "°C", "value": "{{ value_json.bed_temp_target | default(0) }}"},
-		{"id": "time_elapsed", "name": "Time Elapsed", "unit": "s", "value": "{{ value_json.time_elapsed | default(0) }}"},
-		{"id": "time_remaining", "name": "Time Remaining", "unit": "s", "value": "{{ value_json.time_remaining | default(0) }}"},
+		{"id": "nozzle_temp", "name": "Nozzle Temperature", "unit": "°C", "device_class": "temperature", "value": "{{ value_json.nozzle_temp | default(0) }}"},
+		{"id": "bed_temp", "name": "Bed Temperature", "unit": "°C", "device_class": "temperature", "value": "{{ value_json.bed_temp | default(0) }}"},
+		{"id": "nozzle_temp_target", "name": "Nozzle Target", "unit": "°C", "device_class": "temperature", "value": "{{ value_json.nozzle_temp_target | default(0) }}"},
+		{"id": "bed_temp_target", "name": "Bed Target", "unit": "°C", "device_class": "temperature", "value": "{{ value_json.bed_temp_target | default(0) }}"},
+		{"id": "time_elapsed", "name": "Time Elapsed", "unit": "s", "device_class": "duration", "value": "{{ value_json.time_elapsed | default(0) }}"},
+		{"id": "time_remaining", "name": "Time Remaining", "unit": "s", "device_class": "duration", "value": "{{ value_json.time_remaining | default(0) }}"},
 	}
 
 	for _, sensor := range sensors {
@@ -314,6 +314,9 @@ func (s *HomeAssistantService) publishDiscovery() {
 		}
 		if unit := sensor["unit"]; unit != "" {
 			cfg["unit_of_measurement"] = unit
+		}
+		if deviceClass := sensor["device_class"]; deviceClass != "" {
+			cfg["device_class"] = deviceClass
 		}
 		topic := fmt.Sprintf("%s/sensor/%s/%s/config", s.cfg.DiscoveryPrefix, s.nodeID, sensor["id"])
 		s.publishJSON(topic, cfg, true)
@@ -412,4 +415,3 @@ func nonEmpty(v, fallback string) string {
 	}
 	return v
 }
-
