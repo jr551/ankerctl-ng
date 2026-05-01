@@ -78,6 +78,9 @@ func (s *Server) registerRoutes() {
 
 	// Upload
 	r.Post("/api/files/local", h.SlicerUpload)
+	r.Get("/api/files/printer", h.PrinterFilesList)
+	r.Get("/api/files/printer/thumbnail", h.PrinterFileThumbnail)
+	r.Post("/api/files/printer/print", h.PrinterFilePrint)
 
 	// Notifications
 	r.Get("/api/notifications/settings", h.NotificationsGet)
