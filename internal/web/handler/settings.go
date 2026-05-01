@@ -2,12 +2,212 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/django1982/ankerctl/internal/model"
 	"github.com/django1982/ankerctl/internal/util"
 )
+
+// filamentSwapAdvancedConfigName is the basename (without .json) used for the
+// advanced filament swap command config file stored in the config directory.
+//
+// (Python: FILAMENT_SWAP_ADVANCED_CONFIG_NAME = "filament_swap_commands")
+const filamentSwapAdvancedConfigName = "filament_swap_commands"
+
+// SettingsLauncherBat generates a Windows .bat launcher script for ankerctl.
+//
+// POST /api/settings/launcher-bat
+//
+// Body: {"install_dir": "C:\\path\\to\\ankerctl"}
+//
+// Response (200): text/plain with Content-Disposition attachment
+// Error (400): missing/invalid install_dir
+//
+// (Python: app_api_settings_launcher_bat / _build_windows_launcher_bat)
+func (h *Handler) SettingsLauncherBat(w http.ResponseWriter, r *http.Request) {
+	var payload map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil || payload == nil {
+		h.writeError(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+
+	installDir, _ := payload["install_dir"].(string)
+	script, err := buildWindowsLauncherBat(installDir)
+	if err != nil {
+		h.writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="ankerctl-launcher.bat"`)
+	w.WriteHeader(http.StatusOK)
+	_, _ = fmt.Fprint(w, script)
+}
+
+// buildWindowsLauncherBat produces the .bat script content for the given
+// install directory. Mirrors Python's _build_windows_launcher_bat exactly,
+// including %‐escaping and CRLF line endings.
+func buildWindowsLauncherBat(installDir string) (string, error) {
+	installDir = strings.TrimSpace(installDir)
+	if installDir == "" {
+		return "", fmt.Errorf("Install directory is required.")
+	}
+	if strings.ContainsAny(installDir, "\"") {
+		return "", fmt.Errorf("Install directory cannot contain double quotes.")
+	}
+	if strings.ContainsAny(installDir, "\r\n\x00") {
+		return "", fmt.Errorf("Install directory cannot contain newline or null characters.")
+	}
+
+	// Escape % signs so the batch file doesn't expand them as env-var tokens.
+	escapedDir := strings.ReplaceAll(installDir, "%", "%%")
+
+	lines := []string{
+		"@echo off",
+		"setlocal",
+		fmt.Sprintf(`set "ANKERCTL_DIR=%s"`, escapedDir),
+		`cd /d "%ANKERCTL_DIR%" || (`,
+		`    echo Could not open the Ankerctl folder:`,
+		`    echo %ANKERCTL_DIR%`,
+		"    pause",
+		"    exit /b 1",
+		")",
+		"echo Starting ankerctl web server...",
+		"where py >nul 2>&1",
+		"if %errorlevel%==0 (",
+		`    py .\ankerctl.py webserver run`,
+		") else (",
+		`    python .\ankerctl.py webserver run`,
+		")",
+		"echo.",
+		"echo ankerctl exited.",
+		"pause",
+	}
+	return strings.Join(lines, "\r\n") + "\r\n", nil
+}
+
+// SettingsFilamentServiceAdvancedGet reads (and creates if missing) the
+// advanced filament swap command configuration file from the config directory.
+//
+// GET /api/settings/filament-service/advanced
+//
+// Response (200): {"status":"ok","path":"/path/to/file"|null,"created":bool,"config":{...}}
+//
+// (Python: app_api_settings_filament_service_advanced / _ensure_filament_swap_advanced_config)
+func (h *Handler) SettingsFilamentServiceAdvancedGet(w http.ResponseWriter, _ *http.Request) {
+	config, path, created := h.ensureFilamentSwapAdvancedConfig()
+	var pathStr *string
+	if path != "" {
+		pathStr = &path
+	}
+	h.writeJSON(w, http.StatusOK, map[string]any{
+		"status":  "ok",
+		"path":    pathStr,
+		"created": created,
+		"config":  config,
+	})
+}
+
+// SettingsFilamentServiceAdvancedOpen attempts to open the advanced filament
+// swap config file with the system default application. On a headless server
+// this is a no-op that still returns the config path and content so callers
+// can display it.
+//
+// POST /api/settings/filament-service/advanced/open
+//
+// Response (200): {"status":"ok","path":"...","created":bool,"config":{...}}
+// Error (500): no config path available
+//
+// (Python: app_api_settings_filament_service_advanced_open)
+func (h *Handler) SettingsFilamentServiceAdvancedOpen(w http.ResponseWriter, _ *http.Request) {
+	config, path, created := h.ensureFilamentSwapAdvancedConfig()
+	if path == "" {
+		h.writeError(w, http.StatusInternalServerError,
+			"No local config path is available for advanced filament swap commands")
+		return
+	}
+	// FORGE-NOTE: on a headless server there is no desktop app to open the
+	// file with. We return the path + content so the frontend can display it
+	// inline. The Python would call xdg-open / open / start here.
+	h.writeJSON(w, http.StatusOK, map[string]any{
+		"status":  "ok",
+		"path":    path,
+		"created": created,
+		"config":  config,
+	})
+}
+
+// ensureFilamentSwapAdvancedConfig reads or creates the advanced filament swap
+// command config JSON file. Returns (config, path, created).
+// path is empty when no config directory is available (config not loaded).
+//
+// Mirrors Python's _ensure_filament_swap_advanced_config.
+func (h *Handler) ensureFilamentSwapAdvancedConfig() (any, string, bool) {
+	defaults := model.DefaultFilamentSwapAdvancedConfig()
+
+	if h.cfg == nil {
+		return defaults, "", false
+	}
+	configPath := filepath.Join(h.cfg.ConfigDir(), filamentSwapAdvancedConfigName+".json")
+
+	// If the file doesn't exist yet, write defaults and return created=true.
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		if data, err := json.MarshalIndent(defaults, "", "  "); err == nil {
+			if writeErr := os.WriteFile(configPath, append(data, '\n'), 0o600); writeErr != nil {
+				// Non-fatal: return defaults with path but created=false.
+				return defaults, configPath, false
+			}
+		}
+		return defaults, configPath, true
+	}
+
+	// File exists — read it and merge in any new default keys.
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return defaults, configPath, false
+	}
+	var loaded any
+	if err := json.Unmarshal(data, &loaded); err != nil {
+		return defaults, configPath, false
+	}
+	merged, changed := mergeFilamentSwapAdvancedConfig(loaded, defaults)
+	if changed {
+		if out, err := json.MarshalIndent(merged, "", "  "); err == nil {
+			_ = os.WriteFile(configPath, append(out, '\n'), 0o600)
+		}
+	}
+	return merged, configPath, false
+}
+
+// mergeFilamentSwapAdvancedConfig merges loaded config with defaults, adding
+// any top-level keys that are missing. Returns (merged, changed).
+// Mirrors Python's _merge_filament_swap_advanced_config.
+func mergeFilamentSwapAdvancedConfig(loaded, defaults any) (any, bool) {
+	loadedMap, ok := loaded.(map[string]any)
+	if !ok {
+		return defaults, true
+	}
+	defaultsMap, ok := defaults.(map[string]any)
+	if !ok {
+		return loaded, false
+	}
+	changed := false
+	merged := make(map[string]any, len(defaultsMap))
+	for k, v := range loadedMap {
+		merged[k] = v
+	}
+	for k, v := range defaultsMap {
+		if _, exists := merged[k]; !exists {
+			merged[k] = v
+			changed = true
+		}
+	}
+	return merged, changed
+}
 
 // SettingsTimelapseGet returns timelapse settings.
 func (h *Handler) SettingsTimelapseGet(w http.ResponseWriter, _ *http.Request) {

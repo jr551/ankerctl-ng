@@ -55,6 +55,7 @@ func (s *Server) registerRoutes() {
 
 	// Config
 	r.Post("/api/ankerctl/config/upload", h.ConfigUpload)
+	r.Post("/api/ankerctl/config/import-slicer", h.ImportSlicer)
 	r.Post("/api/ankerctl/config/login", h.ConfigLogin)
 	r.Post("/api/ankerctl/config/logout", h.ConfigLogout)
 	r.Get("/api/ankerctl/server/reload", h.ServerReload)
@@ -95,8 +96,11 @@ func (s *Server) registerRoutes() {
 	r.Post("/api/settings/timelapse", h.SettingsTimelapseUpdate)
 	r.Get("/api/settings/mqtt", h.SettingsMQTTGet)
 	r.Post("/api/settings/mqtt", h.SettingsMQTTUpdate)
+	r.Post("/api/settings/launcher-bat", h.SettingsLauncherBat)
 	r.Get("/api/settings/filament-service", h.SettingsFilamentServiceGet)
 	r.Post("/api/settings/filament-service", h.SettingsFilamentServiceUpdate)
+	r.Get("/api/settings/filament-service/advanced", h.SettingsFilamentServiceAdvancedGet)
+	r.Post("/api/settings/filament-service/advanced/open", h.SettingsFilamentServiceAdvancedOpen)
 	r.Get("/api/settings/appearance", h.SettingsAppearanceGet)
 	r.Post("/api/settings/appearance", h.SettingsAppearanceUpdate)
 	r.Get("/api/settings/camera", h.SettingsCameraGet)
@@ -109,6 +113,7 @@ func (s *Server) registerRoutes() {
 	// History
 	r.Get("/api/history", h.HistoryList)
 	r.Delete("/api/history", h.HistoryClear)
+	r.Post("/api/history/delete", h.HistoryDeleteSelected)
 	r.Post("/api/history/{id}/reprint", h.HistoryReprint)
 	r.Get("/api/history/{id}/thumbnail", h.HistoryThumbnail)
 

@@ -336,6 +336,90 @@ func defaultCapturesDir() string {
 	return filepath.Join(os.Getenv("HOME"), ".config", "ankerctl", "captures")
 }
 
+// DefaultFilamentSwapAdvancedConfig returns the default advanced filament swap
+// command configuration as a generic map. The map is intended to be
+// JSON-serialised and stored as filament_swap_commands.json in the config dir.
+//
+// Mirrors Python's FILAMENT_SWAP_ADVANCED_CONFIG_DEFAULT dict and
+// _default_filament_swap_commands().
+func DefaultFilamentSwapAdvancedConfig() map[string]any {
+	// Settings from environment variables mirror Python's env-based defaults.
+	homeReadyTempC := envInt("FILAMENT_SWAP_HOME_READY_TEMP_C", 180)
+	// FILAMENT_SWAP_HOME_PAUSE_S takes precedence over FILAMENT_SWAP_HOME_SETTLE_S
+	homePauseS := envFloat("FILAMENT_SWAP_HOME_PAUSE_S", 0)
+	if homePauseS == 0 {
+		homePauseS = envFloat("FILAMENT_SWAP_HOME_SETTLE_S", 70.0)
+	}
+	cooldownDelayS := envFloat("FILAMENT_SWAP_COOLDOWN_DELAY_S", 0.75)
+
+	return map[string]any{
+		"version": 1,
+		"description": "Advanced filament swap command templates and default settings. Edit only " +
+			"if you know your printer accepts the replacement G-code. Restart is not required.",
+		"settings": map[string]any{
+			"allow_legacy_swap":           false,
+			"manual_swap_preheat_temp_c":  180,
+			"quick_move_length_mm":        40.0,
+			"swap_prime_length_mm":        10.0,
+			"swap_unload_length_mm":       40.0,
+			"swap_load_length_mm":         120.0,
+			"swap_home_pause_s":           homePauseS,
+			"swap_home_ready_temp_c":      homeReadyTempC,
+			"swap_z_lift_mm":              50.0,
+			"swap_z_feedrate_mm_min":      600,
+			"swap_prime_feedrate_mm_min":  240,
+			"swap_unload_feedrate_mm_min": 2000,
+			"swap_load_feedrate_mm_min":   240,
+			"swap_cooldown_delay_s":       cooldownDelayS,
+		},
+		"commands": map[string]any{
+			"set_nozzle_temp":  "M104 S{temp_c}",
+			"cooldown_nozzle":  "M104 S0",
+			"home_all":         "native:home_z",
+			"relative_mode":    "G91",
+			"z_lift":           "G1 Z{z_lift_mm} F{z_feedrate}",
+			"wait_for_moves":   "M400",
+			"absolute_mode":    "G90",
+			"prime":            "M83\nG1 E{prime_length_mm} F{prime_feedrate}\nM400\nM82",
+			"unload":           "M83\nG1 E-{unload_length_mm} F{unload_feedrate}\nM400\nM82",
+			"load":             "M83\nG1 E{load_length_mm} F{load_feedrate}\nM400\nM82",
+		},
+		"available_variables": map[string]any{
+			"set_nozzle_temp": []string{"temp_c"},
+			"z_lift":          []string{"z_lift_mm", "z_feedrate"},
+			"prime":           []string{"prime_length_mm", "prime_feedrate"},
+			"unload":          []string{"unload_length_mm", "unload_feedrate"},
+			"load":            []string{"load_length_mm", "load_feedrate"},
+		},
+	}
+}
+
+// envFloat reads an environment variable as a float64.
+func envFloat(key string, defaultVal float64) float64 {
+	val := os.Getenv(key)
+	if val == "" {
+		return defaultVal
+	}
+	var f float64
+	var seenDot bool
+	var frac float64 = 0.1
+	for _, c := range val {
+		if c >= '0' && c <= '9' {
+			if seenDot {
+				f += float64(c-'0') * frac
+				frac *= 0.1
+			} else {
+				f = f*10 + float64(c-'0')
+			}
+		} else if c == '.' && !seenDot {
+			seenDot = true
+		} else {
+			return defaultVal
+		}
+	}
+	return f
+}
+
 // envBool reads an environment variable as a boolean.
 // Recognizes "true", "1", "yes" (case-insensitive) as true.
 func envBool(key string, defaultVal bool) bool {

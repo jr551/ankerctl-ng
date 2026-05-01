@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -284,6 +285,91 @@ func (h *Handler) HistoryThumbnail(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "max-age=86400")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(thumbBytes)
+}
+
+// HistoryDeleteSelected deletes specific print history entries by ID.
+//
+// POST /api/history/delete
+//
+// Body: {"ids": [1, 2, 3]}
+//
+// Response (200): {"status":"ok","deleted":N,"requested":N}
+// Error (400): ids not a list, or contains non-integers, or empty after filtering.
+// Error (409): at least one selected entry is still in progress.
+// Error (503): database unavailable.
+//
+// (Python: app_api_history_delete_selected)
+func (h *Handler) HistoryDeleteSelected(w http.ResponseWriter, r *http.Request) {
+	if h.db == nil {
+		h.writeError(w, http.StatusServiceUnavailable, "database unavailable")
+		return
+	}
+
+	var payload struct {
+		IDs []any `json:"ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil || payload.IDs == nil {
+		h.writeError(w, http.StatusBadRequest, "ids must be a list of history entry ids")
+		return
+	}
+
+	// Validate and de-duplicate IDs, matching Python's coercion logic.
+	seen := make(map[int64]struct{}, len(payload.IDs))
+	entryIDs := make([]int64, 0, len(payload.IDs))
+	for _, raw := range payload.IDs {
+		var id int64
+		switch v := raw.(type) {
+		case float64:
+			id = int64(v)
+		case json.Number:
+			n, err := v.Int64()
+			if err != nil {
+				h.writeError(w, http.StatusBadRequest, "ids must contain integers")
+				return
+			}
+			id = n
+		default:
+			h.writeError(w, http.StatusBadRequest, "ids must contain integers")
+			return
+		}
+		if id <= 0 {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		entryIDs = append(entryIDs, id)
+	}
+	if len(entryIDs) == 0 {
+		h.writeError(w, http.StatusBadRequest, "No history entries were selected")
+		return
+	}
+
+	// Refuse to delete any entry that is still in progress.
+	for _, id := range entryIDs {
+		entry, err := h.db.GetEntry(id)
+		if err != nil {
+			h.writeError(w, http.StatusInternalServerError, "failed to load history entry")
+			return
+		}
+		if entry != nil && entry.Status == "started" {
+			h.writeError(w, http.StatusConflict, "Cannot delete an in-progress history entry")
+			return
+		}
+	}
+
+	deleted, err := h.db.DeleteEntries(entryIDs)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "failed to delete history entries")
+		return
+	}
+
+	h.writeJSON(w, http.StatusOK, map[string]any{
+		"status":    "ok",
+		"deleted":   deleted,
+		"requested": len(entryIDs),
+	})
 }
 
 // HistoryClear clears print history.
