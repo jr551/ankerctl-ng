@@ -9,10 +9,10 @@ import (
 func TestWire_PeekContext(t *testing.T) {
 	tests := []struct {
 		name       string
-		preload    []byte  // data written before PeekContext call
-		asyncWrite []byte  // data written from goroutine after short delay
+		preload    []byte // data written before PeekContext call
+		asyncWrite []byte // data written from goroutine after short delay
 		peekSize   int
-		cancelCtx  bool        // cancel context before call
+		cancelCtx  bool // cancel context before call
 		timeout    time.Duration
 		wantData   string
 		wantErr    error

@@ -55,18 +55,18 @@ var historyMigrationColumns = []struct {
 
 // PrintRecord represents a single row in the print_history table.
 type PrintRecord struct {
-	ID              int64
-	Filename        string
-	Status          string
-	StartedAt       time.Time
-	FinishedAt      *time.Time
-	DurationSec     *int64
-	Progress        int
-	FailureReason   *string
-	TaskID          *string
-	ArchiveRelpath  *string // relative filename inside the archive directory
-	ArchiveSize     *int64  // byte size of the archived GCode file
-	ArchiveAvailable bool   // true when the file actually exists on disk
+	ID               int64
+	Filename         string
+	Status           string
+	StartedAt        time.Time
+	FinishedAt       *time.Time
+	DurationSec      *int64
+	Progress         int
+	FailureReason    *string
+	TaskID           *string
+	ArchiveRelpath   *string // relative filename inside the archive directory
+	ArchiveSize      *int64  // byte size of the archived GCode file
+	ArchiveAvailable bool    // true when the file actually exists on disk
 }
 
 // migrateHistory creates the print_history table and applies any pending
@@ -566,14 +566,14 @@ func scanHistoryRows(rows *sql.Rows) ([]PrintRecord, error) {
 	var records []PrintRecord
 	for rows.Next() {
 		var (
-			r               PrintRecord
-			finishedAtS     sql.NullString
-			durationSec     sql.NullInt64
-			failureReason   sql.NullString
-			taskID          sql.NullString
-			archiveRelpath  sql.NullString
-			archiveSize     sql.NullInt64
-			startedAtS      string
+			r              PrintRecord
+			finishedAtS    sql.NullString
+			durationSec    sql.NullInt64
+			failureReason  sql.NullString
+			taskID         sql.NullString
+			archiveRelpath sql.NullString
+			archiveSize    sql.NullInt64
+			startedAtS     string
 		)
 		if err := rows.Scan(
 			&r.ID, &r.Filename, &r.Status,

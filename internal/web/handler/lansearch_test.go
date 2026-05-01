@@ -15,8 +15,8 @@ import (
 // when no config or no printers are present.
 func TestLANSearch_NoPrintersConfigured(t *testing.T) {
 	tests := []struct {
-		name    string
-		setup   func(t *testing.T) *Handler
+		name  string
+		setup func(t *testing.T) *Handler
 	}{
 		{
 			name: "nil_config_manager",

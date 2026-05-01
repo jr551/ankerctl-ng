@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/django1982/ankerctl/internal/db"
 	"github.com/django1982/ankerctl/internal/model"
+	"github.com/go-chi/chi/v5"
 )
 
 // thumbnailRelpath returns the conventional thumbnail path for an archive relpath.
@@ -33,13 +33,13 @@ func thumbnailRelpath(archiveRelpath string) string {
 //   - failure_reason:       pass-through from DB row
 func historyEntryJSON(rec *db.PrintRecord, archiver GCodeArchiverIface) map[string]any {
 	row := map[string]any{
-		"id":              rec.ID,
-		"filename":        rec.Filename,
-		"status":          rec.Status,
-		"started_at":      rec.StartedAt,
-		"finished_at":     rec.FinishedAt,
-		"duration_sec":    rec.DurationSec,
-		"progress":        rec.Progress,
+		"id":           rec.ID,
+		"filename":     rec.Filename,
+		"status":       rec.Status,
+		"started_at":   rec.StartedAt,
+		"finished_at":  rec.FinishedAt,
+		"duration_sec": rec.DurationSec,
+		"progress":     rec.Progress,
 		// Extended fields matching Python response shape
 		"printer_name":    nil, // FORGE-NOTE: per-printer isolation deferred to Phase C
 		"archive_relpath": rec.ArchiveRelpath,

@@ -15,7 +15,7 @@ func TestParseBLGrid_TableDriven(t *testing.T) {
 		name     string
 		input    string
 		wantRows int
-		wantCols int // max columns across rows
+		wantCols int        // max columns across rows
 		spot     [3]float64 // [row, col, value] to verify
 	}{
 		{
@@ -172,8 +172,8 @@ func TestLastBedLevelingGrid_StoreAndRetrieve(t *testing.T) {
 // without a "grid" field does not overwrite existing data.
 func TestLastBedLevelingGrid_IgnoresNonGridPayload(t *testing.T) {
 	q := &MqttQueue{
-		BaseWorker:      NewBaseWorker("mqttqueue"),
-		bedLevelingGrid: map[string]any{"rows": 5},
+		BaseWorker:         NewBaseWorker("mqttqueue"),
+		bedLevelingGrid:    map[string]any{"rows": 5},
 		currentPrinterStat: -1,
 	}
 	q.BindHooks(q)

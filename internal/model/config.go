@@ -8,16 +8,16 @@ import (
 // Config is the top-level configuration structure.
 // It holds account info, printer list, and feature settings.
 type Config struct {
-	Account            *Account               `json:"-"`
-	Printers           []Printer              `json:"-"`
-	UploadRateMbps     int                    `json:"-"`
-	ActivePrinterIndex int                    `json:"-"`
-	Notifications      NotificationsConfig    `json:"-"`
-	Timelapse          TimelapseConfig        `json:"-"`
-	HomeAssistant      HomeAssistantConfig    `json:"-"`
-	FilamentService    FilamentServiceConfig  `json:"-"`
-	Appearance         AppearanceConfig       `json:"-"`
-	Camera             CameraConfig           `json:"-"`
+	Account            *Account              `json:"-"`
+	Printers           []Printer             `json:"-"`
+	UploadRateMbps     int                   `json:"-"`
+	ActivePrinterIndex int                   `json:"-"`
+	Notifications      NotificationsConfig   `json:"-"`
+	Timelapse          TimelapseConfig       `json:"-"`
+	HomeAssistant      HomeAssistantConfig   `json:"-"`
+	FilamentService    FilamentServiceConfig `json:"-"`
+	Appearance         AppearanceConfig      `json:"-"`
+	Camera             CameraConfig          `json:"-"`
 }
 
 // configJSON is the JSON wire format for Config.

@@ -33,7 +33,7 @@ func newTemplates() (*Templates, error) {
 	// Parse all HTML files in static/ and static/tabs/
 	// We need to be careful with the patterns to include subdirectories.
 	// template.ParseFS doesn't support recursive globbing like **/*.html.
-	
+
 	// List of files to parse
 	files := []string{
 		"static/base.html",
@@ -51,13 +51,7 @@ func newTemplates() (*Templates, error) {
 
 	for _, f := range files {
 		// Use the base name as the template name for sub-templates
-		var name string
-		if strings.HasPrefix(f, "static/tabs/") {
-			name = strings.TrimPrefix(f, "static/")
-		} else {
-			name = strings.TrimPrefix(f, "static/")
-		}
-
+		name := strings.TrimPrefix(f, "static/")
 		b, err := staticFS.ReadFile(f)
 		if err != nil {
 			return nil, fmt.Errorf("read template %s: %w", f, err)

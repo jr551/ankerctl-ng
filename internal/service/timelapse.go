@@ -618,4 +618,3 @@ func maxDuration(a, b time.Duration) time.Duration {
 	}
 	return a
 }
-

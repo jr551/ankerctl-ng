@@ -16,7 +16,7 @@ func TestXORBytes(t *testing.T) {
 		{"two equal bytes", []byte{0xAB, 0xAB}, 0x00},
 		{"known sequence", []byte{0x01, 0x02, 0x03}, 0x00}, // 01^02^03 = 00
 		{"all zeros", bytes.Repeat([]byte{0x00}, 100), 0x00},
-		{"all ones", bytes.Repeat([]byte{0xFF}, 4), 0x00},  // 4 XORs of 0xFF = 0
+		{"all ones", bytes.Repeat([]byte{0xFF}, 4), 0x00},           // 4 XORs of 0xFF = 0
 		{"all ones odd count", bytes.Repeat([]byte{0xFF}, 3), 0xFF}, // 3 XORs = 0xFF
 		{"checksum byte appended", []byte{0x01, 0x02, 0x03, 0x00}, 0x00},
 	}
@@ -91,8 +91,8 @@ func TestRemoveChecksumInvalidChecksum(t *testing.T) {
 		name    string
 		payload []byte
 	}{
-		{"wrong checksum byte", []byte{0x01, 0x02, 0x03, 0xFF}}, // XOR != 0
-		{"all zeros single byte", []byte{0x01}},                 // XOR = 0x01 != 0
+		{"wrong checksum byte", []byte{0x01, 0x02, 0x03, 0xFF}},        // XOR != 0
+		{"all zeros single byte", []byte{0x01}},                        // XOR = 0x01 != 0
 		{"correct data but last byte wrong", []byte{0xAA, 0xAA, 0x01}}, // 0xAA^0xAA^0x01 = 0x01 != 0
 	}
 

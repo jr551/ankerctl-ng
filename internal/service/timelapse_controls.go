@@ -8,9 +8,9 @@ import (
 // TimelapseStatus describes the current capture state for the API.
 type TimelapseStatus struct {
 	// "idle" | "capturing" | "paused" | "assembling"
-	State    string  `json:"state"`
-	Filename string  `json:"filename,omitempty"`
-	Frames   int     `json:"frames,omitempty"`
+	State    string `json:"state"`
+	Filename string `json:"filename,omitempty"`
+	Frames   int    `json:"frames,omitempty"`
 	// Seconds remaining in the resume window (only when State=="paused").
 	ResumeWindowSec int `json:"resume_window_sec,omitempty"`
 }

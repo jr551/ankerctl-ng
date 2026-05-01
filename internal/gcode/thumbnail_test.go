@@ -21,7 +21,6 @@ func mustDecodeBase64(s string) []byte {
 	return b
 }
 
-
 func TestExtractThumbnail_prefers_largest(t *testing.T) {
 	// Matches Python: test_extract_gcode_thumbnail_reads_embedded_png_and_prefers_largest
 	smallB64 := base64.StdEncoding.EncodeToString(minimalPNGa)

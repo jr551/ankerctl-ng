@@ -80,7 +80,7 @@ type Server struct {
 	appVersion string
 
 	// shutdownCh is closed when an API-triggered graceful shutdown is requested.
-	shutdownCh chan struct{}
+	shutdownCh   chan struct{}
 	shutdownOnce sync.Once
 }
 

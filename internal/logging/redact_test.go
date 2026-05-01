@@ -13,7 +13,7 @@ func TestRedact(t *testing.T) {
 		{
 			name: "Basic Redaction",
 			input: map[string]any{
-				"auth_token": "secret_token_123",
+				"auth_token":  "secret_token_123",
 				"commandType": 1001,
 				"sn":          "ANKER123456",
 			},
