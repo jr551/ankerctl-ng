@@ -61,6 +61,8 @@ const (
 	MqttCmdModelLayer          MqttMsgType = 0x041C
 	MqttCmdModelDLProcess      MqttMsgType = 0x041D
 	MqttCmdPrintMaxSpeed       MqttMsgType = 0x041F
+	MqttCmdFilamentRunout      MqttMsgType = 0x043D
+	MqttCmdFilamentJam         MqttMsgType = 0x043E
 	MqttCmdAlexaMsg            MqttMsgType = 0x0BB8
 )
 

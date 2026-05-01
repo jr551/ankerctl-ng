@@ -231,3 +231,172 @@ func TestMqttQueueSendAutoLeveling_UsesValueZero(t *testing.T) {
 		t.Fatalf("autolevel value=%v, want 0", got)
 	}
 }
+
+func TestMqttQueueHandlersTrackScheduleSpeedAndLayer(t *testing.T) {
+	ha := &captureSink{}
+	timelapse := &captureSink{}
+	q := &MqttQueue{
+		BaseWorker:    NewBaseWorker("mqttqueue"),
+		homeAssistant: ha,
+		timelapse:     timelapse,
+	}
+	q.BindHooks(q)
+
+	q.handlePayload(map[string]any{
+		"commandType": int(protocol.MqttCmdPrintSchedule),
+		"progress":    4200,
+		"fileName":    "benchy.gcode",
+		"elapsed":     120,
+		"remaining":   60,
+	})
+	q.handlePayload(map[string]any{
+		"commandType": int(protocol.MqttCmdPrintSpeed),
+		"value":       250,
+	})
+	q.handlePayload(map[string]any{
+		"commandType":      int(protocol.MqttCmdModelLayer),
+		"real_print_layer": 42,
+		"total_layer":      200,
+	})
+
+	snap := q.SnapshotState()
+	if got := snap["last_filename"]; got != "benchy.gcode" {
+		t.Fatalf("last_filename = %v, want benchy.gcode", got)
+	}
+	if got := snap["print_progress"]; got != 42 {
+		t.Fatalf("print_progress = %v, want 42", got)
+	}
+	if got := snap["time_elapsed"]; got != 120 {
+		t.Fatalf("time_elapsed = %v, want 120", got)
+	}
+	if got := snap["time_remaining"]; got != 60 {
+		t.Fatalf("time_remaining = %v, want 60", got)
+	}
+	if got := snap["print_speed"]; got != 250 {
+		t.Fatalf("print_speed = %v, want 250", got)
+	}
+	if got := snap["current_layer"]; got != 42 {
+		t.Fatalf("current_layer = %v, want 42", got)
+	}
+	if got := snap["total_layers"]; got != 200 {
+		t.Fatalf("total_layers = %v, want 200", got)
+	}
+	if got := snap["print_layer"]; got != "42/200" {
+		t.Fatalf("print_layer = %v, want 42/200", got)
+	}
+
+	if len(ha.got) != 3 {
+		t.Fatalf("HA forwards = %d, want 3", len(ha.got))
+	}
+	if len(timelapse.got) != 3 {
+		t.Fatalf("timelapse forwards = %d, want 3", len(timelapse.got))
+	}
+}
+
+func TestMqttQueuePrintScheduleCompletesDeferredHistoryStart(t *testing.T) {
+	historyDB, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open history db: %v", err)
+	}
+	defer historyDB.Close()
+
+	q := &MqttQueue{
+		BaseWorker:         NewBaseWorker("mqttqueue"),
+		history:            historyDB,
+		currentPrinterStat: -1,
+	}
+	q.BindHooks(q)
+
+	q.handlePayload(map[string]any{
+		"commandType": int(protocol.MqttCmdEventNotify),
+		"value":       1,
+	})
+	q.handlePayload(map[string]any{
+		"commandType": int(protocol.MqttCmdPrintSchedule),
+		"progress":    1,
+		"fileName":    "benchy.gcode",
+	})
+
+	rows, err := historyDB.GetHistory(10, 0)
+	if err != nil {
+		t.Fatalf("GetHistory: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("history rows = %d, want 1", len(rows))
+	}
+	if rows[0].Filename != "benchy.gcode" {
+		t.Fatalf("history filename = %q, want benchy.gcode", rows[0].Filename)
+	}
+	if rows[0].Status != "started" {
+		t.Fatalf("history status = %q, want started", rows[0].Status)
+	}
+}
+
+func TestMqttQueueFilamentRunoutHandlers(t *testing.T) {
+	q := &MqttQueue{
+		BaseWorker:         NewBaseWorker("mqttqueue"),
+		currentPrinterStat: -1,
+	}
+	q.BindHooks(q)
+
+	runout := map[string]any{
+		"commandType": int(protocol.MqttCmdFilamentRunout),
+		"errorCode":   filamentRunoutErrorCode,
+	}
+	jam := map[string]any{
+		"commandType": int(protocol.MqttCmdFilamentJam),
+		"errorCode":   filamentRunoutErrorCode,
+	}
+
+	q.handlePayload(runout)
+	snap := q.SnapshotState()
+	filament, ok := snap["filament"].(map[string]any)
+	if !ok {
+		t.Fatalf("filament snapshot missing after runout: %#v", snap)
+	}
+	if got := filament["runout_pending"]; got != true {
+		t.Fatalf("runout_pending = %v, want true", got)
+	}
+
+	q.handlePayload(jam)
+	snap = q.SnapshotState()
+	if _, ok := snap["filament"]; ok {
+		t.Fatalf("filament snapshot should clear pending jam ack, got %#v", snap["filament"])
+	}
+
+	q.handlePayload(runout)
+	q.handlePayload(map[string]any{
+		"commandType": int(protocol.MqttCmdEventNotify),
+		"value":       2,
+	})
+	snap = q.SnapshotState()
+	filament, ok = snap["filament"].(map[string]any)
+	if !ok {
+		t.Fatalf("filament snapshot missing after pause promotion: %#v", snap)
+	}
+	if got := filament["runout_pending"]; got != false {
+		t.Fatalf("runout_pending = %v, want false", got)
+	}
+	if got := filament["issue"]; got != filamentIssueRunout {
+		t.Fatalf("issue = %v, want %q", got, filamentIssueRunout)
+	}
+	if got := filament["issue_code"]; got != filamentRunoutErrorCode {
+		t.Fatalf("issue_code = %v, want %q", got, filamentRunoutErrorCode)
+	}
+
+	q.handlePayload(jam)
+	snap = q.SnapshotState()
+	filament, ok = snap["filament"].(map[string]any)
+	if !ok || filament["issue"] != filamentIssueRunout {
+		t.Fatalf("active runout should survive jam ack, got %#v", snap["filament"])
+	}
+
+	q.handlePayload(map[string]any{
+		"commandType": int(protocol.MqttCmdEventNotify),
+		"value":       0,
+	})
+	snap = q.SnapshotState()
+	if _, ok := snap["filament"]; ok {
+		t.Fatalf("filament snapshot should clear on idle, got %#v", snap["filament"])
+	}
+}
