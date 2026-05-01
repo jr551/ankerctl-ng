@@ -1,11 +1,14 @@
 # ankerctl (Go Rewrite)
 
-[![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go)](https://go.dev/)
+[![Release](https://img.shields.io/badge/release-v1.0.0-success)](https://github.com/Django1982/ankerctl_go_remake/releases/tag/v1.0.0)
+[![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)](https://go.dev/)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![CI](https://github.com/Django1982/ankerctl_go_remake/actions/workflows/ci.yml/badge.svg)](https://github.com/Django1982/ankerctl_go_remake/actions/workflows/ci.yml)
 [![Docker](https://img.shields.io/badge/ghcr.io-ankerctl-blue?logo=docker)](https://ghcr.io/django1982/ankerctl)
 
 A Go reimplementation of [ankerctl](https://github.com/ankermake/ankermake-m5-protocol) -- a CLI and web UI for monitoring, controlling, and interfacing with AnkerMake M5 3D printers.
+
+> **v1.0.0 — Feature parity achieved (2026-05-01).** All 17 migration phases are complete. The Go rewrite has reached full 1:1 feature parity with the Python original. See [`docs/MIGRATION_PLAN.md`](docs/MIGRATION_PLAN.md) for the migration history.
 
 ![Dashboard Screenshot](docs/img/screenshot-dashboard.png)
 
@@ -225,7 +228,7 @@ go test ./internal/crypto/...
 go vet ./...
 ```
 
-See the [Development Guide](docs/wiki/Development-Guide.md) for architecture details, contribution guidelines, and the migration plan.
+See the [Development Guide](docs/wiki/Development-Guide.md) for architecture details and contribution guidelines, or the [Migration Plan](docs/MIGRATION_PLAN.md) for the historical roadmap.
 
 ## Project Structure
 

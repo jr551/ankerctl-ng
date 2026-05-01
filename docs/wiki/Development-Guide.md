@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Go 1.22 or later
+- Go 1.24 or later
 - `ffmpeg` (for timelapse tests)
 - `git`
 
@@ -187,12 +187,12 @@ docker build -t ankerctl:dev .
 docker run --network host -v ~/.ankerctl:/root/.ankerctl ankerctl:dev
 
 # Build with version tag
-docker build --build-arg VERSION=v0.9.0 -t ankerctl:v0.9.0 .
+docker build --build-arg VERSION=v1.0.0 -t ankerctl:v1.0.0 .
 ```
 
 ## Migration Plan
 
-See [MIGRATION_PLAN.md](https://github.com/Django1982/ankerctl_go_remake/blob/main/MIGRATION_PLAN.md) for the full 16-phase migration roadmap from Python to Go.
+See [docs/MIGRATION_PLAN.md](https://github.com/Django1982/ankerctl_go_remake/blob/main/docs/MIGRATION_PLAN.md) for the historical 17-phase migration roadmap from Python to Go (completed in v1.0.0, 2026-05-01).
 
 ## Python Source Reference
 

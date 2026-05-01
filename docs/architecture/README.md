@@ -34,8 +34,6 @@ threading-based service management with Go goroutines and channels.
 
 ## Key Design Decisions
 
-See [decisions/](decisions/) for Architecture Decision Records (ADRs).
-
 | Decision | Choice | Rationale |
 |---|---|---|
 | Language | Pure Go, no CGo | Multi-arch builds, single binary |
@@ -44,6 +42,8 @@ See [decisions/](decisions/) for Architecture Decision Records (ADRs).
 | WebSocket | gorilla/websocket | Mature, well-tested |
 | CLI | cobra | Standard Go CLI framework |
 | Logging | log/slog | Structured, stdlib |
+
+For an extended architectural overview see the [Architecture wiki page](../wiki/Architecture.md).
 
 ## Frontend
 

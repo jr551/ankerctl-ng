@@ -3,7 +3,7 @@
 This page describes the internal architecture of the ankerctl Go rewrite.
 
 **Module:** `github.com/django1982/ankerctl`
-**Go version:** 1.22+
+**Go version:** 1.24+
 **Key libraries:** chi/v5 (HTTP), gorilla/websocket, modernc.org/sqlite (CGO-free), paho.mqtt.golang, cobra (CLI)
 
 ---
