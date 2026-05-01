@@ -19,6 +19,7 @@ import (
 	"github.com/django1982/ankerctl/internal/config"
 	"github.com/django1982/ankerctl/internal/db"
 	"github.com/django1982/ankerctl/internal/logging"
+	"github.com/django1982/ankerctl/internal/model"
 	mqttclient "github.com/django1982/ankerctl/internal/mqtt/client"
 	"github.com/django1982/ankerctl/internal/mqtt/protocol"
 )
@@ -35,6 +36,11 @@ const (
 	printControlPause   = 2
 	printControlResume  = 3
 	printControlStop    = 4
+)
+
+const (
+	filamentIssueRunout     = "runout"
+	filamentRunoutErrorCode = "0xFF01030001"
 )
 
 var mqttBrokerByRegion = map[string]string{
@@ -79,6 +85,15 @@ type MqttQueue struct {
 	debugLogging       bool
 	lastStatePayload   map[string]any
 	bedLevelingGrid    map[string]any
+	printProgress      *int
+	printSpeed         *int
+	currentLayer       *int
+	totalLayers        *int
+	timeElapsed        *int
+	timeRemaining      *int
+	filamentIssue      string
+	filamentIssueCode  string
+	runoutPending      bool
 
 	// Temperature tracking (populated from ct=1003 / ct=1004 messages).
 	nozzleTemp       *int
@@ -88,8 +103,8 @@ type MqttQueue struct {
 
 	// Z-axis recoup tracking (populated from ct=1021 messages).
 	// Value is in 0.01 mm steps (e.g. 13 means 0.13 mm).
-	zAxisRecoup    *int
-	zAxisRecoupCh  chan struct{} // signaled on every ct=1021 update
+	zAxisRecoup   *int
+	zAxisRecoupCh chan struct{} // signaled on every ct=1021 update
 
 	homeAssistant eventSink
 	timelapse     eventSink
@@ -180,6 +195,15 @@ func (q *MqttQueue) resetPrintStateLocked() {
 	q.lastMessageTime = time.Time{}
 	q.gcodeLayerCount = 0
 	q.lastStatePayload = nil
+	q.printProgress = nil
+	q.printSpeed = nil
+	q.currentLayer = nil
+	q.totalLayers = nil
+	q.timeElapsed = nil
+	q.timeRemaining = nil
+	q.filamentIssue = ""
+	q.filamentIssueCode = ""
+	q.runoutPending = false
 	q.nozzleTemp = nil
 	q.nozzleTempTarget = nil
 	q.bedTemp = nil
@@ -378,12 +402,22 @@ func (q *MqttQueue) handlePayload(obj map[string]any) {
 		q.lastStatePayload = cloneMap(normalized)
 		q.mu.Unlock()
 		q.handleCT1000(normalized)
+	case int(protocol.MqttCmdPrintSchedule): // ct=1001
+		q.handlePrintSchedule(normalized)
 	case int(protocol.MqttCmdNozzleTemp): // ct=1003
 		q.handleNozzleTemp(normalized)
 	case int(protocol.MqttCmdHotbedTemp): // ct=1004
 		q.handleBedTemp(normalized)
+	case int(protocol.MqttCmdPrintSpeed): // ct=1006
+		q.handlePrintSpeed(normalized)
 	case int(protocol.MqttCmdZAxisRecoup): // ct=1021
 		q.handleZAxisRecoup(normalized)
+	case int(protocol.MqttCmdModelLayer): // ct=1052
+		q.handleModelLayer(normalized)
+	case int(protocol.MqttCmdFilamentRunout): // ct=1085
+		q.handleFilamentRunout(normalized)
+	case int(protocol.MqttCmdFilamentJam): // ct=1086
+		q.handleFilamentJam(normalized)
 	}
 
 	if isForwardRelevant(ct, normalized) {
@@ -442,11 +476,22 @@ func (q *MqttQueue) handleCT1000(payload map[string]any) {
 				q.pendingHistory = true
 			}
 		}
+	case mqttStatePaused:
+		if q.runoutPending && q.filamentIssue != filamentIssueRunout {
+			q.markFilamentRunoutLocked()
+		}
 	case mqttStateIdle, mqttStateAborted:
 		q.printActive = false
 		q.pendingHistory = false
 		q.stopRequested = false
 		q.gcodeLayerCount = 0
+		q.printProgress = nil
+		q.printSpeed = nil
+		q.currentLayer = nil
+		q.totalLayers = nil
+		q.timeElapsed = nil
+		q.timeRemaining = nil
+		q.clearFilamentIssueLocked()
 	}
 	q.mu.Unlock()
 
@@ -468,6 +513,109 @@ func (q *MqttQueue) handleCT1000(payload map[string]any) {
 			q.log.Warn("history record start failed", "filename", filename, "err", err)
 		}
 	}
+}
+
+func (q *MqttQueue) handlePrintSchedule(payload map[string]any) {
+	var msg model.MQTTPrintSchedule
+	if !decodeMQTTPayload(payload, &msg) {
+		return
+	}
+
+	var (
+		filename     string
+		shouldRecord bool
+	)
+
+	q.mu.Lock()
+	if progress, ok := firstInt(msg.Progress, msg.PrintProgress); ok {
+		v := normalizeProgress(progress)
+		q.printProgress = &v
+	}
+	filename = firstString(msg.Name, msg.FileName, msg.Filename, msg.FileNameAlt, msg.GCode, msg.GCodeName)
+	if filename != "" {
+		q.lastFilename = filename
+		shouldRecord = q.printActive && q.pendingHistory
+		if shouldRecord {
+			q.pendingHistory = false
+		}
+	}
+	if elapsed, ok := firstInt(msg.TotalTime, msg.Elapsed, msg.ElapsedTime); ok {
+		v := elapsed
+		q.timeElapsed = &v
+	}
+	if remaining, ok := firstInt(msg.Time, msg.RemainTime, msg.Remaining, msg.RemainingTime); ok {
+		v := remaining
+		q.timeRemaining = &v
+	}
+	q.mu.Unlock()
+
+	if shouldRecord && q.history != nil {
+		if _, err := q.history.RecordStart(filename, "", "", 0); err != nil {
+			q.log.Warn("history record start failed", "filename", filename, "err", err)
+		}
+	}
+}
+
+func (q *MqttQueue) handlePrintSpeed(payload map[string]any) {
+	var msg model.MQTTPrintSpeed
+	if !decodeMQTTPayload(payload, &msg) {
+		return
+	}
+	speed, ok := firstInt(msg.Value, msg.Speed)
+	if !ok {
+		return
+	}
+	q.mu.Lock()
+	q.printSpeed = newInt(speed)
+	q.mu.Unlock()
+}
+
+func (q *MqttQueue) handleModelLayer(payload map[string]any) {
+	var msg model.MQTTModelLayer
+	if !decodeMQTTPayload(payload, &msg) {
+		return
+	}
+	layer, ok := firstInt(msg.Value, msg.Layer, msg.CurrentLayer, msg.RealPrintLayer)
+	if !ok {
+		return
+	}
+
+	q.mu.Lock()
+	q.currentLayer = newInt(layer)
+	if total, ok := firstInt(msg.TotalLayer, msg.Total, msg.TotalLayerAlt); ok {
+		q.totalLayers = newInt(total)
+	} else if q.totalLayers == nil && q.gcodeLayerCount > 0 {
+		q.totalLayers = newInt(q.gcodeLayerCount)
+	}
+	q.mu.Unlock()
+}
+
+func (q *MqttQueue) handleFilamentRunout(payload map[string]any) {
+	var msg model.MQTTFilamentError
+	if !decodeMQTTPayload(payload, &msg) {
+		return
+	}
+	if msg.ErrorCode != filamentRunoutErrorCode {
+		return
+	}
+	q.mu.Lock()
+	q.runoutPending = true
+	q.mu.Unlock()
+}
+
+func (q *MqttQueue) handleFilamentJam(payload map[string]any) {
+	var msg model.MQTTFilamentError
+	if !decodeMQTTPayload(payload, &msg) {
+		return
+	}
+	if msg.ErrorCode != filamentRunoutErrorCode {
+		return
+	}
+	q.mu.Lock()
+	if q.filamentIssue != filamentIssueRunout {
+		q.clearFilamentRunoutPendingLocked()
+	}
+	q.mu.Unlock()
 }
 
 func (q *MqttQueue) handleNozzleTemp(payload map[string]any) {
@@ -778,8 +926,9 @@ func (q *MqttQueue) SendAutoLeveling(ctx context.Context) error {
 // official eufyMake app does.
 //
 // Axis mapping (confirmed against Python reference web/service/mqtt.py):
-//   xy → value 0
-//   z  → value 2  (also used for "all")
+//
+//	xy → value 0
+//	z  → value 2  (also used for "all")
 var homeAxisValue = map[string]int{
 	"xy": 0,
 	"z":  2,
@@ -1005,6 +1154,35 @@ func (q *MqttQueue) SnapshotState() map[string]any {
 	if q.lastStatePayload != nil {
 		out["last_event"] = cloneMap(q.lastStatePayload)
 	}
+	if q.printProgress != nil {
+		out["print_progress"] = *q.printProgress
+	}
+	if q.printSpeed != nil {
+		out["print_speed"] = *q.printSpeed
+	}
+	if q.currentLayer != nil {
+		out["current_layer"] = *q.currentLayer
+		out["print_layer"] = formatPrintLayer(q.currentLayer, q.totalLayers)
+	}
+	if q.totalLayers != nil {
+		out["total_layers"] = *q.totalLayers
+		if _, ok := out["print_layer"]; !ok {
+			out["print_layer"] = formatPrintLayer(q.currentLayer, q.totalLayers)
+		}
+	}
+	if q.timeElapsed != nil {
+		out["time_elapsed"] = *q.timeElapsed
+	}
+	if q.timeRemaining != nil {
+		out["time_remaining"] = *q.timeRemaining
+	}
+	if q.runoutPending || q.filamentIssue != "" || q.filamentIssueCode != "" {
+		out["filament"] = map[string]any{
+			"runout_pending": q.runoutPending,
+			"issue":          q.filamentIssue,
+			"issue_code":     q.filamentIssueCode,
+		}
+	}
 	// Temperature data (Python parity: get_state() returns "temperature" dict).
 	tempMap := map[string]any{
 		"nozzle":        q.nozzleTemp,
@@ -1097,6 +1275,53 @@ func cloneMap(in map[string]any) map[string]any {
 	return out
 }
 
+func decodeMQTTPayload[T any](payload map[string]any, dst *T) bool {
+	if dst == nil {
+		return false
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return false
+	}
+	if err := json.Unmarshal(data, dst); err != nil {
+		return false
+	}
+	return true
+}
+
+func firstInt(values ...any) (int, bool) {
+	for _, value := range values {
+		if v, ok := asInt(value); ok {
+			return v, true
+		}
+	}
+	return 0, false
+}
+
+func firstString(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func formatPrintLayer(current, total *int) string {
+	switch {
+	case current == nil:
+		return ""
+	case total == nil:
+		return strconv.Itoa(*current)
+	default:
+		return fmt.Sprintf("%d/%d", *current, *total)
+	}
+}
+
+func newInt(v int) *int {
+	return &v
+}
+
 func asInt(v any) (int, bool) {
 	switch x := v.(type) {
 	case int:
@@ -1132,4 +1357,20 @@ func asInt(v any) (int, bool) {
 	default:
 		return 0, false
 	}
+}
+
+func (q *MqttQueue) clearFilamentRunoutPendingLocked() {
+	q.runoutPending = false
+}
+
+func (q *MqttQueue) clearFilamentIssueLocked() {
+	q.runoutPending = false
+	q.filamentIssue = ""
+	q.filamentIssueCode = ""
+}
+
+func (q *MqttQueue) markFilamentRunoutLocked() {
+	q.clearFilamentRunoutPendingLocked()
+	q.filamentIssue = filamentIssueRunout
+	q.filamentIssueCode = filamentRunoutErrorCode
 }
