@@ -18,7 +18,7 @@ ankerctl communicates with AnkerMake M5 printers via three protocols:
 - **Username**: `eufy_{user_id}`
 - **Password**: user email
 
-See [mqtt.md](mqtt.md) for message types, state machine, and packet format.
+See the [Protocol Details wiki page](../wiki/Protocol-Details.md) for message types, state machine, and packet format.
 
 ## PPPP Protocol
 
@@ -29,7 +29,7 @@ See [mqtt.md](mqtt.md) for message types, state machine, and packet format.
 - **Retransmission timeout**: 0.5 seconds
 - **Sequencing**: CyclicU16 (16-bit wraparound counter)
 
-See [pppp.md](pppp.md) for channel assignments, packet types, and crypto.
+See the [Protocol Details wiki page](../wiki/Protocol-Details.md) for channel assignments, packet types, and crypto details. Detailed crypto validation lives in [`pppp-crypto-validation.md`](pppp-crypto-validation.md).
 
 ## HTTP Auth Flow
 
@@ -39,7 +39,7 @@ See [pppp.md](pppp.md) for channel assignments, packet types, and crypto.
 4. Fetch DSK keys for P2P authentication
 5. Decode PPPP init strings for connection parameters
 
-See [http-auth.md](http-auth.md) for API endpoints and data structures.
+See the [Protocol Details wiki page](../wiki/Protocol-Details.md) for API endpoints and data structures.
 
 ## Critical Constants
 

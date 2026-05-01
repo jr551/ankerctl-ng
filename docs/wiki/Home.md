@@ -2,6 +2,8 @@
 
 Welcome to the ankerctl wiki. ankerctl is a Go reimplementation of [ankermake-m5-protocol](https://github.com/ankermake/ankermake-m5-protocol) -- a CLI and web UI for monitoring, controlling, and interfacing with AnkerMake M5 3D printers.
 
+> **v1.0.0 — Feature parity achieved (2026-05-01).** All migration phases are complete.
+
 ## Why Go?
 
 - **Security** -- Strict type system, no dynamic eval, compiled binary
@@ -16,14 +18,14 @@ Welcome to the ankerctl wiki. ankerctl is a Go reimplementation of [ankermake-m5
 - **[Protocol Details](Protocol-Details)** -- MQTT, PPPP, and crypto protocol documentation
 - **[API Reference](API-Reference)** -- Complete REST and WebSocket endpoint reference
 - **[Development Guide](Development-Guide)** -- Build commands, git workflow, mandates, contributing
-- **[Migration Status](Migration-Status)** -- 16-phase migration plan progress and open items
+- **[Migration Status](Migration-Status)** -- Migration history (v1.0.0 — complete)
 - **[Troubleshooting](Troubleshooting)** -- Common problems and their solutions
 
 ## Quick Start
 
 ### Option 1: Download the Binary (fastest)
 
-Download the latest release from [Releases](https://github.com/Django1982/ankerctl_go_remake/releases) (v0.9.24+), make it executable, and run:
+Download the latest release from [Releases](https://github.com/Django1982/ankerctl_go_remake/releases) (v1.0.0+), make it executable, and run:
 
 ```sh
 chmod +x ankerctl-linux-amd64

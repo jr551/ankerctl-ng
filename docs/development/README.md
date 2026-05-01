@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Go 1.22 or later
+- Go 1.24 or later
 - Git
 - Docker (optional, for containerized builds)
 - ffmpeg (optional, for timelapse feature)
@@ -11,8 +11,8 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/django1982/ankerctl.git
-cd ankerctl
+git clone https://github.com/Django1982/ankerctl_go_remake.git
+cd ankerctl_go_remake
 
 # Build
 go build -o ankerctl ./cmd/ankerctl/

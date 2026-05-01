@@ -66,13 +66,13 @@ To ensure project stability and a clean history:
 **Hook enforcement:** Run `sh scripts/install-hooks.sh` once after cloning. This installs a `pre-commit` hook that hard-blocks direct commits to `main`.
 
 ### Migration Status
-Refer to `MIGRATION_PLAN.md` for the full 16-phase roadmap. 
-- **Completed:** Phase 1-4, 6, 8, 9, 11, 12.
-- **In Progress:** Phase 5 (SQLite fine-tuning), Phase 7 (PPPP client refinements), Phase 10 (Remaining HTTP handlers).
-- **Recent Reports:** Check `docs/agents/reports/` for detailed phase-specific status and review notes.
+The migration is complete. **v1.0.0 released 2026-05-01** with full 1:1 feature parity to the Python original.
+Refer to `docs/MIGRATION_PLAN.md` for the historical 17-phase roadmap and design decisions.
+Historical phase reports and reviews are archived in `docs/agents/reports/`.
 
 ## Reference Documentation
 - `README.md`: General project info.
 - `CLAUDE.md`: Implementation-specific guidance and protocol constants.
-- `MIGRATION_PLAN.md`: Full roadmap and Python-to-Go mapping.
+- `docs/MIGRATION_PLAN.md`: Historical 17-phase roadmap and Python-to-Go mapping.
 - `docs/architecture/`: Detailed architecture documentation.
+- `docs/wiki/`: User-facing wiki pages (installation, API reference, troubleshooting).

@@ -1,11 +1,17 @@
 # ankerctl Go Migration Plan
 
-**Status**: Phasen 1-16 abgeschlossen — offene Parity-Gaps (Phase 17, siehe unten)
-**Erstellt**: 2026-03-03
-**Ziel**: 1:1 Feature-Parity mit dem Python-Original
+> **STATUS: COMPLETE — v1.0.0** (released 2026-05-01)
+>
+> All 17 migration phases are finished. Full 1:1 feature parity with the Python
+> original has been achieved. This document is preserved as a historical record of
+> the migration roadmap and the design decisions made along the way. For the current
+> state of the project, see the [README](../README.md) and the
+> [Migration Status wiki page](wiki/Migration-Status.md).
 
-> **Parity-Audit 2026-05-01**: Automatisierter Agent-Review hat 12 fehlende Routen,
-> 5 fehlende MQTT-Handler und 2 Bugfixes identifiziert. Tracking via Issues #48–#53.
+**Status**: All 17 phases done — v1.0.0 shipped
+**Started**: 2026-03-03
+**Completed**: 2026-05-01
+**Goal achieved**: 1:1 feature parity with the Python original
 
 ---
 
@@ -102,7 +108,7 @@ ankerctl_go_remake/
   go.sum
   Dockerfile
   docker-compose.yaml
-  MIGRATION_PLAN.md
+  docs/MIGRATION_PLAN.md
   README.md
   LICENSE
 ```
@@ -190,8 +196,8 @@ ankerctl_go_remake/
 
 ## Aktuelle Status-Matrix
 
-**Stand**: 2026-03-05  
-**Quelle**: Code-Stand + `docs/agents/reports/*`
+**Stand**: 2026-05-01 (v1.0.0 release)
+**Quelle**: Code-Stand + `agents/reports/*`
 
 | Phase | Status | Kurzkommentar |
 |---|---|---|
@@ -199,20 +205,21 @@ ankerctl_go_remake/
 | 2. Config + Models | done | Implementiert, Tests vorhanden |
 | 3. Crypto Layer | done | Implementiert, Tests vorhanden |
 | 4. Middleware + HTTP Server | done | Implementiert, Tests + race/vet gruen |
-| 5. SQLite DB Layer | partial | Teile in Services/Handlern vorhanden, Feinschliff offen |
-| 6. MQTT Protocol + Client | done | Report `phase6-codex`: done |
-| 7. PPPP Protocol + Client | partial | Report `phase7-codex`: partial |
-| 8. Service Framework | done | Report `phase8-codex`: done |
-| 9. Web Services | done | Reports `phase9a/9b-codex`: done |
-| 10. HTTP API Handlers | partial | Report `phase10-codex`: partial |
-| 11. WebSocket Handlers | done | Report `phase11-codex`: done, Review vorhanden |
-| 12. Notifications + GCode Utils | done | Report `phase12-codex`: DONE |
-| 13. Anker Cloud HTTP API | open | Geplant, kein Abschlussreport |
-| 14. Frontend + Templates | open | Geplant, kein Abschlussreport |
-| 15. CLI Commands | open | Geplant, kein Abschlussreport |
-| 16. Docker + CI | open | Geplant, kein Abschlussreport |
+| 5. SQLite DB Layer | done | Print history + filament profiles, parameterisierte Queries |
+| 6. MQTT Protocol + Client | done | 39 message types, encrypted communication |
+| 7. PPPP Protocol + Client | done | UDP P2P, 8 channels, DRW pipelining |
+| 8. Service Framework | done | Lifecycle, ServiceManager, ref-counting |
+| 9. Web Services | done | Alle 8 Services implementiert |
+| 10. HTTP API Handlers | done | 40+ REST endpoints |
+| 11. WebSocket Handlers | done | 5 WebSocket streams |
+| 12. Notifications + GCode Utils | done | Apprise, GCode patching |
+| 13. Anker Cloud HTTP API | done | Login, device query, region detection |
+| 14. Frontend + Templates | done | Jinja2-zu-Go template conversion, `//go:embed` |
+| 15. CLI Commands | done | cobra CLI: config, mqtt, pppp, http, webserver |
+| 16. Docker + CI | done | Multi-arch build, health check, CI pipeline |
+| 17. Parity-Gaps Audit | done | Issues #48–#53 abgearbeitet (siehe unten) |
 
-Aktive Restpunkte werden zentral in [`docs/agents/OPEN_ITEMS.md`](docs/agents/OPEN_ITEMS.md) gepflegt.
+Historische Restpunkte (jetzt geschlossen) sind in [`agents/OPEN_ITEMS.md`](agents/OPEN_ITEMS.md) dokumentiert.
 
 ---
 
@@ -683,12 +690,12 @@ Realistic with parallelization: **~25 working days**
 
 ---
 
-## Phase 17 — Parity-Gaps (2026-05-01 Audit)
+## Phase 17 — Parity-Gaps (2026-05-01 Audit) — DONE
 
 Ergebnis des automatisierten Agent-Parity-Reviews gegen `web/__init__.py` und `web/service/`.
-Alle Items sind als GitHub Issues erfasst.
+Alle Items wurden als GitHub Issues #48–#53 erfasst und vor dem v1.0.0 Release geschlossen.
 
-### 17.1 — Fehlende Datei-Endpunkte (Issue #48) `HOCH`
+### 17.1 — Fehlende Datei-Endpunkte (Issue #48) `HOCH` — DONE
 
 | Route | Beschreibung |
 |---|---|
@@ -698,7 +705,7 @@ Alle Items sind als GitHub Issues erfasst.
 
 Neuer Handler `internal/web/handler/files.go`. Thumbnail-Parser (`internal/gcode/thumbnail.go`) bereits vorhanden.
 
-### 17.2 — Fehlende MQTT ct-Handler (Issue #49) `HOCH`
+### 17.2 — Fehlende MQTT ct-Handler (Issue #49) `HOCH` — DONE
 
 | ct | Name | Auswirkung |
 |---|---|---|
@@ -710,23 +717,23 @@ Neuer Handler `internal/web/handler/files.go`. Thumbnail-Parser (`internal/gcode
 
 Ergänzung in `internal/service/mqttqueue.go` switch-Block.
 
-### 17.3 — Fehlende Printer-State-Endpunkte (Issue #50) `MITTEL`
+### 17.3 — Fehlende Printer-State-Endpunkte (Issue #50) `MITTEL` — DONE
 
 `GET /api/printer/runtime-state`, `GET /api/printer/settings-summary`, `GET /api/printer/alerts`
 → Ergänzung in `internal/web/handler/printer.go`
 
-### 17.4 — Fehlende Settings/Config-Routen (Issue #51) `MITTEL`
+### 17.4 — Fehlende Settings/Config-Routen (Issue #51) `MITTEL` — DONE
 
 `GET|POST /api/settings/filament-service/advanced`, `POST /api/settings/launcher-bat`,
 `POST /api/ankerctl/config/import-slicer`, `POST /api/history/delete`
 → Ergänzung in bestehenden Handlern + `internal/web/routes.go`
 
-### 17.5 — Video-Stall-Timeout falsch (Issue #52) `BUG`
+### 17.5 — Video-Stall-Timeout falsch (Issue #52) `BUG` — DONE
 
 `defaultVideoStallTimeout` in `internal/service/videoqueue.go`: Go=15s, Python=5s.
 One-liner fix.
 
-### 17.6 — HomeAssistant device_class unvollständig (Issue #53) `BUG`
+### 17.6 — HomeAssistant device_class unvollständig (Issue #53) `BUG` — DONE
 
 Temperatursensoren und Zeitsensoren haben kein `device_class` in Discovery-Payloads.
 Fix in `internal/service/homeassistant.go`.

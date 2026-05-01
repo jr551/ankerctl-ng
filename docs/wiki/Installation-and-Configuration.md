@@ -65,7 +65,7 @@ chmod +x ankerctl-linux-amd64
 
 ## From Source
 
-Requires Go 1.22 or later.
+Requires Go 1.24 or later.
 
 ```sh
 git clone https://github.com/Django1982/ankerctl_go_remake.git

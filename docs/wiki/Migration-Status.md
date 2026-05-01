@@ -3,8 +3,9 @@
 This page tracks the progress of the Python-to-Go migration for ankerctl.
 
 **Started:** 2026-03-03
+**Completed:** 2026-05-01
 **Target:** 1:1 feature parity with the Python original
-**Current progress:** 100% — v0.9.24 released
+**Current progress:** 100% — **v1.0.0 released**
 
 ---
 
@@ -28,6 +29,21 @@ This page tracks the progress of the Python-to-Go migration for ankerctl.
 | 14 | Frontend + Templates | ✅ DONE | Jinja2-to-Go template conversion, `//go:embed` |
 | 15 | CLI Commands | ✅ DONE | cobra CLI: config, mqtt, pppp, http, webserver |
 | 16 | Docker + CI | ✅ DONE | Multi-arch build, health check, CI pipeline |
+| 17 | Parity-Gaps Audit | ✅ DONE | Issues #48–#53 resolved before v1.0.0 |
+
+---
+
+## v1.0.0 Release Notes (2026-05-01)
+
+The v1.0.0 release closes the migration. All Phase 17 parity-audit items are
+resolved:
+
+- Missing file endpoints implemented (`/api/files/printer`, thumbnail, print)
+- Missing MQTT `ct` handlers added (1001, 1006, 1052, 1085, 1086)
+- Missing printer-state endpoints implemented (runtime-state, settings-summary, alerts)
+- Missing settings/config routes added (filament-service advanced, launcher-bat, import-slicer, history delete)
+- Video stall timeout corrected to match Python (5s)
+- HomeAssistant device_class fields completed for temperature and time sensors
 
 ---
 
@@ -51,7 +67,7 @@ Key commits from the last development cycle:
 
 ## Closed Items
 
-All known gaps are resolved as of v0.9.24.
+All known gaps are resolved as of v1.0.0.
 
 ### Recently Closed
 
