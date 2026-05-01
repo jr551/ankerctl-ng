@@ -571,6 +571,20 @@ func TestHomeAssistantDiscoveryPayloadCompleteness(t *testing.T) {
 					t.Errorf("%s: unit_of_measurement should be %q, got %v", pub.topic, expectedUnit, cfg["unit_of_measurement"])
 				}
 			}
+
+			deviceClassesExpected := map[string]string{
+				"nozzle_temp":        "temperature",
+				"bed_temp":           "temperature",
+				"nozzle_temp_target": "temperature",
+				"bed_temp_target":    "temperature",
+				"time_elapsed":       "duration",
+				"time_remaining":     "duration",
+			}
+			if expectedClass, ok := deviceClassesExpected[sensorID]; ok {
+				if cfg["device_class"] != expectedClass {
+					t.Errorf("%s: device_class should be %q, got %v", pub.topic, expectedClass, cfg["device_class"])
+				}
+			}
 		}
 	}
 }
