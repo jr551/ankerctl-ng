@@ -15,9 +15,10 @@ import (
 )
 
 const (
-	PPPPLANPort = 32108    // UDP port for LAN discovery (LanSearch broadcast / PunchPkt)
-	PPPPPort    = 32100    // UDP port for PPPP session (file upload, camera, remote control)
-	PPPPWANPort = PPPPPort // kept for compatibility
+	PPPPLANPort       = 32108    // UDP port for LAN discovery (LanSearch broadcast / PunchPkt)
+	PPPPPort          = 32100    // UDP port for PPPP session (file upload, camera, remote control)
+	PPPPWANPort       = PPPPPort // kept for compatibility
+	PPPPDiscoveryPort = 32109    // local bind port for CLI LAN discovery (avoids conflict with server's 32108)
 )
 
 // State represents PPPP connection lifecycle state.
@@ -133,16 +134,21 @@ func OpenWAN(duid protocol.Duid, host string) (*Client, error) {
 	return Open(duid, host, PPPPWANPort, 0)
 }
 
-// OpenBroadcast opens a broadcast client for LAN search.
-// SO_BROADCAST must be set explicitly on Linux; without it WriteTo to
-// 255.255.255.255 returns EACCES.
+// OpenBroadcast opens a broadcast client for LAN search (CLI discovery path,
+// e.g. find_anker). SO_BROADCAST must be set explicitly on Linux; without it
+// WriteTo to 255.255.255.255 returns EACCES.
 //
-// The local socket is bound to PPPPLANPort (32108) so that ufw/conntrack on
-// Linux can be satisfied with a single static rule. Broadcast UDP is not
-// tracked by conntrack, so the printer's unicast PunchPkt reply to an
-// ephemeral source port would otherwise be dropped silently.
+// The local socket is bound to PPPPDiscoveryPort (32109) rather than
+// PPPPLANPort (32108) so that the CLI can run while the server is already
+// holding 32108 via OpenBroadcastLAN — both processes binding 32108 would
+// fail with EADDRINUSE. The broadcast destination is still 32108 (the
+// printer's listener); the printer responds to whichever source port it
+// received the LanSearch on, so binding to 32109 locally is fine. A single
+// static ufw rule covering 32109 is enough — broadcast UDP is not tracked
+// by conntrack, so a fixed local port is required for the printer's unicast
+// PunchPkt reply to survive the firewall.
 func OpenBroadcast() (*Client, error) {
-	conn, err := listenUDPLocal(PPPPLANPort)
+	conn, err := listenUDPLocal(PPPPDiscoveryPort)
 	if err != nil {
 		return nil, err
 	}
