@@ -93,6 +93,8 @@ internal/logging      → (no internal deps)
 
 **PPPP** (`internal/pppp/`): UDP-based P2P protocol for LAN communication. One UDP socket serves 8 logical channels. LAN discovery on port 32108. Key complexity: DRW pipelining with a 64-packet in-flight window and 0.5s retransmission timeout. CyclicU16 is a 16-bit wraparound counter used for sequencing.
 
+> Sockets bind to **fixed local UDP ports** (32100 for sessions, 32108 for the server's broadcast/discovery socket, 32109 for the `find_anker` CLI) instead of OS-assigned ephemeral ports. This is required for ufw/conntrack compatibility: broadcast UDP is not tracked, so the printer's unicast response would otherwise be dropped on the random ephemeral port. The cloud-relay path (`OpenWAN`) stays ephemeral. See `internal/pppp/client/client.go` (`listenUDPLocal`).
+
 **Crypto** (`internal/crypto/`): AES-256-CBC with PKCS7 padding. ECDH uses secp256r1 with Anker's hardcoded public key (X/Y in `docs/MIGRATION_PLAN.md`). The PPPP `crypto_curse/decurse` functions live in `internal/pppp/crypto/` and use shuffle tables — these must be bit-exact.
 
 ### Service Framework (`internal/service/`)
@@ -149,12 +151,14 @@ See `docs/MIGRATION_PLAN.md` for the full list.
 These are protocol-level and must be bit-exact:
 
 ```go
-const MQTTAesIV   = "3DPrintAnkerMake" // Fixed 16-byte AES IV
-const MQTTPort    = 8789
-const PPPPLanPort = 32108
-const PPPPSeed    = "EUPRAKM"
-const DefaultHost = "127.0.0.1"
-const DefaultPort = 4470
+const MQTTAesIV         = "3DPrintAnkerMake" // Fixed 16-byte AES IV
+const MQTTPort          = 8789
+const PPPPPort          = 32100              // PPPP session (local + remote)
+const PPPPLanPort       = 32108              // LAN discovery; server broadcast bind
+const PPPPDiscoveryPort = 32109              // CLI (find_anker) discovery bind — avoids server's 32108
+const PPPPSeed          = "EUPRAKM"
+const DefaultHost       = "127.0.0.1"
+const DefaultPort       = 4470
 ```
 
 ## Python Source Reference

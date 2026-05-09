@@ -87,6 +87,8 @@ docker compose up -d
 
 > **Note:** `network_mode: host` is required for PPPP (UDP P2P) communication with the printer on the local network.
 
+> **Firewall:** If ufw or another stateful firewall is enabled on the host, allow inbound UDP on **32100, 32108, and 32109**. ankerctl binds these as fixed local ports so conntrack can pass the printer's reply to a broadcast LanSearch. See [`docs/operations/firewall.md`](docs/operations/firewall.md) for the full rationale and `ufw allow` commands.
+
 ### Binary
 
 Download the latest release for your platform from the [Releases](https://github.com/Django1982/ankerctl_go_remake/releases) page.

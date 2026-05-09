@@ -23,11 +23,14 @@ See the [Protocol Details wiki page](../wiki/Protocol-Details.md) for message ty
 ## PPPP Protocol
 
 - **LAN discovery port**: 32108 (UDP)
+- **Session port**: 32100 (UDP)
+- **CLI discovery port**: 32109 (UDP) — `find_anker` binds here to avoid conflict with the server's 32108
 - **Seed**: `EUPRAKM`
 - **Transport**: Single UDP socket, 8 logical channels
 - **Flow control**: DRW pipelining with 64-packet in-flight window
 - **Retransmission timeout**: 0.5 seconds
 - **Sequencing**: CyclicU16 (16-bit wraparound counter)
+- **Local socket bind**: fixed (not ephemeral) — required for ufw/conntrack. See [`../operations/firewall.md`](../operations/firewall.md).
 
 See the [Protocol Details wiki page](../wiki/Protocol-Details.md) for channel assignments, packet types, and crypto details. Detailed crypto validation lives in [`pppp-crypto-validation.md`](pppp-crypto-validation.md).
 
@@ -44,10 +47,12 @@ See the [Protocol Details wiki page](../wiki/Protocol-Details.md) for API endpoi
 ## Critical Constants
 
 ```
-MQTT AES IV:     "3DPrintAnkerMake" (16 bytes)
-MQTT Port:       8789
-PPPP LAN Port:   32108
-PPPP Seed:       "EUPRAKM"
-Default Host:    127.0.0.1
-Default Port:    4470
+MQTT AES IV:           "3DPrintAnkerMake" (16 bytes)
+MQTT Port:             8789
+PPPP Port:             32100  (session, local + remote)
+PPPP LAN Port:         32108  (discovery, server local bind)
+PPPP Discovery Port:   32109  (discovery, find_anker CLI local bind)
+PPPP Seed:             "EUPRAKM"
+Default Host:          127.0.0.1
+Default Port:          4470
 ```

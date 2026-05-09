@@ -374,6 +374,7 @@ progress, failure_reason, task_id
 - Xzyh frames: 16-byte header + payload on channel 0/1
 - Aabb frames: file transfer on channel 1, CRC-protected
 - LAN discovery: broadcast on port 32108
+- Local socket bind: **fixed** (not ephemeral) — `OpenLAN` -> 32100, `OpenBroadcastLAN` -> 32108, `OpenBroadcast` (CLI `find_anker`) -> 32109. Required for ufw/conntrack; broadcast UDP is not tracked, so the printer's unicast response would be dropped on a random ephemeral port. `OpenWAN` (cloud relay) remains ephemeral.
 
 **Go concurrency mapping**:
 - `Channel.poll()` -> goroutine with ticker
@@ -621,8 +622,12 @@ const DefaultMaxEntries    = 500
 // Placeholders: "unknown", "unknown.gcode", ""
 
 // PPPP
-const PPPPLanPort = 32108
-const PPPPWanPort = 32100
+// Sockets bind to fixed local UDP ports (not ephemeral) so ufw/conntrack
+// allows the printer's unicast response back to a broadcast LanSearch.
+const PPPPPort          = 32100 // PPPP session (file upload, camera, remote control)
+const PPPPLanPort       = 32108 // LAN discovery; server's broadcast bind
+const PPPPDiscoveryPort = 32109 // CLI (find_anker) discovery bind — avoids conflict with server's 32108
+const PPPPWanPort       = PPPPPort // alias kept for compatibility
 const PPPPSeed = "EUPRAKM"
 const PPPPSimpleSeed = "SSD@cs2-network."
 

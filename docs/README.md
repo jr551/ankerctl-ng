@@ -14,6 +14,7 @@ docs/
   api/                REST API reference, WebSocket protocol, OctoPrint compat
   protocols/          MQTT, PPPP, and HTTP auth protocol documentation
   development/        Developer onboarding, build instructions, testing guide
+  operations/         Operations runbooks (firewall/ufw, deployment notes)
   agents/             Agent workflow templates and handoff format
   archive/            Historical migration artefacts (phase reports, closed open-items, completed plans)
   img/                Screenshots used in README and wiki
@@ -26,6 +27,7 @@ docs/
 - [API Reference](api/README.md) -- REST endpoints, WebSocket streams, auth rules
 - [Protocol Documentation](protocols/README.md) -- MQTT encryption, PPPP UDP, HTTP auth flow
 - [Development Guide](development/README.md) -- Getting started, building, testing, contributing
+- [Firewall / ufw Setup](operations/firewall.md) -- Required UDP rules for PPPP (LAN discovery + session)
 - [Migration Plan](MIGRATION_PLAN.md) -- Historical 17-phase migration roadmap
 - [Migration Status](wiki/Migration-Status.md) -- Final phase summary
 - [Archive](archive/README.md) -- Historical migration artefacts (phase reports, closed open-items)

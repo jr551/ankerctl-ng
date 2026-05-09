@@ -25,7 +25,16 @@ Before troubleshooting, verify that the following are installed:
 
 2. **Docker bridge networking.** You must use `network_mode: host` in Docker Compose. Bridge networking blocks UDP broadcasts.
 
-3. **Firewall blocking UDP.** Ensure ports 32108 (discovery) and 32100 (session) are open for UDP traffic on the server.
+3. **Firewall blocking UDP.** ankerctl binds PPPP sockets to fixed local ports so ufw/conntrack can pass the printer's unicast reply to a broadcast LanSearch. Open all three:
+
+   ```sh
+   sudo ufw allow in proto udp to any port 32100
+   sudo ufw allow in proto udp to any port 32108
+   sudo ufw allow in proto udp to any port 32109
+   sudo ufw reload
+   ```
+
+   Ports: **32100** = PPPP session, **32108** = server LAN discovery, **32109** = `find_anker` CLI discovery. If the server is already running, the CLI binding 32109 (instead of 32108) avoids `EADDRINUSE`. If you see *"is another ankerctl instance running?"* in the logs, another process already holds one of these ports.
 
 4. **Printer in sleep mode.** Wake the printer and wait a few seconds for discovery.
 

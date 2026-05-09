@@ -140,6 +140,31 @@ In PrusaSlicer, OrcaSlicer, or similar, configure a printer with host `localhost
 **Using the key in the browser:**
 Append `?apikey=your-key` to the URL once. A session cookie is set automatically.
 
+## Firewall (ufw)
+
+ankerctl binds PPPP sockets to **fixed local UDP ports** so that stateful firewalls (ufw, nftables, etc.) can pass the printer's unicast reply to a broadcast `LanSearch`. Without this, conntrack drops the response and the printer will never appear connected.
+
+If you run ufw on the server, open all three UDP ports:
+
+```sh
+sudo ufw allow in proto udp to any port 32100
+sudo ufw allow in proto udp to any port 32108
+sudo ufw allow in proto udp to any port 32109
+sudo ufw reload
+```
+
+| Port | Direction | Purpose |
+|------|-----------|---------|
+| 32100/udp | inbound | PPPP session — file upload, camera, remote control |
+| 32108/udp | inbound | LAN discovery (LanSearch broadcast / PunchPkt) — server bind |
+| 32109/udp | inbound | LAN discovery — `find_anker` CLI bind (avoids conflict when the server already holds 32108) |
+
+The cloud-relay path (`OpenWAN`) uses an ephemeral local port and needs no rule — conntrack tracks unicast TCP/UDP automatically. Outbound MQTT to Anker's broker is plain TCP 8789 (TLS); ufw default-allow-outgoing already permits it.
+
+> **Note:** Running multiple ankerctl processes on the same host is not supported — they will fight for these fixed ports. If you see *"is another ankerctl instance running?"* in the logs, that's why.
+
+See [Protocol-Details#local-socket-bind-ufw--conntrack](Protocol-Details#local-socket-bind-ufw--conntrack) for the protocol-level rationale.
+
 ## Environment Variables
 
 See [`.env.example`](https://github.com/Django1982/ankerctl_go_remake/blob/main/.env.example) for a complete template with comments. All variables are optional -- ankerctl works with sensible defaults.
