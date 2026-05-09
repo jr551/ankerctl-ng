@@ -327,7 +327,7 @@ func TestListenUDPLocalEphemeralUsesAnyPort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listenUDPLocal(0) failed: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	if port := conn.LocalAddr().(*net.UDPAddr).Port; port == 0 {
 		t.Fatalf("expected OS-assigned ephemeral port, got 0")
 	}
@@ -346,13 +346,13 @@ func TestListenUDPLocalFixedPortRoundTrip(t *testing.T) {
 		t.Fatalf("probe listen failed: %v", err)
 	}
 	port := probe.LocalAddr().(*net.UDPAddr).Port
-	probe.Close()
+	_ = probe.Close()
 
 	conn, err := listenUDPLocal(port)
 	if err != nil {
 		t.Fatalf("listenUDPLocal(%d) failed: %v", port, err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	if got := conn.LocalAddr().(*net.UDPAddr).Port; got != port {
 		t.Fatalf("expected bound port %d, got %d", port, got)
 	}
@@ -367,7 +367,7 @@ func TestListenUDPLocalAddressInUseWrapsClearly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("probe listen failed: %v", err)
 	}
-	defer probe.Close()
+	defer func() { _ = probe.Close() }()
 	port := probe.LocalAddr().(*net.UDPAddr).Port
 
 	// Second bind to the same port must fail with our wrapped message.
