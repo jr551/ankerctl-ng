@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -315,5 +316,71 @@ func TestDiscoverLANIPTimeout(t *testing.T) {
 	}
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("expected context deadline exceeded, got %v", err)
+	}
+}
+
+// TestListenUDPLocalEphemeralUsesAnyPort verifies that localPort=0 still binds
+// successfully — this is the WAN/cloud-relay path where a fixed local port
+// would create needless conflicts.
+func TestListenUDPLocalEphemeralUsesAnyPort(t *testing.T) {
+	conn, err := listenUDPLocal(0)
+	if err != nil {
+		t.Fatalf("listenUDPLocal(0) failed: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+	if port := conn.LocalAddr().(*net.UDPAddr).Port; port == 0 {
+		t.Fatalf("expected OS-assigned ephemeral port, got 0")
+	}
+}
+
+// TestListenUDPLocalFixedPortRoundTrip verifies that a fixed-port bind succeeds
+// and that the socket is actually bound to the requested port. We pick an
+// unprivileged port from the ephemeral range to avoid clashing with PPPP ports
+// during parallel test runs.
+func TestListenUDPLocalFixedPortRoundTrip(t *testing.T) {
+	// Probe an available port by opening with 0, reading the assignment, and
+	// closing — then bind explicitly to that port. This avoids hard-coding a
+	// port that might be in use on the developer's machine.
+	probe, err := net.ListenUDP("udp4", &net.UDPAddr{Port: 0})
+	if err != nil {
+		t.Fatalf("probe listen failed: %v", err)
+	}
+	port := probe.LocalAddr().(*net.UDPAddr).Port
+	_ = probe.Close()
+
+	conn, err := listenUDPLocal(port)
+	if err != nil {
+		t.Fatalf("listenUDPLocal(%d) failed: %v", port, err)
+	}
+	defer func() { _ = conn.Close() }()
+	if got := conn.LocalAddr().(*net.UDPAddr).Port; got != port {
+		t.Fatalf("expected bound port %d, got %d", port, got)
+	}
+}
+
+// TestListenUDPLocalAddressInUseWrapsClearly verifies that the EADDRINUSE
+// error path produces an actionable message — operators on Linux/ufw will
+// hit this when a stale ankerctl is still holding the port.
+func TestListenUDPLocalAddressInUseWrapsClearly(t *testing.T) {
+	// Bind a probe socket first to occupy a port.
+	probe, err := net.ListenUDP("udp4", &net.UDPAddr{Port: 0})
+	if err != nil {
+		t.Fatalf("probe listen failed: %v", err)
+	}
+	defer func() { _ = probe.Close() }()
+	port := probe.LocalAddr().(*net.UDPAddr).Port
+
+	// Second bind to the same port must fail with our wrapped message.
+	_, err = listenUDPLocal(port)
+	if err == nil {
+		t.Fatalf("expected EADDRINUSE error, got nil")
+	}
+	msg := err.Error()
+	wantSubstr := fmt.Sprintf("local port %d already in use", port)
+	if !strings.Contains(msg, wantSubstr) {
+		t.Fatalf("error message %q missing hint %q", msg, wantSubstr)
+	}
+	if !strings.Contains(msg, "another ankerctl instance") {
+		t.Fatalf("error message %q missing actionable hint about another ankerctl instance", msg)
 	}
 }
