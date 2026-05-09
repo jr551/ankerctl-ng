@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"sync"
+	"syscall"
 	"time"
 
 	ppppcrypto "github.com/django1982/ankerctl/internal/pppp/crypto"
@@ -61,21 +62,29 @@ func NewClient(conn udpConn, duid protocol.Duid, addr *net.UDPAddr) *Client {
 }
 
 // Open creates a client for an explicit host:port.
-func Open(duid protocol.Duid, host string, port int) (*Client, error) {
+//
+// localPort controls the local UDP bind port: a positive value binds to that
+// fixed port (so a single static firewall rule suffices on Linux/ufw, where
+// conntrack does not track broadcast UDP and ephemeral source ports break);
+// 0 lets the OS pick an ephemeral port, which is correct for WAN/cloud relay
+// traffic where conntrack handles the unicast flow.
+func Open(duid protocol.Duid, host string, port, localPort int) (*Client, error) {
 	raddr, err := net.ResolveUDPAddr("udp4", fmt.Sprintf("%s:%d", host, port))
 	if err != nil {
 		return nil, fmt.Errorf("pppp: resolve udp addr: %w", err)
 	}
-	conn, err := net.ListenUDP("udp4", nil)
+	conn, err := listenUDPLocal(localPort)
 	if err != nil {
-		return nil, fmt.Errorf("pppp: listen udp: %w", err)
+		return nil, err
 	}
 	return NewClient(conn, duid, raddr), nil
 }
 
 // OpenLAN opens a direct LAN PPPP client on the PPPP session port (32100).
+// Local socket is bound to PPPPPort (32100) so that ufw/conntrack consistently
+// associates the printer's responses with a single static firewall rule.
 func OpenLAN(duid protocol.Duid, host string) (*Client, error) {
-	return Open(duid, host, PPPPPort)
+	return Open(duid, host, PPPPPort, PPPPPort)
 }
 
 // OpenBroadcastLAN opens a broadcast-capable client for the full LAN handshake.
@@ -83,10 +92,16 @@ func OpenLAN(duid protocol.Duid, host string) (*Client, error) {
 // StateConnecting so the client can complete the LanSearch→PunchPkt→P2pRdy
 // handshake. After PunchPkt is received, the remote addr is automatically
 // updated to the printer's IP on PPPPPort (32100) for the session.
+//
+// The local socket is bound to PPPPLANPort (32108). A fixed local port is
+// required for ufw/conntrack on Linux: broadcast UDP is not tracked, so the
+// printer's unicast PunchPkt reply to an ephemeral source port is dropped
+// silently by the firewall. With a fixed port, a single static ufw rule
+// covers both directions.
 func OpenBroadcastLAN(duid protocol.Duid) (*Client, error) {
-	conn, err := net.ListenUDP("udp4", nil)
+	conn, err := listenUDPLocal(PPPPLANPort)
 	if err != nil {
-		return nil, fmt.Errorf("pppp: listen udp: %w", err)
+		return nil, err
 	}
 	rawConn, err := conn.SyscallConn()
 	if err != nil {
@@ -111,17 +126,25 @@ func OpenBroadcastLAN(duid protocol.Duid) (*Client, error) {
 }
 
 // OpenWAN opens a WAN PPPP client.
+// The local socket uses an OS-assigned ephemeral port: WAN traffic targets the
+// cloud relay as a normal unicast UDP flow, conntrack handles it, and binding
+// to a fixed local port would just create needless port conflicts.
 func OpenWAN(duid protocol.Duid, host string) (*Client, error) {
-	return Open(duid, host, PPPPWANPort)
+	return Open(duid, host, PPPPWANPort, 0)
 }
 
 // OpenBroadcast opens a broadcast client for LAN search.
 // SO_BROADCAST must be set explicitly on Linux; without it WriteTo to
 // 255.255.255.255 returns EACCES.
+//
+// The local socket is bound to PPPPLANPort (32108) so that ufw/conntrack on
+// Linux can be satisfied with a single static rule. Broadcast UDP is not
+// tracked by conntrack, so the printer's unicast PunchPkt reply to an
+// ephemeral source port would otherwise be dropped silently.
 func OpenBroadcast() (*Client, error) {
-	conn, err := net.ListenUDP("udp4", nil)
+	conn, err := listenUDPLocal(PPPPLANPort)
 	if err != nil {
-		return nil, fmt.Errorf("pppp: listen udp: %w", err)
+		return nil, err
 	}
 
 	rawConn, err := conn.SyscallConn()
@@ -149,6 +172,25 @@ func OpenBroadcast() (*Client, error) {
 	c := NewClient(conn, protocol.Duid{}, addr)
 	c.state = StateConnected
 	return c, nil
+}
+
+// listenUDPLocal opens an IPv4 UDP socket bound to the given local port.
+// A localPort of 0 lets the OS pick an ephemeral port. EADDRINUSE is wrapped
+// with an actionable hint, since the most common cause is a second ankerctl
+// instance still holding the PPPP ports.
+func listenUDPLocal(localPort int) (*net.UDPConn, error) {
+	var laddr *net.UDPAddr
+	if localPort > 0 {
+		laddr = &net.UDPAddr{Port: localPort}
+	}
+	conn, err := net.ListenUDP("udp4", laddr)
+	if err != nil {
+		if localPort > 0 && errors.Is(err, syscall.EADDRINUSE) {
+			return nil, fmt.Errorf("pppp: local port %d already in use — is another ankerctl instance running?: %w", localPort, err)
+		}
+		return nil, fmt.Errorf("pppp: listen udp: %w", err)
+	}
+	return conn, nil
 }
 
 // Close stops the run loop and closes socket.
