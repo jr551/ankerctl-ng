@@ -81,12 +81,27 @@ PPPP (Peer-to-Peer Protocol) is used for LAN communication with the printer. It 
 ### Connection
 
 1. **Discovery:** Broadcast UDP packet to port 32108 (LanSearch)
-2. **Handshake:** PunchPkt exchange on ephemeral port
+2. **Handshake:** PunchPkt exchange — printer replies to the source address of the LanSearch (the bound local port, see below)
 3. **Session:** Established on port 32100 for data transfer
 
 **Key identifiers:**
 - DUID: Device Unique ID (e.g., `EUPRAKM-010389-ETVLC`)
 - Seed: `EUPRAKM` (derived from DUID prefix)
+
+### Local socket bind (ufw / conntrack)
+
+ankerctl binds PPPP sockets to **fixed local UDP ports** rather than letting the OS assign an ephemeral one. This is required for hosts running ufw or another stateful firewall: broadcast UDP is not tracked by conntrack, so the printer's unicast response to a LanSearch would otherwise be dropped on a random high port.
+
+| Code path | Local bind | Purpose |
+|-----------|-----------|---------|
+| `OpenLAN` | UDP 32100 | PPPP session (file upload, camera, remote control) |
+| `OpenBroadcastLAN` | UDP 32108 | Server broadcast/handshake (LanSearch + PunchPkt) |
+| `OpenBroadcast` (CLI `find_anker`) | UDP 32109 | Standalone discovery — avoids conflict when the server already holds 32108 |
+| `OpenWAN` (cloud relay) | ephemeral | Unicast only; conntrack handles it |
+
+If a port is already in use, `listenUDPLocal()` returns an actionable error: *"is another ankerctl instance running?"*
+
+For the corresponding ufw rules, see [Installation-and-Configuration#firewall-ufw](Installation-and-Configuration#firewall-ufw).
 
 ### Channels
 
