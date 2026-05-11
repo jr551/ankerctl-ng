@@ -34,14 +34,16 @@ var eventEnvOverrides = map[string]string{
 
 // Client sends notifications to an Apprise API server.
 type Client struct {
-	settings model.AppriseConfig
-	http     *http.Client
+	settings   model.AppriseConfig
+	http       *http.Client
+	lookupHost func(host string) ([]string, error) // injectable for tests
 }
 
 // NewClient builds an Apprise client with a 10-second HTTP timeout.
 func NewClient(settings model.AppriseConfig) *Client {
 	return &Client{
-		settings: settings,
+		settings:   settings,
+		lookupHost: net.LookupHost,
 		http: &http.Client{
 			Timeout: defaultTimeout,
 		},
@@ -406,7 +408,7 @@ func (c *Client) notifyURL() string {
 		slog.Warn("Apprise server URL has unsupported scheme, ignoring", "url", full)
 		return ""
 	}
-	if isPrivateHost(u) {
+	if c.isPrivateHost(u) {
 		slog.Warn("Apprise server URL points to private/loopback address, ignoring", "url", full)
 		return ""
 	}
@@ -415,11 +417,32 @@ func (c *Client) notifyURL() string {
 
 // isPrivateHost reports whether u's host resolves to a private, loopback, or
 // link-local address. This prevents SSRF against internal services and cloud IMDS.
-func isPrivateHost(u *url.URL) bool {
+// For hostname (non-IP) targets a DNS lookup is performed so that a domain
+// pointing at an internal address (DNS-rebinding / split-horizon) is also blocked.
+func (c *Client) isPrivateHost(u *url.URL) bool {
 	host := u.Hostname()
 	if ip := net.ParseIP(host); ip != nil {
-		return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()
+		return isRestrictedIP(ip)
 	}
 	lower := strings.ToLower(host)
-	return lower == "localhost" || strings.HasSuffix(lower, ".local")
+	if lower == "localhost" || strings.HasSuffix(lower, ".local") {
+		return true
+	}
+	// Resolve the hostname and check every returned address. Fail-closed: if
+	// DNS lookup fails we treat the host as private to avoid sending requests
+	// to an unresolvable destination.
+	addrs, err := c.lookupHost(host)
+	if err != nil {
+		return true
+	}
+	for _, addr := range addrs {
+		if ip := net.ParseIP(addr); ip != nil && isRestrictedIP(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+func isRestrictedIP(ip net.IP) bool {
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()
 }
