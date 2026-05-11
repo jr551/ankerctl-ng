@@ -26,9 +26,19 @@ func testAppriseConfig(serverURL string) model.AppriseConfig {
 	return cfg
 }
 
+// newTestClient wraps NewClient and injects a stub DNS resolver so tests never
+// perform real DNS lookups.
+func newTestClient(cfg model.AppriseConfig) *Client {
+	c := NewClient(cfg)
+	c.lookupHost = func(_ string) ([]string, error) {
+		return []string{"93.184.216.34"}, nil // example.com — public, non-restricted
+	}
+	return c
+}
+
 func TestClientSendEvent_PostsExpectedJSON(t *testing.T) {
 	var got map[string]any
-	client := NewClient(testAppriseConfig("https://notify.example.com"))
+	client := newTestClient(testAppriseConfig("https://notify.example.com"))
 	client.http.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		if req.URL.String() != "https://notify.example.com/notify/test-key" {
 			t.Fatalf("url = %s", req.URL.String())
@@ -54,7 +64,7 @@ func TestClientSendEvent_PostsExpectedJSON(t *testing.T) {
 }
 
 func TestClientSendEvent_ContextCanceled(t *testing.T) {
-	client := NewClient(testAppriseConfig("https://notify.example.com"))
+	client := newTestClient(testAppriseConfig("https://notify.example.com"))
 	client.http.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		<-req.Context().Done()
 		return nil, req.Context().Err()
@@ -79,7 +89,7 @@ func TestSendTestNotification_AttachSnapshotBase64(t *testing.T) {
 
 	var got map[string]any
 	cfg := testAppriseConfig("https://notify.example.com")
-	client := NewClient(cfg)
+	client := newTestClient(cfg)
 	client.http.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		if err := json.NewDecoder(req.Body).Decode(&got); err != nil {
 			t.Fatalf("decode body: %v", err)
@@ -135,7 +145,7 @@ func TestClientPost_MultipartFileUpload(t *testing.T) {
 	var receivedAttachContent []byte
 
 	cfg := testAppriseConfig("https://notify.example.com")
-	client := NewClient(cfg)
+	client := newTestClient(cfg)
 	client.http.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		receivedContentType = req.Header.Get("Content-Type")
 		mediaType, params, err := mime.ParseMediaType(receivedContentType)
@@ -208,7 +218,7 @@ func TestProgressNotification_IntervalTracking(t *testing.T) {
 
 	orig := newClient
 	newClient = func(settings model.AppriseConfig) *Client {
-		c := NewClient(settings)
+		c := newTestClient(settings)
 		c.http.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			var body map[string]any
 			_ = json.NewDecoder(req.Body).Decode(&body)
@@ -253,7 +263,7 @@ func TestProgressNotification_MaxValueCap(t *testing.T) {
 
 	orig := newClient
 	newClient = func(settings model.AppriseConfig) *Client {
-		c := NewClient(settings)
+		c := newTestClient(settings)
 		c.http.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			mu.Lock()
 			sendCount++
