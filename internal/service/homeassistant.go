@@ -237,6 +237,7 @@ func (s *HomeAssistantService) onConnected() {
 	s.publishDiscovery()
 	s.publishAvailability("online")
 	s.setOnline(true)
+	s.publishCurrentState()
 
 	topic := fmt.Sprintf("%s/%s/light/set", s.topicPrefix, s.printerSN)
 	s.mu.RLock()
@@ -403,6 +404,113 @@ func (s *HomeAssistantService) setOnline(v bool) {
 	s.mu.Lock()
 	s.state["mqtt_connected"] = v
 	s.mu.Unlock()
+}
+
+func (s *HomeAssistantService) publishCurrentState() {
+	s.mu.RLock()
+	payload, _ := json.Marshal(s.state)
+	s.mu.RUnlock()
+	s.publish(s.stateTopic(), payload, true)
+}
+
+// Notify translates forwarded MQTT payloads into Home Assistant state updates.
+// It shadows BaseWorker.Notify so MqttQueue.forward() drives HA state.
+func (s *HomeAssistantService) Notify(data any) {
+	payload, ok := data.(map[string]any)
+	if !ok {
+		return
+	}
+
+	// ct=1000 state-change event synthesised by handleCT1000
+	if event, _ := payload["event"].(string); event == "print_state" {
+		state, _ := asInt(payload["state"])
+		update := map[string]any{}
+		switch state {
+		case mqttStateIdle, mqttStateAborted:
+			update["print_status"] = "idle"
+			update["print_progress"] = 0
+		case mqttStatePrinting:
+			update["print_status"] = "printing"
+		case mqttStatePaused:
+			update["print_status"] = "paused"
+		default:
+			return
+		}
+		if filename, _ := payload["filename"].(string); filename != "" {
+			update["print_filename"] = filename
+		}
+		s.UpdateState(update)
+		return
+	}
+
+	ct, ok := asInt(payload["commandType"])
+	if !ok {
+		return
+	}
+
+	haUpdates := make(map[string]any)
+
+	switch ct {
+	case 1001, 1000: // PrintSchedule / EventNotify
+		if progress, ok := firstInt(payload["progress"], payload["printProgress"]); ok {
+			haUpdates["print_progress"] = normalizeProgress(progress)
+		}
+		if filename := firstString(
+			haStrVal(payload["name"]),
+			haStrVal(payload["fileName"]),
+			haStrVal(payload["filename"]),
+			haStrVal(payload["fileNameAlt"]),
+			haStrVal(payload["gCode"]),
+			haStrVal(payload["gCodeName"]),
+		); filename != "" {
+			haUpdates["print_filename"] = filename
+		}
+		if elapsed, ok := firstInt(payload["totalTime"], payload["elapsed"], payload["elapsedTime"]); ok {
+			haUpdates["time_elapsed"] = elapsed
+		}
+		if remaining, ok := firstInt(payload["time"], payload["remainTime"], payload["remaining"], payload["remainingTime"]); ok {
+			haUpdates["time_remaining"] = remaining
+		}
+
+	case 1003: // NozzleTemp
+		if v, ok := firstInt(payload["currentTemp"], payload["value"]); ok {
+			haUpdates["nozzle_temp"] = normalizeTemp(v)
+		}
+		if v, ok := firstInt(payload["targetTemp"], payload["target"]); ok {
+			haUpdates["nozzle_temp_target"] = normalizeTemp(v)
+		}
+
+	case 1004: // HotbedTemp
+		if v, ok := firstInt(payload["currentTemp"], payload["value"]); ok {
+			haUpdates["bed_temp"] = normalizeTemp(v)
+		}
+		if v, ok := firstInt(payload["targetTemp"], payload["target"]); ok {
+			haUpdates["bed_temp_target"] = normalizeTemp(v)
+		}
+
+	case 1006: // PrintSpeed
+		if v, ok := firstInt(payload["value"], payload["speed"]); ok {
+			haUpdates["print_speed"] = v
+		}
+
+	case 1052: // ModelLayer
+		if layer, ok := firstInt(payload["value"], payload["layer"], payload["currentLayer"], payload["realPrintLayer"]); ok {
+			layerStr := fmt.Sprintf("%d", layer)
+			if total, ok := firstInt(payload["totalLayer"], payload["total"], payload["totalLayerAlt"]); ok {
+				layerStr = fmt.Sprintf("%d/%d", layer, total)
+			}
+			haUpdates["print_layer"] = layerStr
+		}
+	}
+
+	if len(haUpdates) > 0 {
+		s.UpdateState(haUpdates)
+	}
+}
+
+func haStrVal(v any) string {
+	s, _ := v.(string)
+	return s
 }
 
 func defaultHANewClient(opts *paho.ClientOptions) HomeAssistantMQTTClient {

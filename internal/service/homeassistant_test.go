@@ -1000,3 +1000,227 @@ func TestNonEmpty(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Notify tests — verify MQTT-to-HA state translation
+// ---------------------------------------------------------------------------
+
+func lastStateFor(t *testing.T, client *fakeHAClient, sn string) map[string]any {
+	t.Helper()
+	stateTopic := "ankerctl/" + sn + "/state"
+	published := client.getPublished()
+	for i := len(published) - 1; i >= 0; i-- {
+		if published[i].topic == stateTopic {
+			var m map[string]any
+			if err := json.Unmarshal([]byte(published[i].payload), &m); err != nil {
+				t.Fatalf("unmarshal state: %v", err)
+			}
+			return m
+		}
+	}
+	return nil
+}
+
+func TestHomeAssistantNotifyNozzleTemp(t *testing.T) {
+	svc, client := startHAService(t, defaultHACfg(), "SN_NOZZLE", nil)
+	defer svc.Shutdown()
+	svc.onConnected()
+
+	svc.Notify(map[string]any{"commandType": 1003, "currentTemp": 22500, "targetTemp": 21000})
+	time.Sleep(60 * time.Millisecond)
+
+	state := lastStateFor(t, client, "SN_NOZZLE")
+	if state == nil {
+		t.Fatal("no state published")
+	}
+	if state["nozzle_temp"] != float64(225) {
+		t.Errorf("nozzle_temp = %v, want 225", state["nozzle_temp"])
+	}
+	if state["nozzle_temp_target"] != float64(210) {
+		t.Errorf("nozzle_temp_target = %v, want 210", state["nozzle_temp_target"])
+	}
+}
+
+func TestHomeAssistantNotifyBedTemp(t *testing.T) {
+	svc, client := startHAService(t, defaultHACfg(), "SN_BED", nil)
+	defer svc.Shutdown()
+	svc.onConnected()
+
+	svc.Notify(map[string]any{"commandType": 1004, "currentTemp": 6000, "targetTemp": 6500})
+	time.Sleep(60 * time.Millisecond)
+
+	state := lastStateFor(t, client, "SN_BED")
+	if state == nil {
+		t.Fatal("no state published")
+	}
+	if state["bed_temp"] != float64(60) {
+		t.Errorf("bed_temp = %v, want 60", state["bed_temp"])
+	}
+	if state["bed_temp_target"] != float64(65) {
+		t.Errorf("bed_temp_target = %v, want 65", state["bed_temp_target"])
+	}
+}
+
+func TestHomeAssistantNotifyPrintSpeed(t *testing.T) {
+	svc, client := startHAService(t, defaultHACfg(), "SN_SPEED", nil)
+	defer svc.Shutdown()
+	svc.onConnected()
+
+	svc.Notify(map[string]any{"commandType": 1006, "value": 120})
+	time.Sleep(60 * time.Millisecond)
+
+	state := lastStateFor(t, client, "SN_SPEED")
+	if state == nil {
+		t.Fatal("no state published")
+	}
+	if state["print_speed"] != float64(120) {
+		t.Errorf("print_speed = %v, want 120", state["print_speed"])
+	}
+}
+
+func TestHomeAssistantNotifyModelLayer(t *testing.T) {
+	svc, client := startHAService(t, defaultHACfg(), "SN_LAYER", nil)
+	defer svc.Shutdown()
+	svc.onConnected()
+
+	svc.Notify(map[string]any{"commandType": 1052, "value": 42, "totalLayer": 200})
+	time.Sleep(60 * time.Millisecond)
+
+	state := lastStateFor(t, client, "SN_LAYER")
+	if state == nil {
+		t.Fatal("no state published")
+	}
+	if state["print_layer"] != "42/200" {
+		t.Errorf("print_layer = %v, want '42/200'", state["print_layer"])
+	}
+}
+
+func TestHomeAssistantNotifyPrintSchedule(t *testing.T) {
+	svc, client := startHAService(t, defaultHACfg(), "SN_SCHED", nil)
+	defer svc.Shutdown()
+	svc.onConnected()
+
+	svc.Notify(map[string]any{
+		"commandType": 1001,
+		"progress":    5000,
+		"name":        "benchy.gcode",
+		"totalTime":   120,
+		"time":        60,
+	})
+	time.Sleep(60 * time.Millisecond)
+
+	state := lastStateFor(t, client, "SN_SCHED")
+	if state == nil {
+		t.Fatal("no state published")
+	}
+	if state["print_progress"] != float64(50) {
+		t.Errorf("print_progress = %v, want 50", state["print_progress"])
+	}
+	if state["print_filename"] != "benchy.gcode" {
+		t.Errorf("print_filename = %v, want 'benchy.gcode'", state["print_filename"])
+	}
+	if state["time_elapsed"] != float64(120) {
+		t.Errorf("time_elapsed = %v, want 120", state["time_elapsed"])
+	}
+	if state["time_remaining"] != float64(60) {
+		t.Errorf("time_remaining = %v, want 60", state["time_remaining"])
+	}
+}
+
+func TestHomeAssistantNotifyPrintStateEvent(t *testing.T) {
+	tests := []struct {
+		state      int
+		wantStatus string
+	}{
+		{0, "idle"},
+		{1, "printing"},
+		{2, "paused"},
+		{8, "idle"},
+	}
+	for _, tc := range tests {
+		t.Run(fmt.Sprintf("state=%d", tc.state), func(t *testing.T) {
+			sn := fmt.Sprintf("SN_STATE_%d", tc.state)
+			svc, client := startHAService(t, defaultHACfg(), sn, nil)
+			defer svc.Shutdown()
+			svc.onConnected()
+
+			svc.Notify(map[string]any{"event": "print_state", "state": tc.state, "filename": "test.gcode"})
+			time.Sleep(60 * time.Millisecond)
+
+			state := lastStateFor(t, client, sn)
+			if state == nil {
+				t.Fatal("no state published")
+			}
+			if state["print_status"] != tc.wantStatus {
+				t.Errorf("print_status = %v, want %q", state["print_status"], tc.wantStatus)
+			}
+			if tc.state == 1 || tc.state == 2 {
+				if state["print_filename"] != "test.gcode" {
+					t.Errorf("print_filename = %v, want 'test.gcode'", state["print_filename"])
+				}
+			}
+		})
+	}
+}
+
+func countStatePubs(client *fakeHAClient, sn string) int {
+	stateTopic := "ankerctl/" + sn + "/state"
+	n := 0
+	for _, pub := range client.getPublished() {
+		if pub.topic == stateTopic {
+			n++
+		}
+	}
+	return n
+}
+
+func TestHomeAssistantNotifyIgnoresUnknownType(t *testing.T) {
+	svc, client := startHAService(t, defaultHACfg(), "SN_UNKNOWN", nil)
+	defer svc.Shutdown()
+	svc.onConnected()
+	time.Sleep(30 * time.Millisecond) // let initial state publish settle
+
+	prevCount := countStatePubs(client, "SN_UNKNOWN")
+	svc.Notify(map[string]any{"commandType": 9999, "value": 1})
+	time.Sleep(60 * time.Millisecond)
+
+	if countStatePubs(client, "SN_UNKNOWN") != prevCount {
+		t.Error("expected no new state publishes for unknown commandType")
+	}
+}
+
+func TestHomeAssistantNotifyIgnoresNonMap(t *testing.T) {
+	svc, client := startHAService(t, defaultHACfg(), "SN_NONMAP", nil)
+	defer svc.Shutdown()
+	svc.onConnected()
+	time.Sleep(30 * time.Millisecond) // let initial state publish settle
+
+	prevCount := countStatePubs(client, "SN_NONMAP")
+	svc.Notify("not a map")
+	svc.Notify(42)
+	svc.Notify(nil)
+	time.Sleep(60 * time.Millisecond)
+
+	if countStatePubs(client, "SN_NONMAP") != prevCount {
+		t.Error("expected no new state publishes for non-map Notify")
+	}
+}
+
+func TestHomeAssistantPublishesInitialStateOnConnect(t *testing.T) {
+	svc, client := startHAService(t, defaultHACfg(), "SN_INIT", nil)
+	defer svc.Shutdown()
+	svc.onConnected()
+	time.Sleep(60 * time.Millisecond)
+
+	state := lastStateFor(t, client, "SN_INIT")
+	if state == nil {
+		t.Fatal("expected state to be published on connect")
+	}
+	// Initial state should have zero-valued fields populated
+	if _, ok := state["print_progress"]; !ok {
+		t.Error("expected print_progress in initial state")
+	}
+	if _, ok := state["nozzle_temp"]; !ok {
+		t.Error("expected nozzle_temp in initial state")
+	}
+}
