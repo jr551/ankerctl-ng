@@ -191,8 +191,8 @@ func (c *Client) Post(ctx context.Context, title, body, typ string, attachments 
 	if !c.IsConfigured() {
 		return false, "Apprise server URL or key missing"
 	}
-	url := c.notifyURL()
-	if url == "" {
+	u := c.notifyURL()
+	if u == nil {
 		return false, "Apprise server URL or key missing"
 	}
 
@@ -213,7 +213,7 @@ func (c *Client) Post(ctx context.Context, title, body, typ string, attachments 
 
 	// If we have local files, try multipart upload first (Python _post_with_attachments).
 	if len(localFiles) > 0 {
-		ok, msg, tried := c.postMultipart(ctx, url, title, body, typ, localFiles)
+		ok, msg, tried := c.postMultipart(ctx, u, title, body, typ, localFiles)
 		if tried {
 			return ok, msg
 		}
@@ -238,7 +238,7 @@ func (c *Client) Post(ctx context.Context, title, body, typ string, attachments 
 		return false, fmt.Sprintf("marshal apprise payload: %v", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyJSON))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(bodyJSON))
 	if err != nil {
 		return false, fmt.Sprintf("build apprise request: %v", err)
 	}
@@ -258,7 +258,7 @@ func (c *Client) Post(ctx context.Context, title, body, typ string, attachments 
 
 // postMultipart uploads local files as multipart/form-data.
 // Returns (ok, msg, tried) where tried=false means the caller should fall through.
-func (c *Client) postMultipart(ctx context.Context, url, title, body, typ string, files []string) (bool, string, bool) {
+func (c *Client) postMultipart(ctx context.Context, u *url.URL, title, body, typ string, files []string) (bool, string, bool) {
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
 
@@ -293,7 +293,7 @@ func (c *Client) postMultipart(ctx context.Context, url, title, body, typ string
 
 	_ = writer.Close()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, &buf)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), &buf)
 	if err != nil {
 		return false, fmt.Sprintf("build multipart request: %v", err), true
 	}
@@ -392,11 +392,11 @@ func (c *Client) key() string {
 	return strings.Trim(strings.TrimSpace(c.settings.Key), "/")
 }
 
-func (c *Client) notifyURL() string {
+func (c *Client) notifyURL() *url.URL {
 	serverURL := c.serverURL()
 	key := c.key()
 	if serverURL == "" || key == "" {
-		return ""
+		return nil
 	}
 	base := serverURL
 	if !strings.HasSuffix(base, "/notify") {
@@ -406,13 +406,13 @@ func (c *Client) notifyURL() string {
 	u, err := url.Parse(full)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
 		slog.Warn("Apprise server URL has unsupported scheme, ignoring", "url", full)
-		return ""
+		return nil
 	}
 	if c.isPrivateHost(u) {
 		slog.Warn("Apprise server URL points to private/loopback address, ignoring", "url", full)
-		return ""
+		return nil
 	}
-	return full
+	return u
 }
 
 // isPrivateHost reports whether u's host resolves to a private, loopback, or
