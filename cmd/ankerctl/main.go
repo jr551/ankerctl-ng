@@ -166,6 +166,7 @@ func runWebserver() error {
 
 	// Instantiate HA service with saved config so it starts automatically when enabled.
 	var ha *service.HomeAssistantService
+	var haEnabled bool
 	if startupCfg, err := cfgMgr.Load(); err == nil && startupCfg != nil {
 		printerSN, printerName := "", ""
 		if printerIdx < len(startupCfg.Printers) {
@@ -173,6 +174,7 @@ func runWebserver() error {
 			printerName = startupCfg.Printers[printerIdx].Name
 		}
 		ha = service.NewHomeAssistantService(startupCfg.HomeAssistant, printerSN, printerName, pppp)
+		haEnabled = startupCfg.HomeAssistant.Enabled
 		sm.Register(ha)
 	}
 
@@ -194,6 +196,11 @@ func runWebserver() error {
 		}
 		if _, err := sm.Borrow("timelapse"); err != nil {
 			slog.Warn("failed to start timelapse service", "err", err)
+		}
+		if haEnabled {
+			if _, err := sm.Borrow("ha"); err != nil {
+				slog.Warn("failed to start Home Assistant service", "err", err)
+			}
 		}
 	} else {
 		slog.Info("services not started: active printer is unsupported")
