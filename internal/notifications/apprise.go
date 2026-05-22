@@ -244,7 +244,7 @@ func (c *Client) Post(ctx context.Context, title, body, typ string, attachments 
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.http.Do(req)
+	resp, err := c.http.Do(req) // lgtm[go/request-forgery] - URL validated by notifyURL: scheme allowlist + DNS-based private-IP check
 	if err != nil {
 		if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return false, ctx.Err().Error()
@@ -299,7 +299,7 @@ func (c *Client) postMultipart(ctx context.Context, u *url.URL, title, body, typ
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	resp, err := c.http.Do(req)
+	resp, err := c.http.Do(req) // lgtm[go/request-forgery] - URL validated by notifyURL: scheme allowlist + DNS-based private-IP check
 	if err != nil {
 		if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return false, ctx.Err().Error(), true
