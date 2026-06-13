@@ -136,6 +136,9 @@ func (h *Handler) SmartSocketState(w http.ResponseWriter, r *http.Request) {
 		"available": true,
 		"state":     sw.State,
 	}
+	if ps, ok := h.powerSaving(); ok {
+		out["power_saving"] = ps.Status()
+	}
 	if strings.TrimSpace(ss.PowerEntity) != "" {
 		if power, err := client.State(r.Context(), ss.PowerEntity); err == nil {
 			out["power"] = power.State

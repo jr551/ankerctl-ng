@@ -2464,6 +2464,8 @@ $(function () {
             switchEntity: $("#smart-socket-switch"),
             powerEntity: $("#smart-socket-power"),
             autoOff: $("#smart-socket-auto-off"),
+            powerSaving: $("#smart-socket-power-saving"),
+            wakeSec: $("#smart-socket-wake-sec"),
             status: $("#smart-socket-status"),
         };
 
@@ -2477,7 +2479,13 @@ $(function () {
                     return;
                 }
                 const power = data.power ? `, ${data.power} ${data.power_unit || "W"}` : "";
-                ssFields.status.text(`${data.state}${power}`);
+                const ps = data.power_saving || {};
+                let powerSavingText = "";
+                if (ps.enabled) {
+                    powerSavingText = ps.awake_until ? `, awake until ${new Date(ps.awake_until).toLocaleTimeString()}` : ", power saving idle";
+                    if (ps.print_active) powerSavingText = ", print active";
+                }
+                ssFields.status.text(`${data.state}${power}${powerSavingText}`);
             } catch (err) {
                 console.error("Failed to load smart socket state:", err);
             }
@@ -2495,6 +2503,8 @@ $(function () {
                     ssFields.switchEntity.val(cfg.switch_entity || "");
                     ssFields.powerEntity.val(cfg.power_entity || "");
                     ssFields.autoOff.prop("checked", Boolean(cfg.auto_off_on_fail));
+                    ssFields.powerSaving.prop("checked", Boolean(cfg.power_saving_enabled));
+                    ssFields.wakeSec.val(cfg.power_saving_dashboard_wake_sec || 600);
                 }
                 loadSmartSocketState();
             } catch (err) {
@@ -2513,6 +2523,8 @@ $(function () {
                     switch_entity: ssFields.switchEntity.val().trim(),
                     power_entity: ssFields.powerEntity.val().trim(),
                     auto_off_on_fail: ssFields.autoOff.is(":checked"),
+                    power_saving_enabled: ssFields.powerSaving.is(":checked"),
+                    power_saving_dashboard_wake_sec: parseInt(ssFields.wakeSec.val(), 10) || 600,
                 },
             };
             try {

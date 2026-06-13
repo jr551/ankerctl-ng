@@ -164,6 +164,9 @@ func runWebserver() error {
 	printMonitor.WithReferenceArchive(database, service.NewGCodeArchiver(configDir))
 	sm.Register(printMonitor)
 
+	powerSaving := service.NewPowerSavingService(cfgMgr)
+	sm.Register(powerSaving)
+
 	// Apply saved timelapse config at startup so it is active without requiring a settings save.
 	if startupCfg, err := cfgMgr.Load(); err == nil && startupCfg != nil {
 		printerSN := ""
@@ -187,7 +190,7 @@ func runWebserver() error {
 		sm.Register(ha)
 	}
 
-	mqtt := service.NewMqttQueue(cfgMgr, printerIdx, database, ha, timelapse, printMonitor)
+	mqtt := service.NewMqttQueue(cfgMgr, printerIdx, database, ha, timelapse, printMonitor, powerSaving)
 	sm.Register(mqtt)
 
 	notif := notifications.NewNotificationService(cfgMgr, mqtt, video)
@@ -208,6 +211,9 @@ func runWebserver() error {
 		}
 		if _, err := sm.Borrow("printmonitor"); err != nil {
 			slog.Warn("failed to start print monitor service", "err", err)
+		}
+		if _, err := sm.Borrow("powersaving"); err != nil {
+			slog.Warn("failed to start power saving service", "err", err)
 		}
 		if haEnabled {
 			if _, err := sm.Borrow("homeassistant"); err != nil {

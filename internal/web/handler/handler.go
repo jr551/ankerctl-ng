@@ -313,6 +313,15 @@ func (h *Handler) printMonitor() (*service.PrintMonitorService, bool) {
 	return q, ok
 }
 
+func (h *Handler) powerSaving() (*service.PowerSavingService, bool) {
+	svc, ok := h.serviceByName("powersaving")
+	if !ok {
+		return nil, false
+	}
+	q, ok := svc.(*service.PowerSavingService)
+	return q, ok
+}
+
 func (h *Handler) homeAssistant() (*service.HomeAssistantService, bool) {
 	svc, ok := h.serviceByName("homeassistant")
 	if !ok {

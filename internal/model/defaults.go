@@ -204,22 +204,25 @@ func DefaultPrintMonitorConfig() PrintMonitorConfig {
 
 // SmartSocketConfig holds Home Assistant smart socket control settings.
 type SmartSocketConfig struct {
-	Enabled       bool   `json:"enabled"`
-	BaseURL       string `json:"base_url"`
-	Token         string `json:"token,omitempty"`
-	SwitchEntity  string `json:"switch_entity"`
-	PowerEntity   string `json:"power_entity"`
-	PowerUnit     string `json:"power_unit"`
-	ConfirmOff    bool   `json:"confirm_off"`
-	AutoOffOnFail bool   `json:"auto_off_on_fail"`
+	Enabled                     bool   `json:"enabled"`
+	BaseURL                     string `json:"base_url"`
+	Token                       string `json:"token,omitempty"`
+	SwitchEntity                string `json:"switch_entity"`
+	PowerEntity                 string `json:"power_entity"`
+	PowerUnit                   string `json:"power_unit"`
+	ConfirmOff                  bool   `json:"confirm_off"`
+	AutoOffOnFail               bool   `json:"auto_off_on_fail"`
+	PowerSavingEnabled          bool   `json:"power_saving_enabled"`
+	PowerSavingDashboardWakeSec int    `json:"power_saving_dashboard_wake_sec"`
 }
 
 // DefaultSmartSocketConfig returns default Home Assistant smart socket settings.
 func DefaultSmartSocketConfig() SmartSocketConfig {
 	return SmartSocketConfig{
-		Enabled:    false,
-		PowerUnit:  "W",
-		ConfirmOff: true,
+		Enabled:                     false,
+		PowerUnit:                   "W",
+		ConfirmOff:                  true,
+		PowerSavingDashboardWakeSec: 600,
 	}
 }
 

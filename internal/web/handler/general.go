@@ -13,6 +13,10 @@ import (
 
 // Root serves the web UI placeholder.
 func (h *Handler) Root(w http.ResponseWriter, r *http.Request) {
+	if ps, ok := h.powerSaving(); ok {
+		ps.TouchDashboard()
+	}
+
 	cfg, _ := h.loadConfig()
 	printer, activeIdx, locked := h.activePrinter(cfg)
 
