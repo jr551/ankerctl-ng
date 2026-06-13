@@ -2475,6 +2475,7 @@ $(function () {
             autoOff: $("#smart-socket-auto-off"),
             powerSaving: $("#smart-socket-power-saving"),
             wakeSec: $("#smart-socket-wake-sec"),
+            idleSec: $("#smart-socket-idle-sec"),
             status: $("#smart-socket-status"),
         };
 
@@ -2514,6 +2515,7 @@ $(function () {
                     ssFields.autoOff.prop("checked", Boolean(cfg.auto_off_on_fail));
                     ssFields.powerSaving.prop("checked", Boolean(cfg.power_saving_enabled));
                     ssFields.wakeSec.val(cfg.power_saving_dashboard_wake_sec || 600);
+                    ssFields.idleSec.val(cfg.power_saving_idle_off_sec || 1800);
                 }
                 loadSmartSocketState();
             } catch (err) {
@@ -2534,6 +2536,7 @@ $(function () {
                     auto_off_on_fail: ssFields.autoOff.is(":checked"),
                     power_saving_enabled: ssFields.powerSaving.is(":checked"),
                     power_saving_dashboard_wake_sec: parseInt(ssFields.wakeSec.val(), 10) || 600,
+                    power_saving_idle_off_sec: parseInt(ssFields.idleSec.val(), 10) || 1800,
                 },
             };
             try {

@@ -29,6 +29,7 @@ type PowerSavingService struct {
 	log         *slog.Logger
 	cfgMgr      *config.Manager
 	printActive bool
+	idleSince   *time.Time
 	awakeUntil  *time.Time
 	lastAction  string
 	lastError   string
@@ -127,6 +128,10 @@ func (s *PowerSavingService) wakeForDashboard(ctx context.Context) {
 	until := time.Now().Add(time.Duration(wakeSec) * time.Second)
 	s.mu.Lock()
 	s.awakeUntil = &until
+	if s.idleSince == nil {
+		now := time.Now()
+		s.idleSince = &now
+	}
 	s.mu.Unlock()
 	s.setSocket(ctx, cfg, true, "dashboard wake")
 }
@@ -140,11 +145,14 @@ func (s *PowerSavingService) handlePrintState(ctx context.Context, state int) {
 	case mqttStatePrinting:
 		s.mu.Lock()
 		s.printActive = true
+		s.idleSince = nil
 		s.mu.Unlock()
 		s.setSocket(ctx, cfg, true, "print started")
 	case mqttStateIdle, mqttStateAborted:
+		now := time.Now()
 		s.mu.Lock()
 		s.printActive = false
+		s.idleSince = &now
 		s.mu.Unlock()
 		s.evaluate(ctx)
 	case mqttStatePaused:
@@ -161,6 +169,7 @@ func (s *PowerSavingService) evaluate(ctx context.Context) {
 	}
 	s.mu.Lock()
 	printActive := s.printActive
+	idleSince := cloneTimePtr(s.idleSince)
 	awakeUntil := cloneTimePtr(s.awakeUntil)
 	if awakeUntil != nil && time.Now().After(*awakeUntil) {
 		s.awakeUntil = nil
@@ -168,6 +177,16 @@ func (s *PowerSavingService) evaluate(ctx context.Context) {
 	}
 	s.mu.Unlock()
 	if printActive || awakeUntil != nil {
+		return
+	}
+	idleOffSec := cfg.PowerSavingIdleOffSec
+	if idleOffSec <= 0 {
+		idleOffSec = model.DefaultSmartSocketConfig().PowerSavingIdleOffSec
+	}
+	if idleSince == nil {
+		return
+	}
+	if time.Since(*idleSince) < time.Duration(idleOffSec)*time.Second {
 		return
 	}
 	s.setSocket(ctx, cfg, false, "idle cooldown expired")
@@ -205,6 +224,9 @@ func (s *PowerSavingService) loadSmartSocketConfig() model.SmartSocketConfig {
 	ss := cfg.SmartSocket
 	if ss.PowerSavingDashboardWakeSec <= 0 {
 		ss.PowerSavingDashboardWakeSec = def.PowerSavingDashboardWakeSec
+	}
+	if ss.PowerSavingIdleOffSec <= 0 {
+		ss.PowerSavingIdleOffSec = def.PowerSavingIdleOffSec
 	}
 	if ss.PowerUnit == "" {
 		ss.PowerUnit = def.PowerUnit

@@ -383,6 +383,7 @@ func TestMergeConfigPreferences_PreservesSmartSocketPowerSaving(t *testing.T) {
 	existing.SmartSocket.SwitchEntity = "switch.3d_printer_socket"
 	existing.SmartSocket.PowerSavingEnabled = true
 	existing.SmartSocket.PowerSavingDashboardWakeSec = 900
+	existing.SmartSocket.PowerSavingIdleOffSec = 2700
 
 	newCfg := makeTestConfig()
 	newCfg.SmartSocket = model.DefaultSmartSocketConfig()
@@ -396,6 +397,9 @@ func TestMergeConfigPreferences_PreservesSmartSocketPowerSaving(t *testing.T) {
 	}
 	if result.SmartSocket.PowerSavingDashboardWakeSec != 900 {
 		t.Errorf("SmartSocket.PowerSavingDashboardWakeSec = %d, want 900", result.SmartSocket.PowerSavingDashboardWakeSec)
+	}
+	if result.SmartSocket.PowerSavingIdleOffSec != 2700 {
+		t.Errorf("SmartSocket.PowerSavingIdleOffSec = %d, want 2700", result.SmartSocket.PowerSavingIdleOffSec)
 	}
 }
 

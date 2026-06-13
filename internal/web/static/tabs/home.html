@@ -193,7 +193,7 @@
                             </div>
                         </div>
                     </div>
-                    {{if .VideoSupported}}
+                    {{if and .VideoSupported (ne .CameraEffectiveSource "external")}}
                     <div class="card-header d-flex align-items-center justify-content-between">
                         <span class="fs-6">Video Controls</span>
                         <button class="btn btn-sm btn-outline-secondary collapse-toggle" type="button"

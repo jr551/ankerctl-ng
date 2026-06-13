@@ -214,6 +214,7 @@ type SmartSocketConfig struct {
 	AutoOffOnFail               bool   `json:"auto_off_on_fail"`
 	PowerSavingEnabled          bool   `json:"power_saving_enabled"`
 	PowerSavingDashboardWakeSec int    `json:"power_saving_dashboard_wake_sec"`
+	PowerSavingIdleOffSec       int    `json:"power_saving_idle_off_sec"`
 }
 
 // DefaultSmartSocketConfig returns default Home Assistant smart socket settings.
@@ -223,6 +224,7 @@ func DefaultSmartSocketConfig() SmartSocketConfig {
 		PowerUnit:                   "W",
 		ConfirmOff:                  true,
 		PowerSavingDashboardWakeSec: 600,
+		PowerSavingIdleOffSec:       1800,
 	}
 }
 

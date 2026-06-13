@@ -817,6 +817,14 @@
                                                 <div class="form-text">Dashboard visits turn the printer socket on and
                                                     keep it warm for this long.</div>
                                             </div>
+                                            <div>
+                                                <label class="form-label" for="smart-socket-idle-sec">Idle shutdown
+                                                    seconds</label>
+                                                <input class="form-control" type="number" min="300" step="60"
+                                                    id="smart-socket-idle-sec" value="1800" />
+                                                <div class="form-text">When the printer has not been used for this
+                                                    long, the socket turns off.</div>
+                                            </div>
                                             <div class="d-flex gap-2 flex-wrap align-items-center">
                                                 <button class="btn btn-primary" type="button"
                                                     id="smart-socket-save">Save</button>
