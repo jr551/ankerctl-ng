@@ -14,12 +14,16 @@ import (
 type powerSavingDashboardCmd struct{}
 
 type PowerSavingStatus struct {
-	Configured  bool       `json:"configured"`
-	Enabled     bool       `json:"enabled"`
-	PrintActive bool       `json:"print_active"`
-	AwakeUntil  *time.Time `json:"awake_until,omitempty"`
-	LastAction  string     `json:"last_action,omitempty"`
-	LastError   string     `json:"last_error,omitempty"`
+	Configured       bool       `json:"configured"`
+	Enabled          bool       `json:"enabled"`
+	PrintActive      bool       `json:"print_active"`
+	IdleSince        *time.Time `json:"idle_since,omitempty"`
+	IdleOffAt        *time.Time `json:"idle_off_at,omitempty"`
+	IdleOffSec       int        `json:"idle_off_sec,omitempty"`
+	DashboardWakeSec int        `json:"dashboard_wake_sec,omitempty"`
+	AwakeUntil       *time.Time `json:"awake_until,omitempty"`
+	LastAction       string     `json:"last_action,omitempty"`
+	LastError        string     `json:"last_error,omitempty"`
 }
 
 type PowerSavingService struct {
@@ -58,14 +62,37 @@ func (s *PowerSavingService) TouchDashboard() {
 func (s *PowerSavingService) Status() PowerSavingStatus {
 	cfg := s.loadSmartSocketConfig()
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	printActive := s.printActive
+	idleSince := cloneTimePtr(s.idleSince)
+	awakeUntil := cloneTimePtr(s.awakeUntil)
+	lastAction := s.lastAction
+	lastError := s.lastError
+	s.mu.Unlock()
+
+	idleOffSec := cfg.PowerSavingIdleOffSec
+	if idleOffSec <= 0 {
+		idleOffSec = model.DefaultSmartSocketConfig().PowerSavingIdleOffSec
+	}
+	wakeSec := cfg.PowerSavingDashboardWakeSec
+	if wakeSec <= 0 {
+		wakeSec = model.DefaultSmartSocketConfig().PowerSavingDashboardWakeSec
+	}
+	var idleOffAt *time.Time
+	if cfg.Enabled && cfg.PowerSavingEnabled && !printActive && idleSince != nil {
+		t := idleSince.Add(time.Duration(idleOffSec) * time.Second)
+		idleOffAt = &t
+	}
 	return PowerSavingStatus{
-		Configured:  smartSocketReady(cfg),
-		Enabled:     cfg.Enabled && cfg.PowerSavingEnabled,
-		PrintActive: s.printActive,
-		AwakeUntil:  cloneTimePtr(s.awakeUntil),
-		LastAction:  s.lastAction,
-		LastError:   s.lastError,
+		Configured:       smartSocketReady(cfg),
+		Enabled:          cfg.Enabled && cfg.PowerSavingEnabled,
+		PrintActive:      printActive,
+		IdleSince:        idleSince,
+		IdleOffAt:        idleOffAt,
+		IdleOffSec:       idleOffSec,
+		DashboardWakeSec: wakeSec,
+		AwakeUntil:       awakeUntil,
+		LastAction:       lastAction,
+		LastError:        lastError,
 	}
 }
 

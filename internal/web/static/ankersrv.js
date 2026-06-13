@@ -580,11 +580,247 @@ $(function () {
 
     const externalCameraPlayer = document.getElementById("external-camera-player");
     if (externalCameraPlayer) {
+        const externalCameraFrame = externalCameraPlayer.closest(".camera-frame-shell");
+        const frameSrc = externalCameraPlayer.dataset.frameSrc || "/api/camera/frame";
         const refreshSec = Math.max(1, parseInt(externalCameraPlayer.dataset.refreshSec || "3", 10) || 3);
-        const refreshExternalCamera = () => {
-            externalCameraPlayer.src = `/api/camera/frame?t=${Date.now()}`;
+        let cameraRefreshInFlight = false;
+
+        const frameURL = () => `${frameSrc}${frameSrc.includes("?") ? "&" : "?"}t=${Date.now()}`;
+        const markCameraLoaded = () => {
+            externalCameraPlayer.classList.add("is-loaded");
+            externalCameraPlayer.classList.remove("is-fading");
+            if (externalCameraFrame) {
+                externalCameraFrame.classList.remove("is-loading", "is-error", "is-refreshing");
+                externalCameraFrame.setAttribute("aria-busy", "false");
+            }
+        };
+        const markCameraError = () => {
+            externalCameraPlayer.classList.remove("is-fading");
+            if (externalCameraFrame) {
+                externalCameraFrame.classList.remove("is-loading", "is-refreshing");
+                externalCameraFrame.classList.add("is-error");
+                externalCameraFrame.setAttribute("aria-busy", "false");
+            }
+        };
+
+        externalCameraPlayer.addEventListener("load", markCameraLoaded);
+        externalCameraPlayer.addEventListener("error", markCameraError);
+        if (externalCameraPlayer.complete && externalCameraPlayer.naturalWidth > 0) {
+            markCameraLoaded();
+        } else if (externalCameraFrame) {
+            externalCameraFrame.classList.add("is-loading");
+            externalCameraFrame.setAttribute("aria-busy", "true");
+        }
+
+        const swapExternalCameraFrame = (url) => {
+            externalCameraPlayer.classList.add("is-fading");
+            window.setTimeout(() => {
+                externalCameraPlayer.src = url;
+                window.requestAnimationFrame(markCameraLoaded);
+            }, 90);
+        };
+        const refreshExternalCamera = async () => {
+            if (cameraRefreshInFlight) {
+                return;
+            }
+            cameraRefreshInFlight = true;
+            if (externalCameraFrame && externalCameraPlayer.classList.contains("is-loaded")) {
+                externalCameraFrame.classList.add("is-refreshing");
+            }
+
+            const url = frameURL();
+            const nextFrame = new Image();
+            nextFrame.onload = async () => {
+                try {
+                    if (nextFrame.decode) {
+                        await nextFrame.decode();
+                    }
+                } catch (err) {
+                    // Browser decode can reject for already-decoded cached images; the load event is enough.
+                }
+                swapExternalCameraFrame(url);
+                cameraRefreshInFlight = false;
+            };
+            nextFrame.onerror = () => {
+                cameraRefreshInFlight = false;
+                markCameraError();
+            };
+            nextFrame.src = url;
         };
         setInterval(refreshExternalCamera, refreshSec * 1000);
+    }
+
+    const powerStrip = document.getElementById("printer-power-strip");
+    if (powerStrip) {
+        const powerStripFields = {
+            stateTile: document.getElementById("printer-socket-state-tile"),
+            state: document.getElementById("printer-socket-state"),
+            stateDetail: document.getElementById("printer-socket-state-detail"),
+            wattsTile: document.getElementById("printer-socket-watts-tile"),
+            watts: document.getElementById("printer-socket-watts"),
+            wattsDetail: document.getElementById("printer-socket-watts-detail"),
+            uptimeTile: document.getElementById("printer-socket-uptime-tile"),
+            uptime: document.getElementById("printer-socket-uptime"),
+            uptimeDetail: document.getElementById("printer-socket-uptime-detail"),
+            saveTile: document.getElementById("printer-power-save-tile"),
+            save: document.getElementById("printer-power-save"),
+            saveDetail: document.getElementById("printer-power-save-detail"),
+        };
+        const powerTileClasses = ["status-good", "status-info", "status-warn", "status-bad", "status-muted"];
+        let latestPowerState = null;
+
+        const setPowerTileStatus = (tile, status) => {
+            if (!tile) return;
+            tile.classList.remove(...powerTileClasses);
+            tile.classList.add(`status-${status}`);
+        };
+        const setPowerText = (field, value) => {
+            if (field) field.textContent = value;
+        };
+        const parseTime = (value) => {
+            if (!value) return null;
+            const time = new Date(value);
+            return Number.isNaN(time.getTime()) ? null : time;
+        };
+        const formatClock = (value) => {
+            const time = parseTime(value);
+            return time ? time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "--";
+        };
+        const formatDuration = (seconds) => {
+            if (!Number.isFinite(seconds)) return "--";
+            seconds = Math.max(0, Math.floor(seconds));
+            const days = Math.floor(seconds / 86400);
+            const hours = Math.floor((seconds % 86400) / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            const secs = seconds % 60;
+            if (days > 0) return `${days}d ${hours}h`;
+            if (hours > 0) return `${hours}h ${String(minutes).padStart(2, "0")}m`;
+            if (minutes > 0) return `${minutes}m ${String(secs).padStart(2, "0")}s`;
+            return `${secs}s`;
+        };
+        const secondsSince = (value) => {
+            const time = parseTime(value);
+            return time ? (Date.now() - time.getTime()) / 1000 : NaN;
+        };
+        const secondsUntil = (value) => {
+            const time = parseTime(value);
+            return time ? (time.getTime() - Date.now()) / 1000 : NaN;
+        };
+        const renderUnavailablePowerStrip = (detail) => {
+            powerStrip.hidden = false;
+            setPowerTileStatus(powerStripFields.stateTile, "bad");
+            setPowerText(powerStripFields.state, "Unavailable");
+            setPowerText(powerStripFields.stateDetail, detail || "Socket not configured");
+            for (const tile of [powerStripFields.wattsTile, powerStripFields.uptimeTile, powerStripFields.saveTile]) {
+                setPowerTileStatus(tile, "muted");
+            }
+            setPowerText(powerStripFields.watts, "--");
+            setPowerText(powerStripFields.wattsDetail, "No reading");
+            setPowerText(powerStripFields.uptime, "--");
+            setPowerText(powerStripFields.uptimeDetail, "No timestamp");
+            setPowerText(powerStripFields.save, "--");
+            setPowerText(powerStripFields.saveDetail, "No power state");
+        };
+        const renderPrinterPowerStrip = () => {
+            const data = latestPowerState;
+            if (!data) return;
+            if (!data.available) {
+                renderUnavailablePowerStrip(data.error);
+                return;
+            }
+
+            powerStrip.hidden = false;
+            const state = String(data.state || "unknown").toLowerCase();
+            const isOn = state === "on";
+            const stateLabel = state === "unknown" ? "Unknown" : state.charAt(0).toUpperCase() + state.slice(1);
+            setPowerTileStatus(powerStripFields.stateTile, isOn ? "good" : state === "off" ? "bad" : "warn");
+            setPowerText(powerStripFields.state, stateLabel);
+            setPowerText(powerStripFields.stateDetail, data.switch_last_changed ? `Changed ${formatClock(data.switch_last_changed)}` : "Waiting for HA");
+
+            const power = Number.parseFloat(data.power);
+            const unit = data.power_unit || "W";
+            if (Number.isFinite(power)) {
+                const precision = Math.abs(power) < 10 ? 1 : 0;
+                setPowerTileStatus(powerStripFields.wattsTile, power > 25 ? "info" : isOn ? "good" : "muted");
+                setPowerText(powerStripFields.watts, `${power.toFixed(precision)} ${unit}`);
+                setPowerText(powerStripFields.wattsDetail, isOn ? "Live draw" : "Socket off");
+            } else {
+                setPowerTileStatus(powerStripFields.wattsTile, "muted");
+                setPowerText(powerStripFields.watts, "--");
+                setPowerText(powerStripFields.wattsDetail, "No power sensor");
+            }
+
+            if (data.switch_last_changed) {
+                const duration = formatDuration(secondsSince(data.switch_last_changed));
+                setPowerTileStatus(powerStripFields.uptimeTile, isOn ? "info" : "muted");
+                setPowerText(powerStripFields.uptime, isOn ? duration : "Off");
+                setPowerText(powerStripFields.uptimeDetail, isOn ? `Since ${formatClock(data.switch_last_changed)}` : `For ${duration}`);
+            } else {
+                setPowerTileStatus(powerStripFields.uptimeTile, "muted");
+                setPowerText(powerStripFields.uptime, "--");
+                setPowerText(powerStripFields.uptimeDetail, "No timestamp");
+            }
+
+            const ps = data.power_saving || {};
+            if (ps.last_error) {
+                setPowerTileStatus(powerStripFields.saveTile, "bad");
+                setPowerText(powerStripFields.save, "Error");
+                setPowerText(powerStripFields.saveDetail, ps.last_error);
+            } else if (!ps.configured) {
+                setPowerTileStatus(powerStripFields.saveTile, "muted");
+                setPowerText(powerStripFields.save, "Not set");
+                setPowerText(powerStripFields.saveDetail, "Socket setup needed");
+            } else if (!ps.enabled) {
+                setPowerTileStatus(powerStripFields.saveTile, "muted");
+                setPowerText(powerStripFields.save, "Disabled");
+                setPowerText(powerStripFields.saveDetail, "Manual socket control");
+            } else if (ps.print_active) {
+                setPowerTileStatus(powerStripFields.saveTile, "good");
+                setPowerText(powerStripFields.save, "Print active");
+                setPowerText(powerStripFields.saveDetail, "Socket held on");
+            } else if (!isOn) {
+                setPowerTileStatus(powerStripFields.saveTile, "good");
+                setPowerText(powerStripFields.save, "Powered down");
+                setPowerText(powerStripFields.saveDetail, "Power saved");
+            } else {
+                const idleOffSeconds = secondsUntil(ps.idle_off_at);
+                const wakeSeconds = secondsUntil(ps.awake_until);
+                if (Number.isFinite(idleOffSeconds)) {
+                    setPowerTileStatus(powerStripFields.saveTile, idleOffSeconds <= 120 ? "warn" : "info");
+                    setPowerText(powerStripFields.save, idleOffSeconds <= 0 ? "Cooling down" : `Off in ${formatDuration(idleOffSeconds)}`);
+                    setPowerText(
+                        powerStripFields.saveDetail,
+                        Number.isFinite(wakeSeconds) && wakeSeconds > 0 ? `Wake hold ${formatDuration(wakeSeconds)}` : "Idle cooldown"
+                    );
+                } else if (Number.isFinite(wakeSeconds) && wakeSeconds > 0) {
+                    setPowerTileStatus(powerStripFields.saveTile, "info");
+                    setPowerText(powerStripFields.save, `Wake ${formatDuration(wakeSeconds)}`);
+                    setPowerText(powerStripFields.saveDetail, "Waiting for idle timer");
+                } else {
+                    setPowerTileStatus(powerStripFields.saveTile, "warn");
+                    setPowerText(powerStripFields.save, "Idle");
+                    setPowerText(powerStripFields.saveDetail, ps.last_action || "Awaiting cooldown");
+                }
+            }
+        };
+        const loadPrinterPowerStrip = async () => {
+            try {
+                const resp = await fetch(`/api/smart-socket/state?t=${Date.now()}`, { cache: "no-store" });
+                if (!resp.ok) {
+                    renderUnavailablePowerStrip(resp.statusText);
+                    return;
+                }
+                latestPowerState = await resp.json();
+                renderPrinterPowerStrip();
+            } catch (err) {
+                console.error("Failed to load printer power strip:", err);
+                renderUnavailablePowerStrip("State fetch failed");
+            }
+        };
+
+        loadPrinterPowerStrip();
+        setInterval(loadPrinterPowerStrip, 10000);
+        setInterval(renderPrinterPowerStrip, 1000);
     }
 
     sockets.ctrl = new AutoWebSocket({

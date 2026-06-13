@@ -18,9 +18,11 @@ import (
 const defaultHomeAssistantHTTPTimeout = 30 * time.Second
 
 type HomeAssistantState struct {
-	EntityID   string         `json:"entity_id"`
-	State      string         `json:"state"`
-	Attributes map[string]any `json:"attributes"`
+	EntityID    string         `json:"entity_id"`
+	State       string         `json:"state"`
+	LastChanged time.Time      `json:"last_changed"`
+	LastUpdated time.Time      `json:"last_updated"`
+	Attributes  map[string]any `json:"attributes"`
 }
 
 type HomeAssistantClient struct {

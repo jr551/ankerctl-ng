@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/django1982/ankerctl/internal/model"
 	"github.com/django1982/ankerctl/internal/service"
@@ -135,6 +136,14 @@ func (h *Handler) SmartSocketState(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{
 		"available": true,
 		"state":     sw.State,
+	}
+	if !sw.LastChanged.IsZero() {
+		out["switch_last_changed"] = sw.LastChanged
+		if strings.EqualFold(sw.State, "on") {
+			out["socket_uptime_sec"] = int(time.Since(sw.LastChanged).Seconds())
+		} else {
+			out["socket_down_since_sec"] = int(time.Since(sw.LastChanged).Seconds())
+		}
 	}
 	if ps, ok := h.powerSaving(); ok {
 		out["power_saving"] = ps.Status()

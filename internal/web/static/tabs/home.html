@@ -6,9 +6,15 @@
                 {{if .VideoSupported}}
                 <!-- Video Container -->
                 {{if eq .CameraEffectiveSource "external"}}
-                <div id="vplayer" class="mb-3">
-                    <img class="w-100 d-block rounded-3 bg-body-tertiary" id="external-camera-player"
-                        src="/api/camera/frame" data-refresh-sec="{{.CameraRefreshSec}}" alt="Camera feed" />
+                <div id="vplayer" class="mb-3 camera-frame-shell is-loading" aria-busy="true">
+                    <img class="w-100 d-block camera-frame-image bg-body-tertiary" id="external-camera-player"
+                        src="/api/camera/frame" data-frame-src="/api/camera/frame"
+                        data-refresh-sec="{{.CameraRefreshSec}}" alt="Camera feed" />
+                    <div class="camera-frame-overlay" aria-hidden="true">
+                        <div class="spinner-border text-light" role="status">
+                            <span class="visually-hidden">Loading camera</span>
+                        </div>
+                    </div>
                 </div>
                 {{else}}
                 <div id="vplayer" style="display: none;">
@@ -34,6 +40,28 @@
                         </div>
                     </div>
                     <div class="card-body">
+                        <div class="printer-power-strip mb-3" id="printer-power-strip" aria-live="polite" hidden>
+                            <div class="printer-power-tile" id="printer-socket-state-tile">
+                                <span class="printer-power-label"><i class="bi-power"></i> Socket</span>
+                                <span class="printer-power-value" id="printer-socket-state">--</span>
+                                <span class="printer-power-detail" id="printer-socket-state-detail">--</span>
+                            </div>
+                            <div class="printer-power-tile" id="printer-socket-watts-tile">
+                                <span class="printer-power-label"><i class="bi-lightning-charge"></i> Power</span>
+                                <span class="printer-power-value" id="printer-socket-watts">--</span>
+                                <span class="printer-power-detail" id="printer-socket-watts-detail">--</span>
+                            </div>
+                            <div class="printer-power-tile" id="printer-socket-uptime-tile">
+                                <span class="printer-power-label"><i class="bi-clock-history"></i> Uptime</span>
+                                <span class="printer-power-value" id="printer-socket-uptime">--</span>
+                                <span class="printer-power-detail" id="printer-socket-uptime-detail">--</span>
+                            </div>
+                            <div class="printer-power-tile" id="printer-power-save-tile">
+                                <span class="printer-power-label"><i class="bi-moon-stars"></i> Power Save</span>
+                                <span class="printer-power-value" id="printer-power-save">--</span>
+                                <span class="printer-power-detail" id="printer-power-save-detail">--</span>
+                            </div>
+                        </div>
                         <div class="row g-3">
                             <!-- XY Control -->
                             <div class="col-md-6 text-center">
