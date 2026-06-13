@@ -63,7 +63,7 @@ $(function () {
 
                 // Persistent green badge in the navbar — always visible, never dismissible
                 if (data.update_available && data.latest) {
-                    const releaseURL = "https://github.com/Django1982/ankerctl_go_remake/releases/tag/" + encodeURIComponent(data.latest);
+                    const releaseURL = "https://github.com/jr551/ankerctl_go_remake/releases/tag/" + encodeURIComponent(data.latest);
                     $("#update-badge-version").text(data.latest);
                     $("#update-badge").attr("href", releaseURL).show();
                 }
@@ -2721,7 +2721,7 @@ $(function () {
         if (testBadgeBtn) {
             testBadgeBtn.addEventListener("click", function () {
                 $("#update-badge-version").text("v99.0.0");
-                $("#update-badge").attr("href", "https://github.com/Django1982/ankerctl_go_remake/releases").show();
+                $("#update-badge").attr("href", "https://github.com/jr551/ankerctl_go_remake/releases").show();
             });
         }
         if (hideBadgeBtn) {

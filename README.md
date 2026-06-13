@@ -3,7 +3,7 @@
 [![Release](https://img.shields.io/badge/release-v1.0.0-success)](https://github.com/Django1982/ankerctl_go_remake/releases/tag/v1.0.0)
 [![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)](https://go.dev/)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![CI](https://github.com/Django1982/ankerctl_go_remake/actions/workflows/ci.yml/badge.svg)](https://github.com/Django1982/ankerctl_go_remake/actions/workflows/ci.yml)
+[![CI](https://github.com/jr551/ankerctl_go_remake/actions/workflows/ci.yml/badge.svg)](https://github.com/jr551/ankerctl_go_remake/actions/workflows/ci.yml)
 [![Docker](https://img.shields.io/badge/ghcr.io-ankerctl-blue?logo=docker)](https://ghcr.io/django1982/ankerctl)
 
 A Go reimplementation of [ankerctl](https://github.com/ankermake/ankermake-m5-protocol) -- a CLI and web UI for monitoring, controlling, and interfacing with AnkerMake M5 3D printers.
@@ -61,6 +61,8 @@ docker run -d \
 
 Navigate to [http://localhost:4470](http://localhost:4470) and upload your `login.json` or log in with email/password.
 
+> **Docker images are published by upstream** at [`ghcr.io/django1982/ankerctl`](https://ghcr.io/django1982/ankerctl). This fork doesn't publish its own images.
+
 **Docker Compose:**
 
 ```yaml
@@ -91,7 +93,7 @@ docker compose up -d
 
 ### Binary
 
-Download the latest release for your platform from the [Releases](https://github.com/Django1982/ankerctl_go_remake/releases) page.
+Download the latest release for your platform from the upstream [Releases](https://github.com/Django1982/ankerctl_go_remake/releases) page.
 
 ```sh
 # Linux / macOS
@@ -105,7 +107,7 @@ ankerctl-windows-amd64.exe webserver --listen 0.0.0.0:4470
 ### From Source
 
 ```sh
-git clone https://github.com/Django1982/ankerctl_go_remake.git
+git clone https://github.com/jr551/ankerctl_go_remake.git
 cd ankerctl_go_remake
 go build -o ankerctl ./cmd/ankerctl/
 ./ankerctl webserver

@@ -46,7 +46,7 @@ docker run -d \
 ### Option 3: Build from Source
 
 ```sh
-git clone https://github.com/Django1982/ankerctl_go_remake.git
+git clone https://github.com/jr551/ankerctl_go_remake.git
 cd ankerctl_go_remake
 
 # Download vendor assets (Bootstrap, Chart.js etc.) — required before building!
@@ -65,7 +65,7 @@ Navigate to [http://localhost:4470](http://localhost:4470) and log in with your 
 
 ## Quick Links
 
-- [GitHub Repository](https://github.com/Django1982/ankerctl_go_remake)
+- [GitHub Repository](https://github.com/jr551/ankerctl_go_remake)
 - [Releases](https://github.com/Django1982/ankerctl_go_remake/releases)
 - [Docker Image](https://ghcr.io/django1982/ankerctl)
-- [Issue Tracker](https://github.com/Django1982/ankerctl_go_remake/issues)
+- [Issue Tracker](https://github.com/jr551/ankerctl_go_remake/issues)

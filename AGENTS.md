@@ -8,7 +8,7 @@
 - `static/`: frontend assets served by the web layer.
 - `docs/`: architecture, protocol notes, and development docs.
 
-Follow the layering documented in `CLAUDE.md`; do not introduce upward imports across internal package layers.
+Follow the layering documented in the Architecture section below; do not introduce upward imports across internal package layers.
 
 ## Build, Test, and Development Commands
 Use these from repository root:

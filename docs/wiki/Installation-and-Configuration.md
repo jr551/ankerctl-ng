@@ -68,7 +68,7 @@ chmod +x ankerctl-linux-amd64
 Requires Go 1.24 or later.
 
 ```sh
-git clone https://github.com/Django1982/ankerctl_go_remake.git
+git clone https://github.com/jr551/ankerctl_go_remake.git
 cd ankerctl_go_remake
 
 # Download vendor assets — required before building, otherwise blank web UI!
@@ -167,7 +167,7 @@ See [Protocol-Details#local-socket-bind-ufw--conntrack](Protocol-Details#local-s
 
 ## Environment Variables
 
-See [`.env.example`](https://github.com/Django1982/ankerctl_go_remake/blob/main/.env.example) for a complete template with comments. All variables are optional -- ankerctl works with sensible defaults.
+See [`.env.example`](https://github.com/jr551/ankerctl_go_remake/blob/main/.env.example) for a complete template with comments. All variables are optional -- ankerctl works with sensible defaults.
 
 ### Server
 
