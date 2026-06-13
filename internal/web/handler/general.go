@@ -22,7 +22,7 @@ func (h *Handler) Root(w http.ResponseWriter, r *http.Request) {
 		PrinterIndexLocked: locked,
 		Configure:          cfg != nil && cfg.IsConfigured(),
 		DebugMode:          h.devMode,
-		VideoSupported:     h.videoSupported(),
+		VideoSupported:     h.cameraFeatureAvailable(cfg, activeIdx),
 		UnsupportedDevice:  h.isUnsupportedDevice(),
 		CountryCodes:       countryCodes,
 		RequestHost:        host,
@@ -69,6 +69,16 @@ func (h *Handler) Root(w http.ResponseWriter, r *http.Request) {
 		h.log.Error("render root", "error", err)
 		h.writeError(w, http.StatusInternalServerError, "rendering failed")
 	}
+}
+
+func (h *Handler) cameraFeatureAvailable(cfg *model.Config, activeIdx int) bool {
+	if cfg != nil {
+		resolved := resolveCameraSettings(cfg, activeIdx)
+		if resolved.FeatureAvailable {
+			return true
+		}
+	}
+	return h.videoSupported()
 }
 
 // configShow formats a Config as the human-readable text shown in the

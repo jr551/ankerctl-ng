@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/django1982/ankerctl/internal/model"
+	"github.com/django1982/ankerctl/internal/service"
 	"github.com/django1982/ankerctl/internal/util"
 )
 
@@ -462,7 +463,7 @@ func resolveCameraSettings(cfg *model.Config, printerIndex int) model.ResolvedCa
 	entry := cameraEntryForPrinter(cfg, printerSN)
 	source := normalizeCameraSource(entry.Source, model.CameraSourcePrinter)
 	ext := normalizeExternalSettings(entry.External)
-	externalConfigured := ext.StreamURL != "" || ext.SnapshotURL != ""
+	externalConfigured := ext.StreamURL != "" || ext.SnapshotURL != "" || service.HomeAssistantCameraConfigured(ext.HomeAssistant)
 
 	effectiveSource := ""
 	switch {
@@ -483,7 +484,9 @@ func resolveCameraSettings(cfg *model.Config, printerIndex int) model.ResolvedCa
 	case !printerSupported && !externalConfigured:
 		detail = "This printer does not expose a built-in camera. Configure an external feed in Setup -> Camera."
 	case effectiveSource == model.CameraSourceExternal:
-		if ext.StreamURL != "" {
+		if service.HomeAssistantCameraConfigured(ext.HomeAssistant) {
+			detail = "Using Home Assistant camera."
+		} else if ext.StreamURL != "" {
 			detail = "Using external camera live stream."
 		} else {
 			detail = "Using external camera snapshot preview."
@@ -540,6 +543,9 @@ func normalizeExternalSettings(e model.ExternalCameraSettings) model.ExternalCam
 	if e.RefreshSec > 30 {
 		e.RefreshSec = 30
 	}
+	e.HomeAssistant.BaseURL = strings.TrimRight(strings.TrimSpace(e.HomeAssistant.BaseURL), "/")
+	e.HomeAssistant.Token = strings.TrimSpace(e.HomeAssistant.Token)
+	e.HomeAssistant.CameraEntityID = strings.TrimSpace(e.HomeAssistant.CameraEntityID)
 	return e
 }
 
@@ -566,6 +572,39 @@ func mergeExternalCamera(dst *model.ExternalCameraSettings, src map[string]json.
 		var n int
 		if json.Unmarshal(v, &n) == nil && n >= 1 && n <= 30 {
 			dst.RefreshSec = n
+		}
+	}
+	if v, ok := src["home_assistant"]; ok {
+		var patch map[string]json.RawMessage
+		if json.Unmarshal(v, &patch) == nil {
+			mergeHomeAssistantCamera(&dst.HomeAssistant, patch)
+		}
+	}
+}
+
+func mergeHomeAssistantCamera(dst *model.HomeAssistantCameraSettings, src map[string]json.RawMessage) {
+	if v, ok := src["enabled"]; ok {
+		var b bool
+		if json.Unmarshal(v, &b) == nil {
+			dst.Enabled = b
+		}
+	}
+	if v, ok := src["base_url"]; ok {
+		var s string
+		if json.Unmarshal(v, &s) == nil {
+			dst.BaseURL = strings.TrimRight(strings.TrimSpace(s), "/")
+		}
+	}
+	if v, ok := src["token"]; ok {
+		var s string
+		if json.Unmarshal(v, &s) == nil {
+			dst.Token = strings.TrimSpace(s)
+		}
+	}
+	if v, ok := src["camera_entity_id"]; ok {
+		var s string
+		if json.Unmarshal(v, &s) == nil {
+			dst.CameraEntityID = strings.TrimSpace(s)
 		}
 	}
 }

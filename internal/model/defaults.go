@@ -138,12 +138,21 @@ const (
 	CameraSourceExternal = "external"
 )
 
+// HomeAssistantCameraSettings holds authenticated Home Assistant camera proxy settings.
+type HomeAssistantCameraSettings struct {
+	Enabled        bool   `json:"enabled"`
+	BaseURL        string `json:"base_url"`
+	Token          string `json:"token,omitempty"`
+	CameraEntityID string `json:"camera_entity_id"`
+}
+
 // ExternalCameraSettings holds the external camera configuration.
 type ExternalCameraSettings struct {
-	Name        string `json:"name"`
-	StreamURL   string `json:"stream_url"`
-	SnapshotURL string `json:"snapshot_url"`
-	RefreshSec  int    `json:"refresh_sec"`
+	Name          string                      `json:"name"`
+	StreamURL     string                      `json:"stream_url"`
+	SnapshotURL   string                      `json:"snapshot_url"`
+	RefreshSec    int                         `json:"refresh_sec"`
+	HomeAssistant HomeAssistantCameraSettings `json:"home_assistant,omitempty"`
 }
 
 // PrinterCameraEntry holds per-printer camera source settings.
@@ -166,6 +175,52 @@ func DefaultCameraConfig() CameraConfig {
 // DefaultExternalCameraSettings returns default external camera settings.
 func DefaultExternalCameraSettings() ExternalCameraSettings {
 	return ExternalCameraSettings{RefreshSec: 3}
+}
+
+// PrintMonitorConfig holds vision-model print failure detection settings.
+type PrintMonitorConfig struct {
+	Enabled         bool   `json:"enabled"`
+	IntervalSec     int    `json:"interval_sec"`
+	FrameCount      int    `json:"frame_count"`
+	FrameSpacingSec int    `json:"frame_spacing_sec"`
+	OpenRouterURL   string `json:"openrouter_url"`
+	OpenRouterKey   string `json:"openrouter_key,omitempty"`
+	Model           string `json:"model"`
+	Prompt          string `json:"prompt"`
+}
+
+// DefaultPrintMonitorConfig returns the default vision-model print monitor config.
+func DefaultPrintMonitorConfig() PrintMonitorConfig {
+	return PrintMonitorConfig{
+		Enabled:         false,
+		IntervalSec:     300,
+		FrameCount:      5,
+		FrameSpacingSec: 1,
+		OpenRouterURL:   "https://openrouter.ai/api/v1/chat/completions",
+		Model:           "google/gemini-2.5-flash",
+		Prompt:          "You are monitoring a 3D printer. The first image is a contact sheet of sequential camera frames taken one second apart. A second image may be a slicer/G-code preview reference for the expected part. Reply with strict JSON only: {\"failing\": boolean, \"confidence\": number, \"reason\": string}. Set failing true only when the print appears to be failing, detached, spaghetti, blobbed, severely shifted, or otherwise visibly going wrong.",
+	}
+}
+
+// SmartSocketConfig holds Home Assistant smart socket control settings.
+type SmartSocketConfig struct {
+	Enabled       bool   `json:"enabled"`
+	BaseURL       string `json:"base_url"`
+	Token         string `json:"token,omitempty"`
+	SwitchEntity  string `json:"switch_entity"`
+	PowerEntity   string `json:"power_entity"`
+	PowerUnit     string `json:"power_unit"`
+	ConfirmOff    bool   `json:"confirm_off"`
+	AutoOffOnFail bool   `json:"auto_off_on_fail"`
+}
+
+// DefaultSmartSocketConfig returns default Home Assistant smart socket settings.
+func DefaultSmartSocketConfig() SmartSocketConfig {
+	return SmartSocketConfig{
+		Enabled:    false,
+		PowerUnit:  "W",
+		ConfirmOff: true,
+	}
 }
 
 // PrinterSupportsCamera returns true when the printer model has a built-in camera.

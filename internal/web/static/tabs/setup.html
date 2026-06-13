@@ -40,6 +40,13 @@
                             <i class="bi-palette px-1"></i> Appearance
                         </button>
                     </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="setup-camera-ai-tab" data-bs-toggle="pill"
+                            data-bs-target="#setup-camera-ai-pane" type="button" role="tab"
+                            aria-controls="setup-camera-ai-pane" aria-selected="false">
+                            <i class="bi-camera-video px-1"></i> Camera &amp; AI
+                        </button>
+                    </li>
                     {{if .VideoSupported}}
                     <li class="nav-item" role="presentation">
                         <button class="nav-link" id="setup-timelapse-tab" data-bs-toggle="pill"
@@ -632,6 +639,182 @@
                                         <button class="btn btn-primary" type="button" id="appearance-save">Save</button>
                                     </div>
                                 </form>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ===== CAMERA / AI TAB ===== -->
+                    <div class="tab-pane fade" id="setup-camera-ai-pane" role="tabpanel"
+                        aria-labelledby="setup-camera-ai-tab">
+                        <div class="row g-3">
+                            <div class="col-xl-6">
+                                <div class="card h-100">
+                                    <div class="card-header fs-4">Camera Source</div>
+                                    <div class="card-body">
+                                        <form id="camera-form" class="vstack gap-3">
+                                            <div>
+                                                <label class="form-label" for="camera-source">Source</label>
+                                                <select class="form-select" id="camera-source">
+                                                    <option value="printer">Printer camera</option>
+                                                    <option value="external">External / Home Assistant</option>
+                                                </select>
+                                                <div class="form-text" id="camera-detail"></div>
+                                            </div>
+                                            <div class="row g-3">
+                                                <div class="col-md-6">
+                                                    <label class="form-label" for="camera-name">Name</label>
+                                                    <input class="form-control" type="text" id="camera-name"
+                                                        placeholder="3D printer camera" />
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label" for="camera-refresh">Refresh seconds</label>
+                                                    <input class="form-control" type="number" min="1" max="30"
+                                                        id="camera-refresh" value="3" />
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label class="form-label" for="camera-stream-url">Stream URL</label>
+                                                <input class="form-control" type="url" id="camera-stream-url"
+                                                    placeholder="http://camera.local/stream" />
+                                            </div>
+                                            <div>
+                                                <label class="form-label" for="camera-snapshot-url">Snapshot URL</label>
+                                                <input class="form-control" type="url" id="camera-snapshot-url"
+                                                    placeholder="http://camera.local/snapshot.jpg" />
+                                            </div>
+                                            <div class="form-check form-switch">
+                                                <input class="form-check-input" type="checkbox" role="switch"
+                                                    id="ha-camera-enabled" />
+                                                <label class="form-check-label" for="ha-camera-enabled">Use Home
+                                                    Assistant camera proxy</label>
+                                            </div>
+                                            <div>
+                                                <label class="form-label" for="ha-camera-base-url">Home Assistant URL</label>
+                                                <input class="form-control" type="url" id="ha-camera-base-url"
+                                                    placeholder="https://homeassistant.example.com" />
+                                            </div>
+                                            <div>
+                                                <label class="form-label" for="ha-camera-token">Home Assistant token</label>
+                                                <input class="form-control" type="password" id="ha-camera-token"
+                                                    autocomplete="off" />
+                                            </div>
+                                            <div>
+                                                <label class="form-label" for="ha-camera-entity">Camera entity</label>
+                                                <input class="form-control" type="text" id="ha-camera-entity"
+                                                    placeholder="camera.front_door_camera" />
+                                            </div>
+                                            <div class="d-flex gap-2 flex-wrap">
+                                                <button class="btn btn-primary" type="button" id="camera-save">Save</button>
+                                                <a class="btn btn-secondary" href="/api/camera/frame" target="_blank"
+                                                    rel="noopener">Test frame</a>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-xl-6">
+                                <div class="card mb-3">
+                                    <div class="card-header fs-4">AI Print Monitor</div>
+                                    <div class="card-body">
+                                        <form id="print-monitor-form" class="vstack gap-3">
+                                            <div class="form-check form-switch">
+                                                <input class="form-check-input" type="checkbox" role="switch"
+                                                    id="print-monitor-enabled" />
+                                                <label class="form-check-label" for="print-monitor-enabled">Enable
+                                                    monitor</label>
+                                            </div>
+                                            <div class="row g-3">
+                                                <div class="col-md-4">
+                                                    <label class="form-label" for="print-monitor-interval">Interval
+                                                        seconds</label>
+                                                    <input class="form-control" type="number" min="30"
+                                                        id="print-monitor-interval" value="300" />
+                                                </div>
+                                                <div class="col-md-4">
+                                                    <label class="form-label" for="print-monitor-frame-count">Frames</label>
+                                                    <input class="form-control" type="number" min="1" max="5"
+                                                        id="print-monitor-frame-count" value="5" />
+                                                </div>
+                                                <div class="col-md-4">
+                                                    <label class="form-label" for="print-monitor-spacing">Spacing
+                                                        seconds</label>
+                                                    <input class="form-control" type="number" min="1" max="10"
+                                                        id="print-monitor-spacing" value="1" />
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label class="form-label" for="print-monitor-model">OpenRouter model</label>
+                                                <input class="form-control" type="text" id="print-monitor-model"
+                                                    placeholder="google/gemini-2.5-flash" />
+                                            </div>
+                                            <div>
+                                                <label class="form-label" for="print-monitor-key">OpenRouter API key</label>
+                                                <input class="form-control" type="password" id="print-monitor-key"
+                                                    autocomplete="off" />
+                                            </div>
+                                            <div>
+                                                <label class="form-label" for="print-monitor-prompt">Prompt</label>
+                                                <textarea class="form-control" id="print-monitor-prompt" rows="4"></textarea>
+                                            </div>
+                                            <div class="d-flex gap-2 flex-wrap">
+                                                <button class="btn btn-primary" type="button"
+                                                    id="print-monitor-save">Save</button>
+                                                <button class="btn btn-secondary" type="button"
+                                                    id="print-monitor-check">Run check</button>
+                                            </div>
+                                            <div class="small text-body-secondary" id="print-monitor-status"></div>
+                                        </form>
+                                    </div>
+                                </div>
+                                <div class="card">
+                                    <div class="card-header fs-4">Smart Socket</div>
+                                    <div class="card-body">
+                                        <form id="smart-socket-form" class="vstack gap-3">
+                                            <div class="form-check form-switch">
+                                                <input class="form-check-input" type="checkbox" role="switch"
+                                                    id="smart-socket-enabled" />
+                                                <label class="form-check-label" for="smart-socket-enabled">Enable
+                                                    socket controls</label>
+                                            </div>
+                                            <div>
+                                                <label class="form-label" for="smart-socket-base-url">Home Assistant URL</label>
+                                                <input class="form-control" type="url" id="smart-socket-base-url" />
+                                            </div>
+                                            <div>
+                                                <label class="form-label" for="smart-socket-token">Home Assistant token</label>
+                                                <input class="form-control" type="password" id="smart-socket-token"
+                                                    autocomplete="off" />
+                                            </div>
+                                            <div class="row g-3">
+                                                <div class="col-md-6">
+                                                    <label class="form-label" for="smart-socket-switch">Switch entity</label>
+                                                    <input class="form-control" type="text" id="smart-socket-switch"
+                                                        placeholder="switch.3d_printer_socket" />
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label class="form-label" for="smart-socket-power">Power sensor</label>
+                                                    <input class="form-control" type="text" id="smart-socket-power"
+                                                        placeholder="sensor.3d_printer_socket_power" />
+                                                </div>
+                                            </div>
+                                            <div class="form-check form-switch">
+                                                <input class="form-check-input" type="checkbox" role="switch"
+                                                    id="smart-socket-auto-off" />
+                                                <label class="form-check-label" for="smart-socket-auto-off">Turn off
+                                                    socket when AI reports failure</label>
+                                            </div>
+                                            <div class="d-flex gap-2 flex-wrap align-items-center">
+                                                <button class="btn btn-primary" type="button"
+                                                    id="smart-socket-save">Save</button>
+                                                <button class="btn btn-success" type="button"
+                                                    id="smart-socket-on">On</button>
+                                                <button class="btn btn-danger" type="button"
+                                                    id="smart-socket-off">Off</button>
+                                                <span class="small text-body-secondary" id="smart-socket-status"></span>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>

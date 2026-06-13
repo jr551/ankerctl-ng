@@ -95,9 +95,33 @@ func PrinterMJPEGCmd(ctx context.Context, videoURL, apiKey string, fps, quality 
 // open_external_mjpeg_stream(). For RTSP URLs the low-latency input args
 // (rtsp_transport tcp, nobuffer, probesize, analyzeduration) are added.
 func ExternalMJPEGCmd(ctx context.Context, inputURL string, scale MJPEGScale) *exec.Cmd {
+	return ExternalMJPEGCmdWithHeaders(ctx, inputURL, nil, scale)
+}
+
+// ExternalMJPEGCmdWithHeaders builds an external camera transcoder with optional
+// HTTP input headers. Header values are passed to ffmpeg via -headers and are
+// not embedded in the input URL.
+func ExternalMJPEGCmdWithHeaders(ctx context.Context, inputURL string, headers map[string]string, scale MJPEGScale) *exec.Cmd {
 	args := []string{
 		"-loglevel", "error",
 		"-nostdin",
+	}
+	if len(headers) > 0 {
+		var b strings.Builder
+		for k, v := range headers {
+			k = strings.TrimSpace(k)
+			v = strings.TrimSpace(v)
+			if k == "" || v == "" || strings.ContainsAny(k, "\r\n:") || strings.ContainsAny(v, "\r\n") {
+				continue
+			}
+			b.WriteString(k)
+			b.WriteString(": ")
+			b.WriteString(v)
+			b.WriteString("\r\n")
+		}
+		if b.Len() > 0 {
+			args = append(args, "-headers", b.String())
+		}
 	}
 	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(inputURL)), "rtsp://") {
 		args = append(args, "-rtsp_transport", "tcp")

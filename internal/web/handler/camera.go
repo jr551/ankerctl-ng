@@ -71,6 +71,14 @@ func (h *Handler) CameraFrame(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case model.CameraSourceExternal:
+		haCfg := resolved.External.HomeAssistant
+		if service.HomeAssistantCameraConfigured(haCfg) {
+			if err := service.HomeAssistantCameraSnapshot(r.Context(), haCfg, tmpPath); err != nil {
+				h.writeError(w, http.StatusBadGateway, fmt.Sprintf("home assistant camera snapshot failed: %v", err))
+				return
+			}
+			break
+		}
 		input := externalSnapshotInputURL(resolved)
 		if input == "" {
 			h.writeError(w, http.StatusBadRequest, "External camera is selected, but no stream or snapshot URL is configured.")
@@ -135,6 +143,18 @@ func (h *Handler) CameraStream(w http.ResponseWriter, r *http.Request) {
 		apiKey := h.resolveAPIKey()
 		cmd = service.PrinterMJPEGCmd(ctx, videoURL, apiKey, fps, quality, scale)
 	case model.CameraSourceExternal:
+		haCfg := resolved.External.HomeAssistant
+		if service.HomeAssistantCameraConfigured(haCfg) {
+			input := service.HomeAssistantCameraStreamURL(haCfg)
+			if input == "" {
+				h.writeError(w, http.StatusBadRequest, "Home Assistant camera stream is not configured.")
+				return
+			}
+			cmd = service.ExternalMJPEGCmdWithHeaders(ctx, input, map[string]string{
+				"Authorization": "Bearer " + haCfg.Token,
+			}, scale)
+			break
+		}
 		input := externalStreamInputURL(resolved)
 		if input == "" {
 			h.writeError(w, http.StatusBadRequest, "External camera is selected, but no stream URL is configured.")

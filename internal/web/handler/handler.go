@@ -304,6 +304,15 @@ func (h *Handler) timelapse() (*service.TimelapseService, bool) {
 	return q, ok
 }
 
+func (h *Handler) printMonitor() (*service.PrintMonitorService, bool) {
+	svc, ok := h.serviceByName("printmonitor")
+	if !ok {
+		return nil, false
+	}
+	q, ok := svc.(*service.PrintMonitorService)
+	return q, ok
+}
+
 func (h *Handler) homeAssistant() (*service.HomeAssistantService, bool) {
 	svc, ok := h.serviceByName("homeassistant")
 	if !ok {

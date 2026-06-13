@@ -110,10 +110,11 @@ type MqttQueue struct {
 
 	homeAssistant eventSink
 	timelapse     eventSink
+	extraSinks    []eventSink
 }
 
 // NewMqttQueue creates a MqttQueue service.
-func NewMqttQueue(cfg *config.Manager, printerIndex int, history *db.DB, ha *HomeAssistantService, timelapse eventSink) *MqttQueue {
+func NewMqttQueue(cfg *config.Manager, printerIndex int, history *db.DB, ha *HomeAssistantService, timelapse eventSink, extraSinks ...eventSink) *MqttQueue {
 	q := &MqttQueue{
 		BaseWorker:             NewBaseWorker("mqttqueue"),
 		log:                    slog.With("service", "mqttqueue"),
@@ -122,6 +123,7 @@ func NewMqttQueue(cfg *config.Manager, printerIndex int, history *db.DB, ha *Hom
 		pollInterval:           100 * time.Millisecond,
 		currentPrinterStat:     -1,
 		timelapse:              timelapse,
+		extraSinks:             extraSinks,
 		bedLevelingGrid:        make(map[string]any),
 		storedFilePreviewCache: make(map[string]string),
 		zAxisRecoupCh:          make(chan struct{}, 1),
@@ -840,6 +842,11 @@ func (q *MqttQueue) forward(data any) {
 	}
 	if q.timelapse != nil {
 		q.timelapse.Notify(data)
+	}
+	for _, sink := range q.extraSinks {
+		if sink != nil {
+			sink.Notify(data)
+		}
 	}
 }
 

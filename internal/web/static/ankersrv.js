@@ -2271,6 +2271,295 @@ $(function () {
     });
 
     /**
+     * Camera, AI print monitor, and smart socket settings
+     */
+    const cameraForm = $("#camera-form");
+    if (cameraForm.length) {
+        const cameraFields = {
+            source: $("#camera-source"),
+            name: $("#camera-name"),
+            refresh: $("#camera-refresh"),
+            stream: $("#camera-stream-url"),
+            snapshot: $("#camera-snapshot-url"),
+            haEnabled: $("#ha-camera-enabled"),
+            haBaseURL: $("#ha-camera-base-url"),
+            haToken: $("#ha-camera-token"),
+            haEntity: $("#ha-camera-entity"),
+            detail: $("#camera-detail"),
+        };
+
+        const loadCameraSettings = async () => {
+            try {
+                const resp = await fetch("/api/settings/camera");
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const cfg = data.camera || {};
+                const ext = cfg.external || {};
+                const ha = ext.home_assistant || {};
+                cameraFields.source.val(cfg.configured_source || cfg.source || "printer");
+                cameraFields.name.val(ext.name || "");
+                cameraFields.refresh.val(ext.refresh_sec || 3);
+                cameraFields.stream.val(ext.stream_url || "");
+                cameraFields.snapshot.val(ext.snapshot_url || "");
+                cameraFields.haEnabled.prop("checked", Boolean(ha.enabled));
+                cameraFields.haBaseURL.val(ha.base_url || "");
+                cameraFields.haToken.val(ha.token || "");
+                cameraFields.haEntity.val(ha.camera_entity_id || "");
+                cameraFields.detail.text(cfg.detail || "");
+            } catch (err) {
+                console.error("Failed to load camera settings:", err);
+            }
+        };
+
+        $("#camera-save").on("click", async function () {
+            const btn = $(this);
+            btn.prop("disabled", true);
+            const payload = {
+                camera: {
+                    source: cameraFields.source.val(),
+                    external: {
+                        name: cameraFields.name.val().trim(),
+                        refresh_sec: parseInt(cameraFields.refresh.val(), 10) || 3,
+                        stream_url: cameraFields.stream.val().trim(),
+                        snapshot_url: cameraFields.snapshot.val().trim(),
+                        home_assistant: {
+                            enabled: cameraFields.haEnabled.is(":checked"),
+                            base_url: cameraFields.haBaseURL.val().trim(),
+                            token: cameraFields.haToken.val().trim(),
+                            camera_entity_id: cameraFields.haEntity.val().trim(),
+                        },
+                    },
+                },
+            };
+            try {
+                const resp = await fetch("/api/settings/camera", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                });
+                if (resp.ok) {
+                    flash_message("Camera settings saved", "success");
+                    loadCameraSettings();
+                } else {
+                    const data = await resp.json().catch(() => ({}));
+                    flash_message(`Failed to save camera: ${data.error || resp.statusText}`, "danger");
+                }
+            } catch (err) {
+                flash_message(`Error: ${err.message}`, "danger");
+            } finally {
+                btn.prop("disabled", false);
+            }
+        });
+
+        loadCameraSettings();
+    }
+
+    const pmForm = $("#print-monitor-form");
+    if (pmForm.length) {
+        const pmFields = {
+            enabled: $("#print-monitor-enabled"),
+            interval: $("#print-monitor-interval"),
+            frameCount: $("#print-monitor-frame-count"),
+            spacing: $("#print-monitor-spacing"),
+            model: $("#print-monitor-model"),
+            key: $("#print-monitor-key"),
+            prompt: $("#print-monitor-prompt"),
+            status: $("#print-monitor-status"),
+        };
+
+        const renderPrintMonitorStatus = (status) => {
+            if (!status || !status.available) {
+                pmFields.status.text("Monitor service unavailable.");
+                return;
+            }
+            const s = status.status || {};
+            const last = s.last_result;
+            let text = `Active: ${s.active ? "yes" : "no"}; running: ${s.running ? "yes" : "no"}`;
+            if (s.next_check) text += `; next: ${new Date(s.next_check).toLocaleString()}`;
+            if (last) {
+                text += `; last: ${last.failing ? "failing" : "ok"}`;
+                if (last.confidence) text += ` (${Math.round(last.confidence * 100)}%)`;
+                if (last.reason) text += ` - ${last.reason}`;
+                if (last.error) text += ` - ${last.error}`;
+            }
+            pmFields.status.text(text);
+        };
+
+        const loadPrintMonitorSettings = async () => {
+            try {
+                const resp = await fetch("/api/settings/print-monitor");
+                if (resp.ok) {
+                    const data = await resp.json();
+                    const cfg = data.print_monitor || {};
+                    pmFields.enabled.prop("checked", Boolean(cfg.enabled));
+                    pmFields.interval.val(cfg.interval_sec || 300);
+                    pmFields.frameCount.val(cfg.frame_count || 5);
+                    pmFields.spacing.val(cfg.frame_spacing_sec || 1);
+                    pmFields.model.val(cfg.model || "google/gemini-2.5-flash");
+                    pmFields.key.val(cfg.openrouter_key || "");
+                    pmFields.prompt.val(cfg.prompt || "");
+                }
+                const statusResp = await fetch("/api/print-monitor/status");
+                if (statusResp.ok) renderPrintMonitorStatus(await statusResp.json());
+            } catch (err) {
+                console.error("Failed to load print monitor settings:", err);
+            }
+        };
+
+        $("#print-monitor-save").on("click", async function () {
+            const btn = $(this);
+            btn.prop("disabled", true);
+            const payload = {
+                print_monitor: {
+                    enabled: pmFields.enabled.is(":checked"),
+                    interval_sec: parseInt(pmFields.interval.val(), 10) || 300,
+                    frame_count: parseInt(pmFields.frameCount.val(), 10) || 5,
+                    frame_spacing_sec: parseInt(pmFields.spacing.val(), 10) || 1,
+                    model: pmFields.model.val().trim(),
+                    openrouter_key: pmFields.key.val().trim(),
+                    prompt: pmFields.prompt.val().trim(),
+                },
+            };
+            try {
+                const resp = await fetch("/api/settings/print-monitor", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                });
+                if (resp.ok) {
+                    flash_message("Print monitor settings saved", "success");
+                    loadPrintMonitorSettings();
+                } else {
+                    const data = await resp.json().catch(() => ({}));
+                    flash_message(`Failed to save monitor: ${data.error || resp.statusText}`, "danger");
+                }
+            } catch (err) {
+                flash_message(`Error: ${err.message}`, "danger");
+            } finally {
+                btn.prop("disabled", false);
+            }
+        });
+
+        $("#print-monitor-check").on("click", async function () {
+            const resp = await fetch("/api/print-monitor/check", { method: "POST" });
+            flash_message(resp.ok ? "Print monitor check queued" : "Failed to queue print monitor check", resp.ok ? "success" : "danger");
+            setTimeout(loadPrintMonitorSettings, 2000);
+        });
+
+        loadPrintMonitorSettings();
+        setInterval(async () => {
+            try {
+                const resp = await fetch("/api/print-monitor/status");
+                if (resp.ok) renderPrintMonitorStatus(await resp.json());
+            } catch (_) {}
+        }, 10000);
+    }
+
+    const ssForm = $("#smart-socket-form");
+    if (ssForm.length) {
+        const ssFields = {
+            enabled: $("#smart-socket-enabled"),
+            baseURL: $("#smart-socket-base-url"),
+            token: $("#smart-socket-token"),
+            switchEntity: $("#smart-socket-switch"),
+            powerEntity: $("#smart-socket-power"),
+            autoOff: $("#smart-socket-auto-off"),
+            status: $("#smart-socket-status"),
+        };
+
+        const loadSmartSocketState = async () => {
+            try {
+                const resp = await fetch("/api/smart-socket/state");
+                if (!resp.ok) return;
+                const data = await resp.json();
+                if (!data.available) {
+                    ssFields.status.text(data.error || "Socket not configured");
+                    return;
+                }
+                const power = data.power ? `, ${data.power} ${data.power_unit || "W"}` : "";
+                ssFields.status.text(`${data.state}${power}`);
+            } catch (err) {
+                console.error("Failed to load smart socket state:", err);
+            }
+        };
+
+        const loadSmartSocketSettings = async () => {
+            try {
+                const resp = await fetch("/api/settings/smart-socket");
+                if (resp.ok) {
+                    const data = await resp.json();
+                    const cfg = data.smart_socket || {};
+                    ssFields.enabled.prop("checked", Boolean(cfg.enabled));
+                    ssFields.baseURL.val(cfg.base_url || "");
+                    ssFields.token.val(cfg.token || "");
+                    ssFields.switchEntity.val(cfg.switch_entity || "");
+                    ssFields.powerEntity.val(cfg.power_entity || "");
+                    ssFields.autoOff.prop("checked", Boolean(cfg.auto_off_on_fail));
+                }
+                loadSmartSocketState();
+            } catch (err) {
+                console.error("Failed to load smart socket settings:", err);
+            }
+        };
+
+        $("#smart-socket-save").on("click", async function () {
+            const btn = $(this);
+            btn.prop("disabled", true);
+            const payload = {
+                smart_socket: {
+                    enabled: ssFields.enabled.is(":checked"),
+                    base_url: ssFields.baseURL.val().trim(),
+                    token: ssFields.token.val().trim(),
+                    switch_entity: ssFields.switchEntity.val().trim(),
+                    power_entity: ssFields.powerEntity.val().trim(),
+                    auto_off_on_fail: ssFields.autoOff.is(":checked"),
+                },
+            };
+            try {
+                const resp = await fetch("/api/settings/smart-socket", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                });
+                if (resp.ok) {
+                    flash_message("Smart socket settings saved", "success");
+                    loadSmartSocketSettings();
+                } else {
+                    const data = await resp.json().catch(() => ({}));
+                    flash_message(`Failed to save socket: ${data.error || resp.statusText}`, "danger");
+                }
+            } catch (err) {
+                flash_message(`Error: ${err.message}`, "danger");
+            } finally {
+                btn.prop("disabled", false);
+            }
+        });
+
+        const controlSocket = async (action) => {
+            const resp = await fetch("/api/smart-socket/control", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action }),
+            });
+            if (!resp.ok) {
+                const data = await resp.json().catch(() => ({}));
+                flash_message(`Socket ${action} failed: ${data.error || resp.statusText}`, "danger");
+                return;
+            }
+            flash_message(`Socket turned ${action}`, "success");
+            setTimeout(loadSmartSocketState, 1000);
+        };
+
+        $("#smart-socket-on").on("click", () => controlSocket("on"));
+        $("#smart-socket-off").on("click", () => {
+            if (confirm("Turn off the printer socket?")) controlSocket("off");
+        });
+
+        loadSmartSocketSettings();
+        setInterval(loadSmartSocketState, 10000);
+    }
+
+    /**
      * Timelapse Settings
      */
     const timelapseForm = $("#timelapse-form");

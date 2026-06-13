@@ -18,6 +18,8 @@ type Config struct {
 	FilamentService    FilamentServiceConfig `json:"-"`
 	Appearance         AppearanceConfig      `json:"-"`
 	Camera             CameraConfig          `json:"-"`
+	PrintMonitor       PrintMonitorConfig    `json:"-"`
+	SmartSocket        SmartSocketConfig     `json:"-"`
 }
 
 // configJSON is the JSON wire format for Config.
@@ -33,6 +35,8 @@ type configJSON struct {
 	FilamentService    json.RawMessage `json:"filament_service,omitempty"`
 	Appearance         json.RawMessage `json:"appearance,omitempty"`
 	Camera             json.RawMessage `json:"camera,omitempty"`
+	PrintMonitor       json.RawMessage `json:"print_monitor,omitempty"`
+	SmartSocket        json.RawMessage `json:"smart_socket,omitempty"`
 }
 
 // NewConfig creates a Config with default settings.
@@ -48,6 +52,8 @@ func NewConfig(account *Account, printers []Printer) *Config {
 		FilamentService:    DefaultFilamentServiceConfig(),
 		Appearance:         DefaultAppearanceConfig(),
 		Camera:             DefaultCameraConfig(),
+		PrintMonitor:       DefaultPrintMonitorConfig(),
+		SmartSocket:        DefaultSmartSocketConfig(),
 	}
 }
 
@@ -111,6 +117,16 @@ func (c Config) MarshalJSON() ([]byte, error) {
 		return nil, fmt.Errorf("marshal camera: %w", err)
 	}
 
+	printMonitorData, err := json.Marshal(c.PrintMonitor)
+	if err != nil {
+		return nil, fmt.Errorf("marshal print_monitor: %w", err)
+	}
+
+	smartSocketData, err := json.Marshal(c.SmartSocket)
+	if err != nil {
+		return nil, fmt.Errorf("marshal smart_socket: %w", err)
+	}
+
 	return json.Marshal(configJSON{
 		Type:               "Config",
 		Account:            accountData,
@@ -123,6 +139,8 @@ func (c Config) MarshalJSON() ([]byte, error) {
 		FilamentService:    fsData,
 		Appearance:         appData,
 		Camera:             cameraData,
+		PrintMonitor:       printMonitorData,
+		SmartSocket:        smartSocketData,
 	})
 }
 
@@ -218,6 +236,22 @@ func (c *Config) UnmarshalJSON(data []byte) error {
 		}
 		if c.Camera.PerPrinter == nil {
 			c.Camera.PerPrinter = map[string]PrinterCameraEntry{}
+		}
+	}
+
+	// Print monitor with defaults merge
+	c.PrintMonitor = DefaultPrintMonitorConfig()
+	if raw.PrintMonitor != nil && string(raw.PrintMonitor) != "null" {
+		if err := json.Unmarshal(raw.PrintMonitor, &c.PrintMonitor); err != nil {
+			c.PrintMonitor = DefaultPrintMonitorConfig()
+		}
+	}
+
+	// Smart socket with defaults merge
+	c.SmartSocket = DefaultSmartSocketConfig()
+	if raw.SmartSocket != nil && string(raw.SmartSocket) != "null" {
+		if err := json.Unmarshal(raw.SmartSocket, &c.SmartSocket); err != nil {
+			c.SmartSocket = DefaultSmartSocketConfig()
 		}
 	}
 

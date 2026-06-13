@@ -155,6 +155,15 @@ func runWebserver() error {
 	timelapse := service.NewTimelapseService(filepath.Join(configDir, "captures"), video)
 	sm.Register(timelapse)
 
+	cameraSnapshotter := service.NewConfigCameraSnapshotter(cfgMgr, printerIdx, video)
+	printMonitorCfg := model.DefaultPrintMonitorConfig()
+	if startupCfg, err := cfgMgr.Load(); err == nil && startupCfg != nil {
+		printMonitorCfg = startupCfg.PrintMonitor
+	}
+	printMonitor := service.NewPrintMonitorService(cfgMgr, printMonitorCfg, cameraSnapshotter)
+	printMonitor.WithReferenceArchive(database, service.NewGCodeArchiver(configDir))
+	sm.Register(printMonitor)
+
 	// Apply saved timelapse config at startup so it is active without requiring a settings save.
 	if startupCfg, err := cfgMgr.Load(); err == nil && startupCfg != nil {
 		printerSN := ""
@@ -178,7 +187,7 @@ func runWebserver() error {
 		sm.Register(ha)
 	}
 
-	mqtt := service.NewMqttQueue(cfgMgr, printerIdx, database, ha, timelapse)
+	mqtt := service.NewMqttQueue(cfgMgr, printerIdx, database, ha, timelapse, printMonitor)
 	sm.Register(mqtt)
 
 	notif := notifications.NewNotificationService(cfgMgr, mqtt, video)
@@ -197,8 +206,11 @@ func runWebserver() error {
 		if _, err := sm.Borrow("timelapse"); err != nil {
 			slog.Warn("failed to start timelapse service", "err", err)
 		}
+		if _, err := sm.Borrow("printmonitor"); err != nil {
+			slog.Warn("failed to start print monitor service", "err", err)
+		}
 		if haEnabled {
-			if _, err := sm.Borrow("ha"); err != nil {
+			if _, err := sm.Borrow("homeassistant"); err != nil {
 				slog.Warn("failed to start Home Assistant service", "err", err)
 			}
 		}
