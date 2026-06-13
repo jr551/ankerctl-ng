@@ -120,7 +120,7 @@ func OpenBroadcastLAN(duid protocol.Duid) (*Client, error) {
 		conn.Close()
 		return nil, fmt.Errorf("pppp: set SO_BROADCAST: %w", setSockOptErr)
 	}
-	addr := &net.UDPAddr{IP: net.IPv4bcast, Port: PPPPLANPort}
+	addr := &net.UDPAddr{IP: net.IPv4(192, 168, 69, 33), Port: PPPPLANPort}
 	c := NewClient(conn, duid, addr)
 	// StateConnecting: handshake begins after ConnectLANSearch.
 	return c, nil
@@ -174,7 +174,7 @@ func OpenBroadcast() (*Client, error) {
 		conn.Close()
 		return nil, fmt.Errorf("pppp: set write buffer: %w", err)
 	}
-	addr := &net.UDPAddr{IP: net.IPv4bcast, Port: PPPPLANPort}
+	addr := &net.UDPAddr{IP: net.IPv4(192, 168, 69, 33), Port: PPPPLANPort}
 	c := NewClient(conn, protocol.Duid{}, addr)
 	c.state = StateConnected
 	return c, nil

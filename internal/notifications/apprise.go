@@ -398,6 +398,23 @@ func (c *Client) notifyURL() *url.URL {
 	if serverURL == "" || key == "" {
 		return nil
 	}
+
+	// Direct Apprise JSON webhook URL support. Apprise service URLs use
+	// json:// and jsons://; ankerctl normally targets an Apprise API server,
+	// but this lets a configured jsons:// URL post JSON directly.
+	if direct, err := url.Parse(serverURL); err == nil && (direct.Scheme == "json" || direct.Scheme == "jsons") {
+		if direct.Scheme == "jsons" {
+			direct.Scheme = "https"
+		} else {
+			direct.Scheme = "http"
+		}
+		if c.isPrivateHost(direct) {
+			slog.Warn("Apprise direct JSON URL points to private/loopback address, ignoring", "url", direct.String())
+			return nil
+		}
+		return direct
+	}
+
 	base := serverURL
 	if !strings.HasSuffix(base, "/notify") {
 		base += "/notify"
