@@ -578,6 +578,15 @@ $(function () {
         videoPlayer.addEventListener("resize", updateVideoResolution);
     }
 
+    const externalCameraPlayer = document.getElementById("external-camera-player");
+    if (externalCameraPlayer) {
+        const refreshSec = Math.max(1, parseInt(externalCameraPlayer.dataset.refreshSec || "3", 10) || 3);
+        const refreshExternalCamera = () => {
+            externalCameraPlayer.src = `/api/camera/frame?t=${Date.now()}`;
+        };
+        setInterval(refreshExternalCamera, refreshSec * 1000);
+    }
+
     sockets.ctrl = new AutoWebSocket({
         name: "Control socket",
         url: `${location.protocol.replace("http", "ws")}//${location.host}/ws/ctrl`,

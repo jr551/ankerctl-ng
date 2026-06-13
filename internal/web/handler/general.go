@@ -19,18 +19,24 @@ func (h *Handler) Root(w http.ResponseWriter, r *http.Request) {
 
 	cfg, _ := h.loadConfig()
 	printer, activeIdx, locked := h.activePrinter(cfg)
+	var camera model.ResolvedCameraSettings
+	if cfg != nil {
+		camera = resolveCameraSettings(cfg, activeIdx)
+	}
 
 	host, port := requestHostPort(r)
 	data := TemplateData{
-		ActivePrinterIndex: activeIdx,
-		PrinterIndexLocked: locked,
-		Configure:          cfg != nil && cfg.IsConfigured(),
-		DebugMode:          h.devMode,
-		VideoSupported:     h.cameraFeatureAvailable(cfg, activeIdx),
-		UnsupportedDevice:  h.isUnsupportedDevice(),
-		CountryCodes:       countryCodes,
-		RequestHost:        host,
-		RequestPort:        port,
+		ActivePrinterIndex:    activeIdx,
+		PrinterIndexLocked:    locked,
+		Configure:             cfg != nil && cfg.IsConfigured(),
+		DebugMode:             h.devMode,
+		VideoSupported:        camera.FeatureAvailable || h.videoSupported(),
+		CameraEffectiveSource: camera.EffectiveSource,
+		CameraRefreshSec:      camera.External.RefreshSec,
+		UnsupportedDevice:     h.isUnsupportedDevice(),
+		CountryCodes:          countryCodes,
+		RequestHost:           host,
+		RequestPort:           port,
 	}
 
 	data.UploadRateChoices = model.UploadRateMbpsChoices

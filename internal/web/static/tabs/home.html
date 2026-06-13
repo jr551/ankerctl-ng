@@ -5,6 +5,12 @@
             <div class="col-md-12 col-lg-6 col-xl-8">
                 {{if .VideoSupported}}
                 <!-- Video Container -->
+                {{if eq .CameraEffectiveSource "external"}}
+                <div id="vplayer" class="mb-3">
+                    <img class="w-100 d-block rounded-3 bg-body-tertiary" id="external-camera-player"
+                        src="/api/camera/frame" data-refresh-sec="{{.CameraRefreshSec}}" alt="Camera feed" />
+                </div>
+                {{else}}
                 <div id="vplayer" style="display: none;">
                     <video class="w-100 d-block rounded-3 bg-body-tertiary" playsinline autoplay muted id="player"
                         poster="/static/img/load-screen.svg">
@@ -15,6 +21,7 @@
                         <i class="bi-camera-video px-1"></i> Enable Video
                     </button>
                 </div>
+                {{end}}
 
                 <!-- Printer Control Card -->
                 <div class="card mb-3">
@@ -152,7 +159,9 @@
                         </div>
                         <span id="badge-mqtt" class="badge">MQTT</span>
                         <span id="badge-pppp" class="badge text-bg-secondary">PPPP</span>
-                        {{if .VideoSupported}}
+                        {{if eq .CameraEffectiveSource "external"}}
+                        <span class="badge text-bg-success">CAMERA</span>
+                        {{else if .VideoSupported}}
                         <span id="badge-video" class="badge">VIDEO</span>
                         {{end}}
                         <span id="badge-ctrl" class="badge">CTRL</span>
