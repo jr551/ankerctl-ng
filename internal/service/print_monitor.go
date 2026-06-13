@@ -11,6 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -314,7 +315,7 @@ func (s *PrintMonitorService) callOpenRouter(ctx context.Context, cfg model.Prin
 	if err != nil {
 		return false, 0, "", err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.OpenRouterURL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, printMonitorChatCompletionsURL(cfg.OpenRouterURL), bytes.NewReader(body))
 	if err != nil {
 		return false, 0, "", err
 	}
@@ -471,6 +472,23 @@ func normalizePrintMonitorConfig(cfg model.PrintMonitorConfig) model.PrintMonito
 		cfg.Prompt = def.Prompt
 	}
 	return cfg
+}
+
+func printMonitorChatCompletionsURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return raw
+	}
+	path := strings.TrimRight(u.Path, "/")
+	if strings.HasSuffix(path, "/chat/completions") {
+		return u.String()
+	}
+	u.Path = path + "/chat/completions"
+	return u.String()
 }
 
 func cloneTimePtr(t *time.Time) *time.Time {

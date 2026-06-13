@@ -145,15 +145,8 @@ func (h *Handler) CameraStream(w http.ResponseWriter, r *http.Request) {
 	case model.CameraSourceExternal:
 		haCfg := resolved.External.HomeAssistant
 		if service.HomeAssistantCameraConfigured(haCfg) {
-			input := service.HomeAssistantCameraStreamURL(haCfg)
-			if input == "" {
-				h.writeError(w, http.StatusBadRequest, "Home Assistant camera stream is not configured.")
-				return
-			}
-			cmd = service.ExternalMJPEGCmdWithHeaders(ctx, input, map[string]string{
-				"Authorization": "Bearer " + haCfg.Token,
-			}, scale)
-			break
+			h.writeError(w, http.StatusNotImplemented, "Home Assistant camera live stream is disabled; use /api/camera/frame.")
+			return
 		}
 		input := externalStreamInputURL(resolved)
 		if input == "" {
