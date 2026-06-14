@@ -396,7 +396,7 @@ func (s *PrintMonitorService) callOpenRouter(ctx context.Context, cfg model.Prin
 	}
 	req.Header.Set("Authorization", "Bearer "+cfg.OpenRouterKey)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("HTTP-Referer", "https://github.com/Django1982/ankerctl_go_remake")
+	req.Header.Set("HTTP-Referer", "https://github.com/jr551/ankerctl_go_remake")
 	req.Header.Set("X-Title", "ankerctl")
 	resp, err := s.httpClient.Do(req)
 	if err != nil {

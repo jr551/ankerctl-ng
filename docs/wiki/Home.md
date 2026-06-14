@@ -25,7 +25,7 @@ Welcome to the ankerctl wiki. ankerctl is a Go reimplementation of [ankermake-m5
 
 ### Option 1: Download the Binary (fastest)
 
-Download the latest release from [Releases](https://github.com/Django1982/ankerctl_go_remake/releases) (v1.0.0+), make it executable, and run:
+Download the latest release from [Releases](https://github.com/jr551/ankerctl_go_remake/releases) (v1.0.0+), make it executable, and run:
 
 ```sh
 chmod +x ankerctl-linux-amd64
@@ -40,13 +40,13 @@ docker run -d \
   --network host \
   -v ~/.ankerctl:/root/.ankerctl \
   -e ANKERCTL_HOST=0.0.0.0 \
-  ghcr.io/django1982/ankerctl:latest
+  ghcr.io/jr551/ankerctl-ng:latest
 ```
 
 ### Option 3: Build from Source
 
 ```sh
-git clone https://github.com/Django1982/ankerctl_go_remake.git
+git clone https://github.com/jr551/ankerctl_go_remake.git
 cd ankerctl_go_remake
 
 # Download vendor assets (Bootstrap, Chart.js etc.) — required before building!
@@ -65,7 +65,7 @@ Navigate to [http://localhost:4470](http://localhost:4470) and log in with your 
 
 ## Quick Links
 
-- [GitHub Repository](https://github.com/Django1982/ankerctl_go_remake)
-- [Releases](https://github.com/Django1982/ankerctl_go_remake/releases)
-- [Docker Image](https://ghcr.io/django1982/ankerctl)
-- [Issue Tracker](https://github.com/Django1982/ankerctl_go_remake/issues)
+- [GitHub Repository](https://github.com/jr551/ankerctl_go_remake)
+- [Releases](https://github.com/jr551/ankerctl_go_remake/releases)
+- [Docker Image](https://ghcr.io/jr551/ankerctl-ng)
+- [Issue Tracker](https://github.com/jr551/ankerctl_go_remake/issues)
