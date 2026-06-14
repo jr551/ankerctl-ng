@@ -126,6 +126,7 @@ func (s *Server) registerRoutes() {
 	r.Post("/api/history/delete", h.HistoryDeleteSelected)
 	r.Post("/api/history/{id}/reprint", h.HistoryReprint)
 	r.Get("/api/history/{id}/thumbnail", h.HistoryThumbnail)
+	r.Get("/api/history/{id}/ai/{index}/image", h.HistoryAIImage)
 
 	// Filaments
 	r.Get("/api/filaments", h.FilamentList)

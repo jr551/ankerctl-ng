@@ -77,7 +77,7 @@ $(function () {
 
                 // Persistent green badge in the navbar — always visible, never dismissible
                 if (data.update_available && data.latest) {
-                    const releaseURL = "https://github.com/Django1982/ankerctl_go_remake/releases/tag/" + encodeURIComponent(data.latest);
+                    const releaseURL = "https://github.com/jr551/ankerctl_go_remake/releases/tag/" + encodeURIComponent(data.latest);
                     $("#update-badge-version").text(data.latest);
                     $("#update-badge").attr("href", releaseURL).show();
                 }
@@ -250,6 +250,19 @@ $(function () {
         return `X${speed / 50}`;
     }
 
+    function updateTemperatureVisual(field, current, target, kind) {
+        if (!field || !field.length) {
+            return;
+        }
+        field.removeClass("temp-heating temp-hot");
+        const activeTarget = Number.isFinite(target) ? target : 0;
+        const activeCurrent = Number.isFinite(current) ? current : 0;
+        const hotThreshold = kind === "bed" ? 50 : 180;
+        if (activeTarget > 0 || activeCurrent >= hotThreshold) {
+            field.addClass(activeCurrent >= hotThreshold ? "temp-hot" : "temp-heating");
+        }
+    }
+
     /**
      * Highlight active video profile button.
      * @param {string} profileId
@@ -357,6 +370,7 @@ $(function () {
     const uploadMeta = $("#upload-progress-meta");
     let uploadName = "";
     let uploadSize = 0;
+    let uploadResetTimer = null;
 
     function setUploadProgress(percent) {
         if (!uploadBar.length) {
@@ -371,6 +385,10 @@ $(function () {
     function resetUploadProgress(message) {
         if (!uploadBar.length) {
             return;
+        }
+        if (uploadResetTimer) {
+            clearTimeout(uploadResetTimer);
+            uploadResetTimer = null;
         }
         uploadBar.removeClass("bg-danger");
         setUploadProgress(0);
@@ -435,31 +453,35 @@ $(function () {
                         $("#progressbar").attr("style", `width: ${progress}%`);
                         $("#progress").text(`${progress}%`);
                         document.title = progress > 0 && progress < 100
-                            ? `\u{1F5A8}\uFE0F ${progress}% | ankerctl`
-                            : "ankerctl";
+                            ? `\u{1F5A8}\uFE0F ${progress}% | ankerctl-ng`
+                            : "ankerctl-ng";
                     }
                 }
             } else if (data.commandType == 1003) {
                 // Returns Nozzle Temp
                 const current = getTempRounded(data.currentTemp);
+                let target = 0;
                 $("#nozzle-temp").text(`${current}°C`);
                 if (data.hasOwnProperty('targetTemp')) {
-                    const target = getTempRounded(data.targetTemp);
+                    target = getTempRounded(data.targetTemp);
                     if (!$("#set-nozzle-temp").is(":focus")) {
                         $("#set-nozzle-temp").val(target);
                     }
                 }
+                updateTemperatureVisual($("#nozzle-temp"), current, target, "nozzle");
                 pushTempData("nozzle", getTemp(data.currentTemp), getTemp(data.targetTemp));
             } else if (data.commandType == 1004) {
                 // Returns Bed Temp
                 const current = getTempRounded(data.currentTemp);
+                let target = 0;
                 $("#bed-temp").text(`${current}°C`);
                 if (data.hasOwnProperty('targetTemp')) {
-                    const target = getTempRounded(data.targetTemp);
+                    target = getTempRounded(data.targetTemp);
                     if (!$("#set-bed-temp").is(":focus")) {
                         $("#set-bed-temp").val(target);
                     }
                 }
+                updateTemperatureVisual($("#bed-temp"), current, target, "bed");
                 pushTempData("bed", getTemp(data.currentTemp), getTemp(data.targetTemp));
             } else if (data.commandType == 1006) {
                 // Returns Print Speed
@@ -501,7 +523,7 @@ $(function () {
                     .attr("style", "width: 100%")
                     .addClass("progress-bar-striped progress-bar-animated");
                 $("#progress").text("Preparing…");
-                document.title = "ankerctl";
+                document.title = "ankerctl-ng";
             } else if (data.commandType == 1052) {
                 // Returns Layer Info — layer display only; progress comes from ct=1001
                 const layer = `${data.real_print_layer} / ${data.total_layer}`;
@@ -522,12 +544,14 @@ $(function () {
             $("#progressbar").attr("style", "width: 0%");
             $("#progress").text("0%");
             $("#nozzle-temp").text("0°C");
+            $("#nozzle-temp").removeClass("temp-heating temp-hot");
             $("#set-nozzle-temp").val(0);
             $("#bed-temp").text("0°C");
+            $("#bed-temp").removeClass("temp-heating temp-hot");
             $("#set-bed-temp").val(0);
             $("#print-speed").text("0mm/s");
             $("#print-layer").text("0 / 0");
-            document.title = "ankerctl";
+            document.title = "ankerctl-ng";
             _updatePrintControlButtons(PRINT_STATE.IDLE);
         },
     });
@@ -579,6 +603,12 @@ $(function () {
     });
 
     const videoPlayer = document.getElementById("player");
+    const rewindOverlay = document.getElementById("camera-rewind-image");
+    const rewindControls = document.getElementById("camera-rewind-controls");
+    const rewindSlider = document.getElementById("camera-rewind-slider");
+    const rewindLabel = document.getElementById("camera-rewind-label");
+    const cameraFrameBuffer = [];
+    const cameraFrameBufferMax = 60;
     const updateVideoResolution = () => {
         if (!videoPlayer) {
             return;
@@ -594,6 +624,100 @@ $(function () {
         videoPlayer.addEventListener("loadeddata", updateVideoResolution);
         videoPlayer.addEventListener("resize", updateVideoResolution);
     }
+
+    const updateCameraRewindUI = () => {
+        if (!rewindControls || !rewindSlider || !rewindLabel) {
+            return;
+        }
+        const available = Math.max(0, Math.min(cameraFrameBufferMax, cameraFrameBuffer.length - 1));
+        rewindControls.hidden = available < 1;
+        rewindSlider.max = Math.max(1, available);
+        if (rewindSlider.value > available) {
+            rewindSlider.value = 0;
+        }
+        if (Number(rewindSlider.value) === 0) {
+            rewindLabel.textContent = "Live";
+        }
+    };
+
+    const restoreLiveCameraView = () => {
+        if (rewindOverlay) {
+            rewindOverlay.hidden = true;
+            rewindOverlay.removeAttribute("src");
+        }
+        if (rewindSlider) {
+            rewindSlider.value = 0;
+        }
+        if (rewindLabel) {
+            rewindLabel.textContent = "Live";
+        }
+    };
+
+    const pushCameraFrameBuffer = (dataUrl) => {
+        if (!dataUrl) {
+            return;
+        }
+        cameraFrameBuffer.push({ at: Date.now(), src: dataUrl });
+        while (cameraFrameBuffer.length > cameraFrameBufferMax) {
+            cameraFrameBuffer.shift();
+        }
+        updateCameraRewindUI();
+    };
+
+    const captureFrameFromElement = (element) => {
+        if (!element) {
+            return "";
+        }
+        const width = element.videoWidth || element.naturalWidth || element.clientWidth || 0;
+        const height = element.videoHeight || element.naturalHeight || element.clientHeight || 0;
+        if (!width || !height) {
+            return "";
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+            return "";
+        }
+        ctx.drawImage(element, 0, 0, width, height);
+        return canvas.toDataURL("image/jpeg", 0.75);
+    };
+
+    const sampleCameraBuffer = () => {
+        if (externalCameraPlayer && externalCameraPlayer.complete && externalCameraPlayer.naturalWidth > 0) {
+            pushCameraFrameBuffer(captureFrameFromElement(externalCameraPlayer));
+            return;
+        }
+        if (videoPlayer && videoPlayer.readyState >= 2 && videoPlayer.videoWidth > 0 && videoPlayer.videoHeight > 0) {
+            pushCameraFrameBuffer(captureFrameFromElement(videoPlayer));
+        }
+    };
+
+    if (rewindSlider) {
+        rewindSlider.addEventListener("input", () => {
+            const offset = parseInt(rewindSlider.value, 10) || 0;
+            if (offset <= 0 || cameraFrameBuffer.length === 0) {
+                restoreLiveCameraView();
+                return;
+            }
+            const index = Math.max(0, cameraFrameBuffer.length - 1 - offset);
+            const frame = cameraFrameBuffer[index];
+            if (!frame || !rewindOverlay) {
+                restoreLiveCameraView();
+                return;
+            }
+            rewindOverlay.src = frame.src;
+            rewindOverlay.hidden = false;
+            rewindLabel.textContent = `-${offset}s`;
+        });
+        ["change", "mouseup", "touchend", "pointerup", "keyup"].forEach((eventName) => {
+            rewindSlider.addEventListener(eventName, () => {
+                window.setTimeout(restoreLiveCameraView, 30);
+            });
+        });
+    }
+    window.setInterval(sampleCameraBuffer, 1000);
 
     const externalCameraPlayer = document.getElementById("external-camera-player");
     if (externalCameraPlayer) {
@@ -902,6 +1026,10 @@ $(function () {
                 uploadSize = data.size;
             }
             if (data.status === "start") {
+                if (uploadResetTimer) {
+                    clearTimeout(uploadResetTimer);
+                    uploadResetTimer = null;
+                }
                 uploadBar.removeClass("bg-danger");
                 setUploadProgress(0);
                 const sizeText = uploadSize ? ` (${formatBytes(uploadSize)})` : "";
@@ -919,7 +1047,9 @@ $(function () {
                 setUploadProgress(100);
                 const total = data.size || uploadSize;
                 const sizeText = total ? ` (${formatBytes(total)})` : "";
-                uploadMeta.text(uploadName ? `Upload complete: ${uploadName}${sizeText}` : "Upload complete");
+                const currentPrint = ($("#print-name").text() || "").trim();
+                uploadMeta.text(currentPrint ? `Printing: ${currentPrint}` : (uploadName ? `Upload complete: ${uploadName}${sizeText}` : "Upload complete"));
+                uploadResetTimer = setTimeout(() => resetUploadProgress(currentPrint ? `Printing: ${currentPrint}` : "Idle"), 3500);
             } else if (data.status === "error") {
                 uploadBar.addClass("bg-danger");
                 setUploadProgress(0);
@@ -1023,6 +1153,8 @@ $(function () {
             snapshotFallback: $("#apprise-snapshot-fallback"),
             snapshotLight: $("#apprise-snapshot-light"),
             progressIncludeImage: $("#apprise-progress-image"),
+            rawBodyTemplate: $("#apprise-raw-body-template"),
+            rawContentType: $("#apprise-raw-content-type"),
             smtp: {
                 host: $("#apprise-smtp-host"),
                 port: $("#apprise-smtp-port"),
@@ -1030,8 +1162,17 @@ $(function () {
                 password: $("#apprise-smtp-password"),
                 from: $("#apprise-smtp-from"),
                 to: $("#apprise-smtp-to"),
-                secure: $("#apprise-smtp-secure"),
+                security: $("#apprise-smtp-security"),
                 build: $("#apprise-smtp-build"),
+            },
+            announcement: {
+                enabled: $("#announcement-enabled"),
+                baseUrl: $("#announcement-base-url"),
+                token: $("#announcement-token"),
+                ttsEntity: $("#announcement-tts-entity"),
+                mediaPlayer: $("#announcement-media-player"),
+                language: $("#announcement-language"),
+                template: $("#announcement-template"),
             },
             events: {
                 print_started: $("#apprise-event-print-started"),
@@ -1058,6 +1199,8 @@ $(function () {
                 enabled: appriseFields.enabled.is(":checked"),
                 server_url: appriseFields.serverUrl.val().trim(),
                 tag: appriseFields.tag.val().trim(),
+                raw_body_template: appriseFields.rawBodyTemplate.val().trim(),
+                raw_content_type: appriseFields.rawContentType.val().trim() || "application/json",
                 events: {
                     print_started: appriseFields.events.print_started.is(":checked"),
                     print_finished: appriseFields.events.print_finished.is(":checked"),
@@ -1074,10 +1217,20 @@ $(function () {
                 },
             };
             addSecretIfEntered(config, "key", appriseFields.key);
-            return config;
+            const announcement = {
+                enabled: appriseFields.announcement.enabled.is(":checked"),
+                base_url: appriseFields.announcement.baseUrl.val().trim(),
+                tts_entity_id: appriseFields.announcement.ttsEntity.val().trim(),
+                media_player_entity_id: appriseFields.announcement.mediaPlayer.val().trim(),
+                language: appriseFields.announcement.language.val().trim(),
+                template: appriseFields.announcement.template.val().trim() || "{body}",
+                events: config.events,
+            };
+            addSecretIfEntered(announcement, "token", appriseFields.announcement.token);
+            return { apprise: config, announcement };
         };
 
-        const applyAppriseSettings = (apprise) => {
+        const applyAppriseSettings = (apprise, announcement) => {
             const settings = apprise || {};
             const events = settings.events || {};
             const progress = settings.progress || {};
@@ -1099,6 +1252,17 @@ $(function () {
             appriseFields.snapshotQuality.val(progress.snapshot_quality || "hd");
             appriseFields.snapshotFallback.prop("checked", progress.snapshot_fallback !== false);
             appriseFields.snapshotLight.prop("checked", Boolean(progress.snapshot_light));
+            appriseFields.rawBodyTemplate.val(settings.raw_body_template || "");
+            appriseFields.rawContentType.val(settings.raw_content_type || "application/json");
+
+            const ann = announcement || {};
+            appriseFields.announcement.enabled.prop("checked", Boolean(ann.enabled));
+            appriseFields.announcement.baseUrl.val(ann.base_url || "");
+            markSavedSecret(appriseFields.announcement.token, Boolean(ann.token), "token");
+            appriseFields.announcement.ttsEntity.val(ann.tts_entity_id || "");
+            appriseFields.announcement.mediaPlayer.val(ann.media_player_entity_id || "");
+            appriseFields.announcement.language.val(ann.language || "");
+            appriseFields.announcement.template.val(ann.template || "{body}");
         };
 
         const loadAppriseSettings = async () => {
@@ -1107,7 +1271,7 @@ $(function () {
                 const resp = await fetch("/api/notifications/settings");
                 if (resp.ok) {
                     const data = await resp.json();
-                    applyAppriseSettings(data.apprise || {});
+                    applyAppriseSettings(data.apprise || {}, data.announcement || {});
                 } else {
                     const data = await resp.json().catch(() => ({}));
                     const msg = data.error ? data.error : `HTTP ${resp.status}`;
@@ -1122,7 +1286,7 @@ $(function () {
 
         appriseButtons.save.on("click", async function () {
             setAppriseBusy(true);
-            const payload = { apprise: buildAppriseConfig() };
+            const payload = buildAppriseConfig();
             try {
                 const resp = await fetch("/api/notifications/settings", {
                     method: "POST",
@@ -1132,7 +1296,7 @@ $(function () {
                 if (resp.ok) {
                     const data = await resp.json().catch(() => ({}));
                     if (data.apprise) {
-                        applyAppriseSettings(data.apprise);
+                        applyAppriseSettings(data.apprise, data.announcement || {});
                     }
                     flash_message("Notification settings saved", "success");
                 } else {
@@ -1149,7 +1313,7 @@ $(function () {
 
         appriseButtons.test.on("click", async function () {
             setAppriseBusy(true);
-            const payload = { apprise: buildAppriseConfig() };
+            const payload = buildAppriseConfig();
             try {
                 const resp = await fetch("/api/notifications/test", {
                     method: "POST",
@@ -1177,13 +1341,15 @@ $(function () {
                 appriseFields.smtp.host.trigger("focus");
                 return;
             }
-            const scheme = appriseFields.smtp.secure.is(":checked") ? "mailtos" : "mailto";
+            const scheme = "mailto";
+            const tlsMode = appriseFields.smtp.security.val() || "starttls";
             const user = appriseFields.smtp.user.val().trim();
             const pass = appriseFields.smtp.password.val();
             const port = parseInt(appriseFields.smtp.port.val(), 10);
             const params = new URLSearchParams();
             const from = appriseFields.smtp.from.val().trim();
             const to = appriseFields.smtp.to.val().trim();
+            params.set("tls", tlsMode);
             if (from) params.set("from", from);
             if (to) params.set("to", to);
             let auth = "";
@@ -1203,7 +1369,7 @@ $(function () {
             appriseFields.serverUrl.val(built);
             appriseFields.enabled.prop("checked", true);
             appriseFields.key.val("");
-            flash_message("SMTP Apprise URL populated", "success", 3000);
+            flash_message("SMTP notification URL populated", "success", 3000);
         });
 
         loadAppriseSettings();
@@ -2427,16 +2593,50 @@ $(function () {
                 const tbody = $("#history-tbody");
                 if (!append) tbody.empty();
                 if (data.entries.length === 0 && !append) {
-                    tbody.html('<tr><td colspan="4" class="text-center text-muted py-4">No history yet</td></tr>');
+                    tbody.html('<tr><td colspan="6" class="text-center text-muted py-4">No history yet</td></tr>');
                 }
                 data.entries.forEach(e => {
                     const started = e.started_at ? new Date(e.started_at + "Z").toLocaleString() : "-";
                     const safeFilename = escapeHtml(e.filename);
+                    const latestAI = Array.isArray(e.ai_history) && e.ai_history.length ? e.ai_history[e.ai_history.length - 1] : null;
+                    const latestHook = Array.isArray(e.notification_log) && e.notification_log.length ? e.notification_log[e.notification_log.length - 1] : null;
+                    const aiSummary = latestAI
+                        ? `${latestAI.failing ? "Fail" : "OK"}${latestAI.confidence ? ` ${Math.round(latestAI.confidence * 100)}%` : ""}`
+                        : "-";
+                    const hookSummary = latestHook
+                        ? `${latestHook.ok ? "OK" : "Err"} ${escapeHtml(latestHook.event || latestHook.transport || "")}`
+                        : "-";
+                    const aiDetails = (e.ai_history || []).slice().reverse().map((item) => {
+                        const parts = [];
+                        parts.push(`<strong>${item.failing ? "Fail" : "OK"}</strong>`);
+                        if (item.confidence) parts.push(`${Math.round(item.confidence * 100)}%`);
+                        if (item.reason) parts.push(escapeHtml(item.reason));
+                        if (item.evidence_url) parts.push(`<a href="${item.evidence_url}" target="_blank" rel="noopener">image</a>`);
+                        if (item.raw_response) parts.push(`<details><summary>AI reply</summary><pre class="small mb-0">${escapeHtml(item.raw_response)}</pre></details>`);
+                        return `<div class="mb-2"><div class="small text-body-secondary">${item.at ? new Date(item.at).toLocaleString() : ""}</div>${parts.join(" · ")}</div>`;
+                    }).join("");
+                    const hookDetails = (e.notification_log || []).slice().reverse().map((item) => {
+                        const parts = [];
+                        parts.push(`<strong>${item.ok ? "OK" : "Err"}</strong>`);
+                        if (item.event) parts.push(escapeHtml(item.event));
+                        if (item.transport) parts.push(escapeHtml(item.transport));
+                        if (item.message) parts.push(escapeHtml(item.message));
+                        if (item.response_raw) parts.push(`<details><summary>Webhook reply</summary><pre class="small mb-0">${escapeHtml(item.response_raw)}</pre></details>`);
+                        return `<div class="mb-2"><div class="small text-body-secondary">${item.at ? new Date(item.at).toLocaleString() : ""}</div>${parts.join(" · ")}</div>`;
+                    }).join("");
                     const row = `<tr>
                         <td class="text-truncate" style="max-width:200px;" title="${safeFilename}">${safeFilename}</td>
                         <td>${statusBadge(e.status)}</td>
                         <td class="small">${started}</td>
                         <td>${formatDuration(e.duration_sec)}</td>
+                        <td class="small">${aiSummary}</td>
+                        <td class="small">${hookSummary}</td>
+                    </tr>
+                    <tr class="history-detail-row">
+                        <td colspan="6" class="small bg-body-tertiary">
+                            ${aiDetails ? `<div class="mb-3"><div class="text-body-secondary text-uppercase small mb-1">AI checks</div>${aiDetails}</div>` : ""}
+                            ${hookDetails ? `<div><div class="text-body-secondary text-uppercase small mb-1">Webhook replies</div>${hookDetails}</div>` : ""}
+                        </td>
                     </tr>`;
                     tbody.append(row);
                 });
@@ -2697,6 +2897,8 @@ $(function () {
             interval: $("#print-monitor-interval"),
             frameCount: $("#print-monitor-frame-count"),
             spacing: $("#print-monitor-spacing"),
+            confidenceThreshold: $("#print-monitor-confidence-threshold"),
+            confidenceLabel: $("#print-monitor-confidence-label"),
             url: $("#print-monitor-url"),
             model: $("#print-monitor-model"),
             key: $("#print-monitor-key"),
@@ -2722,16 +2924,24 @@ $(function () {
             pmButtons.check.prop("disabled", busy);
         };
 
+        const renderConfidenceLabel = () => {
+            const value = parseFloat(pmFields.confidenceThreshold.val());
+            const percent = Math.round((Number.isFinite(value) ? value : 0.7) * 100);
+            pmFields.confidenceLabel.text(`${percent}%`);
+        };
+
         const applyPrintMonitorConfig = (cfg) => {
             const settings = cfg || {};
             pmFields.enabled.prop("checked", Boolean(settings.enabled));
             pmFields.interval.val(printMonitorMinutes(settings.interval_sec || 300));
             pmFields.frameCount.val(settings.frame_count || 5);
             pmFields.spacing.val(settings.frame_spacing_sec || 1);
+            pmFields.confidenceThreshold.val(settings.confidence_threshold || 0.7);
             pmFields.url.val(settings.openrouter_url || pmDefaults.url);
             pmFields.model.val(settings.model || pmDefaults.model);
             markSavedSecret(pmFields.key, Boolean(settings.openrouter_key), "API key");
             pmFields.prompt.val(settings.prompt || "");
+            renderConfidenceLabel();
         };
 
         const buildPrintMonitorPayload = () => {
@@ -2741,6 +2951,7 @@ $(function () {
                 interval_sec: (Number.isFinite(minutes) && minutes > 0 ? minutes : 5) * 60,
                 frame_count: parseInt(pmFields.frameCount.val(), 10) || 5,
                 frame_spacing_sec: parseInt(pmFields.spacing.val(), 10) || 1,
+                confidence_threshold: parseFloat(pmFields.confidenceThreshold.val()) || 0.7,
                 openrouter_url: pmFields.url.val().trim() || pmDefaults.url,
                 model: pmFields.model.val().trim() || pmDefaults.model,
                 prompt: pmFields.prompt.val().trim(),
@@ -2772,13 +2983,16 @@ $(function () {
                     frame_spacing_sec: result.frame_spacing_sec || parseInt(pmFields.spacing.val(), 10) || 1,
                 },
                 metadata: result.metadata || {},
+                confidence_threshold: result.confidence_threshold || parseFloat(pmFields.confidenceThreshold.val()) || 0.7,
             };
             const response = {
                 http_status: result.http_status || null,
                 raw_response: result.raw_response || "",
                 parsed: {
+                    model_failing: Boolean(result.model_failing),
                     failing: Boolean(result.failing),
                     confidence: result.confidence || 0,
+                    threshold_passed: result.threshold_passed !== false,
                     reason: result.reason || "",
                 },
                 error: result.error || "",
@@ -2801,12 +3015,15 @@ $(function () {
             if (last) {
                 text += `; last: ${last.failing ? "failing" : "ok"}`;
                 if (last.confidence) text += ` (${Math.round(last.confidence * 100)}%)`;
+                if (last.confidence_threshold) text += ` threshold ${Math.round(last.confidence_threshold * 100)}%`;
                 if (last.reason) text += ` - ${last.reason}`;
                 if (last.error) text += ` - ${last.error}`;
                 renderPrintMonitorDebug(last);
             }
             pmFields.status.text(text);
         };
+
+        pmFields.confidenceThreshold.on("input change", renderConfidenceLabel);
 
         const loadPrintMonitorSettings = async () => {
             try {
@@ -3463,7 +3680,7 @@ $(function () {
         if (testBadgeBtn) {
             testBadgeBtn.addEventListener("click", function () {
                 $("#update-badge-version").text("v99.0.0");
-                $("#update-badge").attr("href", "https://github.com/Django1982/ankerctl_go_remake/releases").show();
+                $("#update-badge").attr("href", "https://github.com/jr551/ankerctl_go_remake/releases").show();
             });
         }
         if (hideBadgeBtn) {

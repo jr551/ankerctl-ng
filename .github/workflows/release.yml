@@ -32,7 +32,7 @@ jobs:
         run: |
           go build \
             -ldflags "-s -w -X main.Version=${{ github.ref_name }}" \
-            -o ankerctl-test \
+            -o ankerctl-ng-test \
             ./cmd/ankerctl/
 
       - name: Verify embedded frontend assets
@@ -40,7 +40,7 @@ jobs:
           set -euo pipefail
           cfg_dir="$(mktemp -d)"
 
-          ./ankerctl-test --config "$cfg_dir" webserver --listen 127.0.0.1:4470 >webserver.log 2>&1 &
+          ./ankerctl-ng-test --config "$cfg_dir" webserver --listen 127.0.0.1:4470 >webserver.log 2>&1 &
           pid=$!
 
           cleanup() {
@@ -65,7 +65,7 @@ jobs:
 
           page="$(curl -fsS "http://127.0.0.1:4470/")"
           # Use herestring/grep-from-file to avoid SIGPIPE with pipefail
-          grep -q "ankerctl" <<< "$page"
+          grep -q "ankerctl-ng" <<< "$page"
 
           # Verify all static assets referenced in the HTML are served
           grep -Eo '/static/[^" ]+' <<< "$page" | sort -u > static-assets.txt
@@ -125,13 +125,13 @@ jobs:
         run: |
           go build \
             -ldflags "-s -w -X main.Version=${{ github.ref_name }}" \
-            -o ankerctl-${{ matrix.suffix }} \
+            -o ankerctl-ng-${{ matrix.suffix }} \
             ./cmd/ankerctl/
 
       - name: Package release artifact
         run: |
           set -euo pipefail
-          name="ankerctl-${{ matrix.suffix }}"
+          name="ankerctl-ng-${{ matrix.suffix }}"
           mkdir -p package
           cp "$name" package/
           cp README.md package/
@@ -144,11 +144,11 @@ jobs:
 
       - uses: actions/upload-artifact@v7.0.1
         with:
-          name: ankerctl-${{ matrix.suffix }}
+          name: ankerctl-ng-${{ matrix.suffix }}
           path: |
-            ankerctl-${{ matrix.suffix }}
-            ankerctl-${{ matrix.suffix }}.tar.gz
-            ankerctl-${{ matrix.suffix }}.zip
+            ankerctl-ng-${{ matrix.suffix }}
+            ankerctl-ng-${{ matrix.suffix }}.tar.gz
+            ankerctl-ng-${{ matrix.suffix }}.zip
 
   release:
     name: Release
@@ -166,13 +166,13 @@ jobs:
       - name: Generate checksums
         run: |
           cd artifacts
-          sha256sum ankerctl-* > SHA256SUMS.txt
+          sha256sum ankerctl-ng-* > SHA256SUMS.txt
 
       - uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
           files: |
-            artifacts/ankerctl-*
+            artifacts/ankerctl-ng-*
             artifacts/SHA256SUMS.txt
 
   docker:
@@ -196,7 +196,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ghcr.io/django1982/ankerctl
+          images: ghcr.io/jr551/ankerctl-ng
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}

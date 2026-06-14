@@ -24,22 +24,28 @@ import (
 )
 
 type PrintMonitorResult struct {
-	At              time.Time      `json:"at"`
-	Filename        string         `json:"filename,omitempty"`
-	ProviderURL     string         `json:"provider_url,omitempty"`
-	Model           string         `json:"model,omitempty"`
-	Prompt          string         `json:"prompt,omitempty"`
-	FrameCount      int            `json:"frame_count,omitempty"`
-	FrameSpacingSec int            `json:"frame_spacing_sec,omitempty"`
-	ContactSheet    string         `json:"contact_sheet,omitempty"`
-	ReferenceImage  bool           `json:"reference_image"`
-	Metadata        map[string]any `json:"metadata,omitempty"`
-	HTTPStatus      int            `json:"http_status,omitempty"`
-	RawResponse     string         `json:"raw_response,omitempty"`
-	Failing         bool           `json:"failing"`
-	Confidence      float64        `json:"confidence,omitempty"`
-	Reason          string         `json:"reason,omitempty"`
-	Error           string         `json:"error,omitempty"`
+	At                  time.Time      `json:"at"`
+	Filename            string         `json:"filename,omitempty"`
+	ProviderURL         string         `json:"provider_url,omitempty"`
+	Model               string         `json:"model,omitempty"`
+	Prompt              string         `json:"prompt,omitempty"`
+	FrameCount          int            `json:"frame_count,omitempty"`
+	FrameSpacingSec     int            `json:"frame_spacing_sec,omitempty"`
+	ContactSheet        string         `json:"contact_sheet,omitempty"`
+	ReferenceImage      bool           `json:"reference_image"`
+	Metadata            map[string]any `json:"metadata,omitempty"`
+	HTTPStatus          int            `json:"http_status,omitempty"`
+	RawResponse         string         `json:"raw_response,omitempty"`
+	ModelFailing        bool           `json:"model_failing"`
+	Failing             bool           `json:"failing"`
+	ThresholdPassed     bool           `json:"threshold_passed"`
+	Confidence          float64        `json:"confidence,omitempty"`
+	ConfidenceThreshold float64        `json:"confidence_threshold,omitempty"`
+	Reason              string         `json:"reason,omitempty"`
+	Error               string         `json:"error,omitempty"`
+	Manual              bool           `json:"manual,omitempty"`
+	EvidenceRelpath     string         `json:"evidence_relpath,omitempty"`
+	EvidenceExpiresAt   *time.Time     `json:"evidence_expires_at,omitempty"`
 }
 
 type PrintMonitorStatus struct {
@@ -129,7 +135,7 @@ func (s *PrintMonitorService) RunOnceResult(ctx context.Context) (PrintMonitorRe
 	s.checkRunning = true
 	s.mu.Unlock()
 
-	result := s.runCheck(ctx, cfg, filename)
+	result := s.runCheck(ctx, cfg, filename, true)
 	s.finishCheck(ctx, cfg, result)
 	return result, true
 }
@@ -256,20 +262,22 @@ func (s *PrintMonitorService) startCheck(ctx context.Context, manual bool) {
 	s.mu.Unlock()
 
 	go func() {
-		result := s.runCheck(ctx, cfg, filename)
+		result := s.runCheck(ctx, cfg, filename, manual)
 		s.finishCheck(ctx, cfg, result)
 	}()
 }
 
-func (s *PrintMonitorService) runCheck(ctx context.Context, cfg model.PrintMonitorConfig, filename string) PrintMonitorResult {
+func (s *PrintMonitorService) runCheck(ctx context.Context, cfg model.PrintMonitorConfig, filename string, manual bool) PrintMonitorResult {
 	result := PrintMonitorResult{
-		At:              time.Now(),
-		Filename:        filename,
-		ProviderURL:     printMonitorChatCompletionsURL(cfg.OpenRouterURL),
-		Model:           cfg.Model,
-		Prompt:          cfg.Prompt,
-		FrameCount:      cfg.FrameCount,
-		FrameSpacingSec: cfg.FrameSpacingSec,
+		At:                  time.Now(),
+		Filename:            filename,
+		ProviderURL:         printMonitorChatCompletionsURL(cfg.OpenRouterURL),
+		Model:               cfg.Model,
+		Prompt:              cfg.Prompt,
+		FrameCount:          cfg.FrameCount,
+		FrameSpacingSec:     cfg.FrameSpacingSec,
+		ConfidenceThreshold: cfg.ConfidenceThreshold,
+		Manual:              manual,
 	}
 	if strings.TrimSpace(cfg.OpenRouterKey) == "" {
 		result.Error = "AI provider API key is not configured"
@@ -310,6 +318,10 @@ func (s *PrintMonitorService) runCheck(ctx context.Context, cfg model.PrintMonit
 		result.Error = err.Error()
 		return result
 	}
+	if relpath, expiresAt, err := s.storeEvidence(sheet); err == nil {
+		result.EvidenceRelpath = relpath
+		result.EvidenceExpiresAt = expiresAt
+	}
 	result.ContactSheet = "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(sheet)
 	result.Metadata = s.printMonitorMetadata(ctx, cfg, filename)
 	referenceImage := s.referenceThumbnail(filename)
@@ -321,8 +333,10 @@ func (s *PrintMonitorService) runCheck(ctx context.Context, cfg model.PrintMonit
 		result.Error = err.Error()
 		return result
 	}
-	result.Failing = failing
+	result.ModelFailing = failing
 	result.Confidence = confidence
+	result.ThresholdPassed = confidence >= cfg.ConfidenceThreshold
+	result.Failing = failing && result.ThresholdPassed
 	result.Reason = reason
 	return result
 }
@@ -341,6 +355,7 @@ func (s *PrintMonitorService) finishCheck(ctx context.Context, cfg model.PrintMo
 	}
 	s.mu.Unlock()
 	s.Notify(map[string]any{"type": "print_monitor.result", "result": result})
+	s.recordHistoryResult(result)
 	if result.Failing {
 		s.maybeAutoOff(ctx)
 	}
@@ -350,7 +365,7 @@ func (s *PrintMonitorService) callOpenRouter(ctx context.Context, cfg model.Prin
 	imageURL := "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(imageJPEG)
 	metaJSON, _ := json.MarshalIndent(metadata, "", "  ")
 	userContent := []map[string]any{
-		{"type": "text", "text": "Inspect the live camera contact sheet and metadata. If a reference slicer thumbnail is present, use it as the expected shape/layout. Reply with strict JSON only.\n\nMetadata:\n" + string(metaJSON)},
+		{"type": "text", "text": "Inspect the live camera contact sheet and metadata. If a reference slicer thumbnail is present, use it as the expected shape/layout. Also inspect any visible filament path into the toolhead and treat a missing, snapped, kinked, misrouted, or obviously non-feeding filament path as a failure signal when supported by the image. Reply with strict JSON only.\n\nMetadata:\n" + string(metaJSON)},
 		{"type": "image_url", "image_url": map[string]string{"url": imageURL}},
 	}
 	if len(referencePNG) > 0 {
@@ -589,7 +604,82 @@ func normalizePrintMonitorConfig(cfg model.PrintMonitorConfig) model.PrintMonito
 	if strings.TrimSpace(cfg.Prompt) == "" {
 		cfg.Prompt = def.Prompt
 	}
+	if cfg.ConfidenceThreshold <= 0 {
+		cfg.ConfidenceThreshold = def.ConfidenceThreshold
+	}
+	if cfg.ConfidenceThreshold > 1 {
+		cfg.ConfidenceThreshold = 1
+	}
 	return cfg
+}
+
+func (s *PrintMonitorService) recordHistoryResult(result PrintMonitorResult) {
+	if s == nil || s.history == nil {
+		return
+	}
+	entry := db.HistoryAIResult{
+		At:                  result.At,
+		Manual:              result.Manual,
+		ProviderURL:         result.ProviderURL,
+		Model:               result.Model,
+		Prompt:              result.Prompt,
+		FrameCount:          result.FrameCount,
+		FrameSpacingSec:     result.FrameSpacingSec,
+		ReferenceImage:      result.ReferenceImage,
+		ModelFailing:        result.ModelFailing,
+		Failing:             result.Failing,
+		ThresholdPassed:     result.ThresholdPassed,
+		Confidence:          result.Confidence,
+		ConfidenceThreshold: result.ConfidenceThreshold,
+		Reason:              result.Reason,
+		Error:               result.Error,
+		HTTPStatus:          result.HTTPStatus,
+		RawResponse:         result.RawResponse,
+		Metadata:            result.Metadata,
+		EvidenceRelpath:     result.EvidenceRelpath,
+		EvidenceExpiresAt:   result.EvidenceExpiresAt,
+	}
+	if err := s.history.AppendAIResult(result.Filename, "", entry); err != nil && s.log != nil {
+		s.log.Warn("failed to append print monitor result to history", "filename", result.Filename, "err", err)
+	}
+}
+
+func (s *PrintMonitorService) storeEvidence(sheet []byte) (string, *time.Time, error) {
+	if s == nil || s.cfgMgr == nil || len(sheet) == 0 {
+		return "", nil, nil
+	}
+	dir := filepath.Join(s.cfgMgr.ConfigDir(), "print-monitor-history")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", nil, err
+	}
+	if err := pruneOldEvidence(dir, time.Now().UTC()); err != nil && s.log != nil {
+		s.log.Warn("failed pruning old print monitor evidence", "err", err)
+	}
+	now := time.Now().UTC()
+	expires := now.Add(24 * time.Hour)
+	name := fmt.Sprintf("%s-%d.jpg", now.Format("20060102-150405"), now.UnixNano())
+	fullPath := filepath.Join(dir, name)
+	if err := os.WriteFile(fullPath, sheet, 0o600); err != nil {
+		return "", nil, err
+	}
+	return name, &expires, nil
+}
+
+func pruneOldEvidence(dir string, now time.Time) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if now.Sub(info.ModTime()) > 24*time.Hour {
+			_ = os.Remove(filepath.Join(dir, entry.Name()))
+		}
+	}
+	return nil
 }
 
 func printMonitorChatCompletionsURL(raw string) string {

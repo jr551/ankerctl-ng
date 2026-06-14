@@ -39,8 +39,8 @@ var (
 
 func main() {
 	rootCmd := &cobra.Command{
-		Use:   "ankerctl",
-		Short: "AnkerMake M5 3D Printer Control CLI",
+		Use:   "ankerctl-ng",
+		Short: "Experimental AnkerMake printer control CLI",
 		CompletionOptions: cobra.CompletionOptions{
 			DisableDefaultCmd: true,
 		},
@@ -65,9 +65,17 @@ func main() {
 func defaultDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ".ankerctl"
+		return ".ankerctl-ng"
 	}
-	return filepath.Join(home, ".ankerctl")
+	newDir := filepath.Join(home, ".ankerctl-ng")
+	oldDir := filepath.Join(home, ".ankerctl")
+	if _, err := os.Stat(newDir); err == nil {
+		return newDir
+	}
+	if _, err := os.Stat(oldDir); err == nil {
+		return oldDir
+	}
+	return newDir
 }
 
 func newWebserverCmd() *cobra.Command {
@@ -193,7 +201,7 @@ func runWebserver() error {
 	mqtt := service.NewMqttQueue(cfgMgr, printerIdx, database, ha, timelapse, printMonitor, powerSaving)
 	sm.Register(mqtt)
 
-	notif := notifications.NewNotificationService(cfgMgr, mqtt, video)
+	notif := notifications.NewNotificationService(cfgMgr, mqtt, video).WithHistory(database)
 	sm.Register(notif)
 
 	ft := service.NewFileTransferService(pppp, mqtt)
@@ -433,7 +441,7 @@ func newVersionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print version info",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("ankerctl-go %s\n", Version)
+			fmt.Printf("ankerctl-ng %s\n", Version)
 		},
 	}
 }

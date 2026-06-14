@@ -42,6 +42,18 @@ type Client struct {
 	lookupHost func(host string) ([]string, error) // injectable for tests
 }
 
+type DeliveryResult struct {
+	At          time.Time `json:"at"`
+	Event       string    `json:"event,omitempty"`
+	OK          bool      `json:"ok"`
+	Message     string    `json:"message,omitempty"`
+	Transport   string    `json:"transport,omitempty"`
+	Target      string    `json:"target,omitempty"`
+	StatusCode  int       `json:"status_code,omitempty"`
+	Title       string    `json:"title,omitempty"`
+	ResponseRaw string    `json:"response_raw,omitempty"`
+}
+
 // NewClient builds an Apprise client with a 10-second HTTP timeout.
 func NewClient(settings model.AppriseConfig) *Client {
 	return &Client{
@@ -175,24 +187,54 @@ func (c *Client) IsEventEnabled(event string) bool {
 
 // SendEvent renders template/title/type and posts a notification.
 func (c *Client) SendEvent(ctx context.Context, event string, payload map[string]any, attachments []string) (bool, string) {
+	res := c.SendEventDetailed(ctx, event, payload, attachments)
+	return res.OK, res.Message
+}
+
+func (c *Client) SendEventDetailed(ctx context.Context, event string, payload map[string]any, attachments []string) DeliveryResult {
 	if !c.IsEnabled() {
-		return false, "Apprise is disabled or missing required settings"
+		return DeliveryResult{At: time.Now(), Event: event, OK: false, Message: "Apprise is disabled or missing required settings"}
 	}
 	if !c.IsEventEnabled(event) {
-		return false, fmt.Sprintf("Event disabled: %s", event)
+		return DeliveryResult{At: time.Now(), Event: event, OK: false, Message: fmt.Sprintf("Event disabled: %s", event)}
 	}
 
 	tmpl := c.templateForEvent(event)
 	body := RenderTemplate(tmpl, payload)
-	return c.Post(ctx, EventTitle(event), body, EventType(event), attachments)
+	if u := c.directJSONURL(); u != nil && strings.TrimSpace(c.settings.RawBodyTemplate) != "" {
+		renderPayload := clonePayloadMap(payload)
+		renderPayload["event"] = event
+		renderPayload["title"] = EventTitle(event)
+		renderPayload["body"] = body
+		renderPayload["type"] = EventType(event)
+		renderPayload["tag"] = strings.TrimSpace(c.settings.Tag)
+		rendered := RenderTemplate(c.settings.RawBodyTemplate, renderPayload)
+		result := c.postRawDetailed(ctx, u, EventTitle(event), rendered, strings.TrimSpace(c.settings.RawContentType))
+		result.Event = event
+		return result
+	}
+	result := c.postDetailed(ctx, EventTitle(event), body, EventType(event), attachments)
+	result.Event = event
+	return result
 }
 
 // Post sends a raw notification payload.
 // Attachments that are local file paths are uploaded as multipart/form-data.
 // Other attachments (data URIs, URLs) are sent inline as JSON.
 func (c *Client) Post(ctx context.Context, title, body, typ string, attachments []string) (bool, string) {
+	res := c.postDetailed(ctx, title, body, typ, attachments)
+	return res.OK, res.Message
+}
+
+func (c *Client) postDetailed(ctx context.Context, title, body, typ string, attachments []string) DeliveryResult {
+	result := DeliveryResult{
+		At:        time.Now(),
+		Title:     title,
+		Transport: "http",
+	}
 	if !c.IsConfigured() {
-		return false, "Apprise server URL or key missing"
+		result.Message = "Apprise server URL or key missing"
+		return result
 	}
 	if u := c.directSMTPURL(); u != nil {
 		return c.postSMTP(ctx, u, title, body, typ, attachments)
@@ -202,7 +244,22 @@ func (c *Client) Post(ctx context.Context, title, body, typ string, attachments 
 		u = c.notifyURL()
 	}
 	if u == nil {
-		return false, "Apprise server URL or key missing"
+		result.Message = "Apprise server URL or key missing"
+		return result
+	}
+	result.Target = u.String()
+	if c.directJSONURL() != nil {
+		result.Transport = "webhook"
+		if strings.TrimSpace(c.settings.RawBodyTemplate) != "" {
+			renderPayload := map[string]any{
+				"title": title,
+				"body":  body,
+				"type":  typ,
+				"tag":   strings.TrimSpace(c.settings.Tag),
+			}
+			rendered := RenderTemplate(c.settings.RawBodyTemplate, renderPayload)
+			return c.postRawDetailed(ctx, u, title, rendered, strings.TrimSpace(c.settings.RawContentType))
+		}
 	}
 
 	// Separate local file paths from inline attachments (data URIs, URLs).
@@ -222,9 +279,12 @@ func (c *Client) Post(ctx context.Context, title, body, typ string, attachments 
 
 	// If we have local files, try multipart upload first (Python _post_with_attachments).
 	if len(localFiles) > 0 {
-		ok, msg, tried := c.postMultipart(ctx, u, title, body, typ, localFiles)
+		delivery, tried := c.postMultipart(ctx, u, title, body, typ, localFiles)
 		if tried {
-			return ok, msg
+			if delivery.Target == "" {
+				delivery.Target = result.Target
+			}
+			return delivery
 		}
 		// Fall through to JSON if multipart failed to build.
 	}
@@ -244,31 +304,67 @@ func (c *Client) Post(ctx context.Context, title, body, typ string, attachments 
 
 	bodyJSON, err := json.Marshal(payload)
 	if err != nil {
-		return false, fmt.Sprintf("marshal apprise payload: %v", err)
+		result.Message = fmt.Sprintf("marshal apprise payload: %v", err)
+		return result
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(bodyJSON))
 	if err != nil {
-		return false, fmt.Sprintf("build apprise request: %v", err)
+		result.Message = fmt.Sprintf("build apprise request: %v", err)
+		return result
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.http.Do(req) // lgtm[go/request-forgery] - URL validated by notifyURL: scheme allowlist + DNS-based private-IP check
 	if err != nil {
 		if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return false, ctx.Err().Error()
+			result.Message = ctx.Err().Error()
+			return result
 		}
-		return false, err.Error()
+		result.Message = err.Error()
+		return result
 	}
 	defer resp.Body.Close()
 
-	return parseResponse(resp)
+	return parseResponse(resp, result)
 }
 
-func (c *Client) postSMTP(ctx context.Context, u *url.URL, title, body, typ string, attachments []string) (bool, string) {
+func (c *Client) postRawDetailed(ctx context.Context, u *url.URL, title, rawBody, contentType string) DeliveryResult {
+	result := DeliveryResult{
+		At:        time.Now(),
+		Title:     title,
+		Transport: "webhook",
+		Target:    u.String(),
+	}
+	if strings.TrimSpace(contentType) == "" {
+		contentType = "application/json"
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), strings.NewReader(rawBody))
+	if err != nil {
+		result.Message = fmt.Sprintf("build raw webhook request: %v", err)
+		return result
+	}
+	req.Header.Set("Content-Type", contentType)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			result.Message = ctx.Err().Error()
+			return result
+		}
+		result.Message = err.Error()
+		return result
+	}
+	defer resp.Body.Close()
+	return parseResponse(resp, result)
+}
+
+func (c *Client) postSMTP(ctx context.Context, u *url.URL, title, body, typ string, attachments []string) DeliveryResult {
+	result := DeliveryResult{At: time.Now(), Title: title, Transport: "smtp", Target: u.String()}
+	tlsMode := smtpTLSMode(u)
 	host := u.Hostname()
 	if host == "" {
-		return false, "SMTP host missing"
+		result.Message = "SMTP host missing"
+		return result
 	}
 	port := u.Port()
 	if port == "" {
@@ -290,10 +386,12 @@ func (c *Client) postSMTP(ctx context.Context, u *url.URL, title, body, typ stri
 	}
 	recipients := smtpRecipients(u)
 	if from == "" {
-		return false, "SMTP from address missing"
+		result.Message = "SMTP from address missing"
+		return result
 	}
 	if len(recipients) == 0 {
-		return false, "SMTP recipient missing"
+		result.Message = "SMTP recipient missing"
+		return result
 	}
 
 	msgBody := body
@@ -305,62 +403,77 @@ func (c *Client) postSMTP(ctx context.Context, u *url.URL, title, body, typ stri
 	dialer := &net.Dialer{Timeout: defaultTimeout}
 	var client *smtp.Client
 	var err error
-	if strings.EqualFold(u.Scheme, "mailtos") {
+	if tlsMode == "ssl" {
 		conn, dialErr := tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12})
 		if dialErr != nil {
-			return false, dialErr.Error()
+			result.Message = dialErr.Error()
+			return result
 		}
 		client, err = smtp.NewClient(conn, host)
 	} else {
 		conn, dialErr := dialer.DialContext(ctx, "tcp", addr)
 		if dialErr != nil {
-			return false, dialErr.Error()
+			result.Message = dialErr.Error()
+			return result
 		}
 		client, err = smtp.NewClient(conn, host)
 	}
 	if err != nil {
-		return false, err.Error()
+		result.Message = err.Error()
+		return result
 	}
 	defer client.Close()
 
-	if !strings.EqualFold(u.Scheme, "mailtos") {
-		if ok, _ := client.Extension("STARTTLS"); ok {
-			if err := client.StartTLS(&tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}); err != nil {
-				return false, err.Error()
-			}
+	if tlsMode == "starttls" {
+		if ok, _ := client.Extension("STARTTLS"); !ok {
+			result.Message = "SMTP server does not support STARTTLS"
+			return result
+		}
+		if err := client.StartTLS(&tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}); err != nil {
+			result.Message = err.Error()
+			return result
 		}
 	}
 	if username != "" {
 		if ok, _ := client.Extension("AUTH"); ok {
 			if err := client.Auth(smtp.PlainAuth("", username, password, host)); err != nil {
-				return false, err.Error()
+				result.Message = err.Error()
+				return result
 			}
 		}
 	}
 	if err := client.Mail(from); err != nil {
-		return false, err.Error()
+		result.Message = err.Error()
+		return result
 	}
 	for _, rcpt := range recipients {
 		if err := client.Rcpt(rcpt); err != nil {
-			return false, err.Error()
+			result.Message = err.Error()
+			return result
 		}
 	}
 	w, err := client.Data()
 	if err != nil {
-		return false, err.Error()
+		result.Message = err.Error()
+		return result
 	}
 	msg := smtpMessage(from, recipients, title, typ, msgBody)
 	if _, err := io.WriteString(w, msg); err != nil {
 		_ = w.Close()
-		return false, err.Error()
+		result.Message = err.Error()
+		return result
 	}
 	if err := w.Close(); err != nil {
-		return false, err.Error()
+		result.Message = err.Error()
+		return result
 	}
 	if err := client.Quit(); err != nil {
-		return false, err.Error()
+		result.Message = err.Error()
+		return result
 	}
-	return true, "SMTP notification sent"
+	result.OK = true
+	result.Message = "SMTP notification sent"
+	return result
 }
 
 func smtpRecipients(u *url.URL) []string {
@@ -381,6 +494,19 @@ func smtpRecipients(u *url.URL) []string {
 		}
 	}
 	return recipients
+}
+
+func smtpTLSMode(u *url.URL) string {
+	if v := strings.ToLower(strings.TrimSpace(u.Query().Get("tls"))); v != "" {
+		switch v {
+		case "none", "starttls", "ssl":
+			return v
+		}
+	}
+	if strings.EqualFold(u.Scheme, "mailtos") {
+		return "ssl"
+	}
+	return "starttls"
 }
 
 func smtpMessage(from string, to []string, title, typ, body string) string {
@@ -410,7 +536,8 @@ func normalizeSMTPBody(v string) string {
 
 // postMultipart uploads local files as multipart/form-data.
 // Returns (ok, msg, tried) where tried=false means the caller should fall through.
-func (c *Client) postMultipart(ctx context.Context, u *url.URL, title, body, typ string, files []string) (bool, string, bool) {
+func (c *Client) postMultipart(ctx context.Context, u *url.URL, title, body, typ string, files []string) (DeliveryResult, bool) {
+	result := DeliveryResult{At: time.Now(), Title: title, Transport: "webhook", Target: u.String()}
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
 
@@ -440,52 +567,66 @@ func (c *Client) postMultipart(ctx context.Context, u *url.URL, title, body, typ
 	}
 
 	if attachCount == 0 {
-		return false, "", false // No files added, fall through to JSON.
+		return DeliveryResult{}, false // No files added, fall through to JSON.
 	}
 
 	_ = writer.Close()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), &buf)
 	if err != nil {
-		return false, fmt.Sprintf("build multipart request: %v", err), true
+		result.Message = fmt.Sprintf("build multipart request: %v", err)
+		return result, true
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	resp, err := c.http.Do(req) // lgtm[go/request-forgery] - URL validated by notifyURL: scheme allowlist + DNS-based private-IP check
 	if err != nil {
 		if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return false, ctx.Err().Error(), true
+			result.Message = ctx.Err().Error()
+			return result, true
 		}
-		return false, err.Error(), true
+		result.Message = err.Error()
+		return result, true
 	}
 	defer resp.Body.Close()
 
-	ok, msg := parseResponse(resp)
-	return ok, msg, true
+	return parseResponse(resp, result), true
 }
 
-func parseResponse(resp *http.Response) (bool, string) {
+func parseResponse(resp *http.Response, result DeliveryResult) DeliveryResult {
+	dataBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
+	result.StatusCode = resp.StatusCode
+	result.ResponseRaw = strings.TrimSpace(string(dataBytes))
+
 	var data map[string]any
-	_ = json.NewDecoder(resp.Body).Decode(&data)
+	_ = json.Unmarshal(dataBytes, &data)
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		if msg := mapMessage(data); msg != "" {
-			return false, msg
+			result.Message = msg
+			return result
 		}
-		return false, fmt.Sprintf("%d %s", resp.StatusCode, resp.Status)
+		result.Message = fmt.Sprintf("%d %s", resp.StatusCode, resp.Status)
+		return result
 	}
 
 	if success, ok := data["success"].(bool); ok && !success {
 		if msg := mapMessage(data); msg != "" {
-			return false, msg
+			result.Message = msg
+			return result
 		}
-		return false, "Apprise error"
+		result.Message = "Apprise error"
+		return result
 	}
 
 	if msg, ok := data["message"].(string); ok && msg != "" {
-		return true, msg
+		result.OK = true
+		result.Message = msg
+		return result
 	}
-	return true, "Notification sent"
+	result.OK = true
+	result.Message = "Notification sent"
+	return result
 }
 
 func mapMessage(data map[string]any) string {
@@ -499,6 +640,17 @@ func mapMessage(data map[string]any) string {
 		return msg
 	}
 	return ""
+}
+
+func clonePayloadMap(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return map[string]any{}
+	}
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 func (c *Client) templateForEvent(event string) string {

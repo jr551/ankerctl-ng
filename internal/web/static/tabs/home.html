@@ -10,6 +10,7 @@
                     <img class="w-100 d-block camera-frame-image bg-body-tertiary" id="external-camera-player"
                         src="/api/camera/frame" data-frame-src="/api/camera/frame"
                         data-refresh-sec="{{.CameraRefreshSec}}" alt="Camera feed" />
+                    <img class="camera-rewind-image" id="camera-rewind-image" alt="Buffered camera frame" hidden />
                     <div class="camera-frame-overlay" aria-hidden="true">
                         <div class="spinner-border text-light" role="status">
                             <span class="visually-hidden">Loading camera</span>
@@ -17,10 +18,11 @@
                     </div>
                 </div>
                 {{else}}
-                <div id="vplayer" style="display: none;">
+                <div id="vplayer" class="camera-frame-shell mb-3" style="display: none;">
                     <video class="w-100 d-block rounded-3 bg-body-tertiary" playsinline autoplay muted id="player"
                         poster="/static/img/load-screen.svg">
                     </video>
+                    <img class="camera-rewind-image" id="camera-rewind-image" alt="Buffered camera frame" hidden />
                 </div>
                 <div id="video-toggle-container" class="text-center mb-3">
                     <button class="btn btn-primary" id="video-toggle">
@@ -28,6 +30,13 @@
                     </button>
                 </div>
                 {{end}}
+                <div class="camera-rewind-controls mb-3" id="camera-rewind-controls" hidden>
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <span class="small text-body-secondary">Live preview rewind</span>
+                        <span class="small text-body-secondary" id="camera-rewind-label">Live</span>
+                    </div>
+                    <input type="range" class="form-range" id="camera-rewind-slider" min="0" max="60" step="1" value="0" />
+                </div>
 
                 <!-- Printer Control Card -->
                 <div class="card mb-3">
@@ -291,7 +300,7 @@
                                     <div class="input-group-text d-none d-sm-block">
                                         <i class="icon icon-hotend"></i>
                                     </div>
-                                    <span id="nozzle-temp" class="form-control text-center bg-body-tertiary px-1"
+                                    <span id="nozzle-temp" class="form-control text-center bg-body-tertiary px-1 temp-live"
                                         title="Current Nozzle">
                                         0°C
                                     </span>
@@ -305,7 +314,7 @@
                                     <div class="input-group-text d-none d-sm-block">
                                         <i class="icon icon-bed"></i>
                                     </div>
-                                    <span id="bed-temp" class="form-control text-center bg-body-tertiary px-1"
+                                    <span id="bed-temp" class="form-control text-center bg-body-tertiary px-1 temp-live"
                                         title="Current Bed">
                                         0°C
                                     </span>

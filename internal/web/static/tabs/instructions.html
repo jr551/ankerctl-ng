@@ -2,45 +2,28 @@
     <div class="container mb-4">
         <div class="row g-3">
             <div class="col-lg-6">
-                <h1 class="fs-3">Connecting PrusaSlicer/SuperSlicer</h1>
+                <h1 class="fs-3">Connecting OrcaSlicer</h1>
                 <ol class="list-group list-group-numbered mb-3">
-                    <li class="list-group-item">Go to "Printer settings" tab</li>
-                    <li class="list-group-item">Click the "Gear" icon <i class="bi-gear-fill px-1"></i>
-                        (Add/Edit Physical Printer)</li>
-                    <li class="list-group-item">Fill in "Descriptive name for the printer" with whatever you like</li>
-                    <li class="list-group-item">Select your Ankermake printer instructions from the dropdown menu</li>
-                    <li class="list-group-item">Under "Host Type" select "OctoPrint"</li>
-                    <li class="list-group-item">In "Hostname, IP or URL" fill in with:
+                    <li class="list-group-item">Open OrcaSlicer and edit your printer.</li>
+                    <li class="list-group-item">Set <strong>Host Type</strong> to <strong>OctoPrint</strong>.</li>
+                    <li class="list-group-item">Set <strong>Hostname / URL</strong> to:
                         <kbd id="octoPrintHost">{{.RequestHost}}:{{.RequestPort}}</kbd>
-                        <button
-                            class="btn btn-secondary btn-sm"
-                            type="button"
-                            data-bs-toggle="tooltip"
-                            data-bs-placement="top"
-                            data-clipboard-src="#octoPrintHost"
-                            title="Copy to Clipboard">
+                        <button class="btn btn-secondary btn-sm" type="button" data-bs-toggle="tooltip"
+                            data-bs-placement="top" data-clipboard-src="#octoPrintHost" title="Copy to Clipboard">
                             <i class="bi-clipboard-plus"></i>
                         </button>
                     </li>
-                    <li class="list-group-item">Leave "API Key / Password" blank</li>
-                    <li class="list-group-item">Click "Test" to validate input</li>
-                    <li class="list-group-item">Click "Ok" to close the window</li>
-                    <li class="list-group-item">Slice your file as normal</li>
-                    <li class="list-group-item">Click "G<i class="bi-caret-right-fill"></i>" button to start
-                        direct upload to the printer</li>
-                    <li class="list-group-item">Click "Upload and print" - the "Upload"-only is not supported</li>
-
-                    <li class="list-group-item">Enjoy printing with ankerctl 😉</li>
+                    <li class="list-group-item">Set your API key only if you enabled write protection here.</li>
+                    <li class="list-group-item">Use <strong>Send</strong> or <strong>Send and Print</strong> from OrcaSlicer.</li>
+                    <li class="list-group-item">Use <strong>Send and Print</strong> when you want the job to begin immediately.</li>
                 </ol>
-                <span class="fw-light">
-                    Hint: <kbd>Ctrl+Shift+G</kbd> will slice and open the upload to printer window
-                </span>
+                <div class="text-body-secondary small">
+                    This experimental build is tuned for OrcaSlicer first. Keep the setup simple and use the OctoPrint upload path.
+                </div>
             </div>
             <div class="col-lg-6 text-center">
-                <img src="/static/img/setup/prusaslicer-1.png" class="img-thumbnail mt-2" alt="step 1" />
-                <img src="/static/img/setup/prusaslicer-2.png" class="img-thumbnail mt-2" alt="step 2" />
-                <img src="/static/img/setup/prusaslicer-3.png" class="img-thumbnail mt-2" alt="step 3" />
-                <img src="/static/img/setup/prusaslicer-4.png" class="img-thumbnail mt-2" alt="step 4" />
+                <img src="/static/img/setup/prusaslicer-1.png" class="img-thumbnail mt-2" alt="OrcaSlicer setup step 1" />
+                <img src="/static/img/setup/prusaslicer-2.png" class="img-thumbnail mt-2" alt="OrcaSlicer setup step 2" />
             </div>
         </div>
     </div>

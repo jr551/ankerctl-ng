@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/django1982/ankerctl/internal/db"
 	"github.com/django1982/ankerctl/internal/model"
@@ -41,10 +44,12 @@ func historyEntryJSON(rec *db.PrintRecord, archiver GCodeArchiverIface) map[stri
 		"duration_sec": rec.DurationSec,
 		"progress":     rec.Progress,
 		// Extended fields matching Python response shape
-		"printer_name":    nil, // FORGE-NOTE: per-printer isolation deferred to Phase C
-		"archive_relpath": rec.ArchiveRelpath,
-		"archive_size":    rec.ArchiveSize,
-		"failure_reason":  rec.FailureReason,
+		"printer_name":     nil, // FORGE-NOTE: per-printer isolation deferred to Phase C
+		"archive_relpath":  rec.ArchiveRelpath,
+		"archive_size":     rec.ArchiveSize,
+		"failure_reason":   rec.FailureReason,
+		"ai_history":       historyAIJSON(rec),
+		"notification_log": rec.NotificationLog,
 	}
 
 	// thumbnail_available: true when the thumbnail file actually exists on disk.
@@ -64,6 +69,44 @@ func historyEntryJSON(rec *db.PrintRecord, archiver GCodeArchiverIface) map[stri
 	}
 
 	return row
+}
+
+func historyAIJSON(rec *db.PrintRecord) []map[string]any {
+	if rec == nil || len(rec.AIHistory) == 0 {
+		return nil
+	}
+	rows := make([]map[string]any, 0, len(rec.AIHistory))
+	now := time.Now().UTC()
+	for idx, item := range rec.AIHistory {
+		row := map[string]any{
+			"at":                   item.At,
+			"manual":               item.Manual,
+			"provider_url":         item.ProviderURL,
+			"model":                item.Model,
+			"prompt":               item.Prompt,
+			"frame_count":          item.FrameCount,
+			"frame_spacing_sec":    item.FrameSpacingSec,
+			"reference_image":      item.ReferenceImage,
+			"model_failing":        item.ModelFailing,
+			"failing":              item.Failing,
+			"threshold_passed":     item.ThresholdPassed,
+			"confidence":           item.Confidence,
+			"confidence_threshold": item.ConfidenceThreshold,
+			"reason":               item.Reason,
+			"error":                item.Error,
+			"http_status":          item.HTTPStatus,
+			"raw_response":         item.RawResponse,
+			"metadata":             item.Metadata,
+		}
+		if item.EvidenceExpiresAt != nil {
+			row["evidence_expires_at"] = item.EvidenceExpiresAt
+		}
+		if item.EvidenceRelpath != "" && (item.EvidenceExpiresAt == nil || now.Before(*item.EvidenceExpiresAt)) {
+			row["evidence_url"] = fmt.Sprintf("/api/history/%d/ai/%d/image", rec.ID, idx)
+		}
+		rows = append(rows, row)
+	}
+	return rows
 }
 
 // HistoryList returns print history.
@@ -233,6 +276,50 @@ func (h *Handler) HistoryReprint(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) HistoryAIImage(w http.ResponseWriter, r *http.Request) {
+	if h.db == nil || h.cfg == nil {
+		h.writeError(w, http.StatusServiceUnavailable, "history unavailable")
+		return
+	}
+	entryID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || entryID <= 0 {
+		h.writeError(w, http.StatusBadRequest, "invalid history entry id")
+		return
+	}
+	index, err := strconv.Atoi(chi.URLParam(r, "index"))
+	if err != nil || index < 0 {
+		h.writeError(w, http.StatusBadRequest, "invalid ai history index")
+		return
+	}
+	entry, err := h.db.GetEntry(entryID)
+	if err != nil {
+		h.writeError(w, http.StatusInternalServerError, "failed to load history entry")
+		return
+	}
+	if entry == nil || index >= len(entry.AIHistory) {
+		h.writeError(w, http.StatusNotFound, "history ai evidence not found")
+		return
+	}
+	item := entry.AIHistory[index]
+	if item.EvidenceRelpath == "" {
+		h.writeError(w, http.StatusNotFound, "history ai evidence not found")
+		return
+	}
+	if item.EvidenceExpiresAt != nil && time.Now().UTC().After(*item.EvidenceExpiresAt) {
+		h.writeError(w, http.StatusGone, "history ai evidence expired")
+		return
+	}
+	path := filepath.Join(h.cfg.ConfigDir(), "print-monitor-history", filepath.Base(item.EvidenceRelpath))
+	data, err := os.ReadFile(path)
+	if err != nil {
+		h.writeError(w, http.StatusNotFound, "history ai evidence not found")
+		return
+	}
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(data)
+}
+
 // HistoryThumbnail serves the PNG thumbnail for a history entry.
 //
 // GET /api/history/{id}/thumbnail
@@ -357,6 +444,7 @@ func (h *Handler) HistoryDeleteSelected(w http.ResponseWriter, r *http.Request) 
 			h.writeError(w, http.StatusConflict, "Cannot delete an in-progress history entry")
 			return
 		}
+		h.removeHistoryEvidence(entry)
 	}
 
 	deleted, err := h.db.DeleteEntries(entryIDs)
@@ -378,9 +466,27 @@ func (h *Handler) HistoryClear(w http.ResponseWriter, _ *http.Request) {
 		h.writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 		return
 	}
+	if records, err := h.db.GetHistory(500, 0); err == nil {
+		for i := range records {
+			h.removeHistoryEvidence(&records[i])
+		}
+	}
 	if err := h.db.ClearHistory(); err != nil {
 		h.writeError(w, http.StatusInternalServerError, "failed to clear history")
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) removeHistoryEvidence(entry *db.PrintRecord) {
+	if h == nil || h.cfg == nil || entry == nil {
+		return
+	}
+	base := filepath.Join(h.cfg.ConfigDir(), "print-monitor-history")
+	for _, item := range entry.AIHistory {
+		if item.EvidenceRelpath == "" {
+			continue
+		}
+		_ = os.Remove(filepath.Join(base, filepath.Base(item.EvidenceRelpath)))
+	}
 }

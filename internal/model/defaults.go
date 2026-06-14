@@ -65,18 +65,33 @@ type AppriseTemplates struct {
 
 // AppriseConfig holds all Apprise notification settings.
 type AppriseConfig struct {
-	Enabled   bool             `json:"enabled"`
-	ServerURL string           `json:"server_url"`
-	Key       string           `json:"key"`
-	Tag       string           `json:"tag"`
-	Events    AppriseEvents    `json:"events"`
-	Progress  AppriseProgress  `json:"progress"`
-	Templates AppriseTemplates `json:"templates"`
+	Enabled         bool             `json:"enabled"`
+	ServerURL       string           `json:"server_url"`
+	Key             string           `json:"key"`
+	Tag             string           `json:"tag"`
+	RawBodyTemplate string           `json:"raw_body_template"`
+	RawContentType  string           `json:"raw_content_type"`
+	Events          AppriseEvents    `json:"events"`
+	Progress        AppriseProgress  `json:"progress"`
+	Templates       AppriseTemplates `json:"templates"`
+}
+
+type HomeAnnouncementConfig struct {
+	Enabled             bool          `json:"enabled"`
+	BaseURL             string        `json:"base_url"`
+	Token               string        `json:"token,omitempty"`
+	TTSEntityID         string        `json:"tts_entity_id"`
+	MediaPlayerEntityID string        `json:"media_player_entity_id"`
+	Language            string        `json:"language"`
+	Cache               bool          `json:"cache"`
+	Template            string        `json:"template"`
+	Events              AppriseEvents `json:"events"`
 }
 
 // NotificationsConfig wraps notification provider configs.
 type NotificationsConfig struct {
-	Apprise AppriseConfig `json:"apprise"`
+	Apprise      AppriseConfig          `json:"apprise"`
+	Announcement HomeAnnouncementConfig `json:"announcement"`
 }
 
 // TimelapseConfig holds timelapse recording settings.
@@ -179,26 +194,28 @@ func DefaultExternalCameraSettings() ExternalCameraSettings {
 
 // PrintMonitorConfig holds vision-model print failure detection settings.
 type PrintMonitorConfig struct {
-	Enabled         bool   `json:"enabled"`
-	IntervalSec     int    `json:"interval_sec"`
-	FrameCount      int    `json:"frame_count"`
-	FrameSpacingSec int    `json:"frame_spacing_sec"`
-	OpenRouterURL   string `json:"openrouter_url"`
-	OpenRouterKey   string `json:"openrouter_key,omitempty"`
-	Model           string `json:"model"`
-	Prompt          string `json:"prompt"`
+	Enabled             bool    `json:"enabled"`
+	IntervalSec         int     `json:"interval_sec"`
+	FrameCount          int     `json:"frame_count"`
+	FrameSpacingSec     int     `json:"frame_spacing_sec"`
+	ConfidenceThreshold float64 `json:"confidence_threshold"`
+	OpenRouterURL       string  `json:"openrouter_url"`
+	OpenRouterKey       string  `json:"openrouter_key,omitempty"`
+	Model               string  `json:"model"`
+	Prompt              string  `json:"prompt"`
 }
 
 // DefaultPrintMonitorConfig returns the default vision-model print monitor config.
 func DefaultPrintMonitorConfig() PrintMonitorConfig {
 	return PrintMonitorConfig{
-		Enabled:         false,
-		IntervalSec:     300,
-		FrameCount:      5,
-		FrameSpacingSec: 1,
-		OpenRouterURL:   "https://api.kilo.ai/api/gateway",
-		Model:           "kilo-auto/balanced",
-		Prompt:          "You are monitoring a 3D printer. The first image is a contact sheet of sequential camera frames taken one second apart. A second image may be a slicer/G-code preview reference for the expected part. Reply with strict JSON only: {\"failing\": boolean, \"confidence\": number, \"reason\": string}. Set failing true only when the print appears to be failing, detached, spaghetti, blobbed, severely shifted, or otherwise visibly going wrong.",
+		Enabled:             false,
+		IntervalSec:         300,
+		FrameCount:          5,
+		FrameSpacingSec:     1,
+		ConfidenceThreshold: 0.7,
+		OpenRouterURL:       "https://api.kilo.ai/api/gateway",
+		Model:               "kilo-auto/balanced",
+		Prompt:              "You are monitoring a 3D printer. The first image is a contact sheet of sequential camera frames taken one second apart. A second image may be a slicer/G-code preview reference for the expected part. Reply with strict JSON only: {\"failing\": boolean, \"confidence\": number, \"reason\": string}. Set failing true only when the print appears to be failing, detached, spaghetti, blobbed, severely shifted, or otherwise visibly going wrong. Also inspect any visible filament path into the toolhead: if the filament looks missing, snapped, kinked, badly misrouted, or obviously not feeding correctly, treat that as a failure signal when the image supports it.",
 	}
 }
 
@@ -269,10 +286,12 @@ const (
 // DefaultAppriseConfig returns the default Apprise notification configuration.
 func DefaultAppriseConfig() AppriseConfig {
 	return AppriseConfig{
-		Enabled:   false,
-		ServerURL: "",
-		Key:       "",
-		Tag:       "",
+		Enabled:         false,
+		ServerURL:       "",
+		Key:             "",
+		Tag:             "",
+		RawBodyTemplate: "",
+		RawContentType:  "application/json",
 		Events: AppriseEvents{
 			PrintStarted:  true,
 			PrintFinished: true,
@@ -303,7 +322,30 @@ func DefaultAppriseConfig() AppriseConfig {
 // DefaultNotificationsConfig returns the default notifications configuration.
 func DefaultNotificationsConfig() NotificationsConfig {
 	return NotificationsConfig{
-		Apprise: DefaultAppriseConfig(),
+		Apprise:      DefaultAppriseConfig(),
+		Announcement: DefaultHomeAnnouncementConfig(),
+	}
+}
+
+func DefaultHomeAnnouncementConfig() HomeAnnouncementConfig {
+	return HomeAnnouncementConfig{
+		Enabled:             false,
+		BaseURL:             "",
+		Token:               "",
+		TTSEntityID:         "",
+		MediaPlayerEntityID: "",
+		Language:            "",
+		Cache:               true,
+		Template:            "{body}",
+		Events: AppriseEvents{
+			PrintStarted:  false,
+			PrintFinished: true,
+			PrintFailed:   true,
+			PrintPaused:   false,
+			PrintResumed:  false,
+			GcodeUploaded: false,
+			PrintProgress: false,
+		},
 	}
 }
 

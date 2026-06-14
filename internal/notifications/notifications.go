@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/django1982/ankerctl/internal/db"
 	"github.com/django1982/ankerctl/internal/model"
 	"github.com/django1982/ankerctl/internal/service"
 )
@@ -44,6 +46,7 @@ type NotificationService struct {
 	service.BaseWorker
 
 	cfg      ConfigLoader
+	history  *db.DB
 	mqtt     EventTapSource
 	snapshot SnapshotCapturer
 
@@ -67,6 +70,11 @@ func NewNotificationService(cfg ConfigLoader, mqtt EventTapSource, snapshot Snap
 		lastProgressNotified: -1,
 	}
 	s.BindHooks(s)
+	return s
+}
+
+func (s *NotificationService) WithHistory(history *db.DB) *NotificationService {
+	s.history = history
 	return s
 }
 
@@ -111,6 +119,15 @@ func SendTestNotification(ctx context.Context, apprise model.AppriseConfig, snap
 	}
 	attachments := maybeSnapshotAttachment(ctx, snapshot)
 	return client.Post(ctx, "Ankerctl Test", "Test notification sent from ankerctl settings page.", "info", attachments)
+}
+
+func SendTestAnnouncement(ctx context.Context, cfg model.HomeAnnouncementConfig) (bool, string) {
+	payload := map[string]any{
+		"filename": "test.gcode",
+		"body":     "Test announcement sent from ankerctl settings page.",
+	}
+	res := SendHomeAnnouncement(ctx, cfg, EventPrintFinished, payload)
+	return res.OK, res.Message
 }
 
 func (s *NotificationService) handleEvent(ctx context.Context, evt any) {
@@ -257,12 +274,15 @@ func (s *NotificationService) handleStateTransition(ctx context.Context, state i
 }
 
 func (s *NotificationService) send(ctx context.Context, event string, payload map[string]any) {
-	client := s.currentClient()
-	if client == nil {
-		return
+	if client := s.currentClient(); client != nil {
+		attachments := maybeSnapshotAttachment(ctx, s.snapshot)
+		result := client.SendEventDetailed(ctx, event, payload, attachments)
+		s.recordDelivery(extractFilename(payload), event, result)
 	}
-	attachments := maybeSnapshotAttachment(ctx, s.snapshot)
-	_, _ = client.SendEvent(ctx, event, payload, attachments)
+	if announcement := s.currentAnnouncement(); announcement != nil {
+		result := SendHomeAnnouncement(ctx, *announcement, event, payload)
+		s.recordDelivery(extractFilename(payload), event, result)
+	}
 }
 
 func (s *NotificationService) currentClient() *Client {
@@ -275,6 +295,38 @@ func (s *NotificationService) currentClient() *Client {
 	}
 	resolved := ResolveAppriseEnv(cfg.Notifications.Apprise)
 	return newClient(resolved)
+}
+
+func (s *NotificationService) currentAnnouncement() *model.HomeAnnouncementConfig {
+	if s.cfg == nil {
+		return nil
+	}
+	cfg, err := s.cfg.Load()
+	if err != nil || cfg == nil {
+		return nil
+	}
+	announcement := cfg.Notifications.Announcement
+	return &announcement
+}
+
+func (s *NotificationService) recordDelivery(filename, event string, result DeliveryResult) {
+	if s.history == nil {
+		return
+	}
+	entry := db.HistoryNotificationResult{
+		At:          result.At,
+		Event:       event,
+		OK:          result.OK,
+		Message:     result.Message,
+		Transport:   result.Transport,
+		Target:      result.Target,
+		StatusCode:  result.StatusCode,
+		Title:       result.Title,
+		ResponseRaw: result.ResponseRaw,
+	}
+	if err := s.history.AppendNotificationResult(filename, "", entry); err != nil {
+		slog.Warn("failed to append notification result to history", "filename", filename, "event", event, "err", err)
+	}
 }
 
 func maybeSnapshotAttachment(ctx context.Context, snapshot SnapshotCapturer) []string {

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -97,6 +98,35 @@ func (c *HomeAssistantClient) CallService(ctx context.Context, domain, serviceNa
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("homeassistant: service %s.%s returned HTTP %d", domain, serviceName, resp.StatusCode)
+	}
+	return nil
+}
+
+func (c *HomeAssistantClient) CallServiceData(ctx context.Context, domain, serviceName string, data any) error {
+	domain = strings.TrimSpace(domain)
+	serviceName = strings.TrimSpace(serviceName)
+	if domain == "" || serviceName == "" {
+		return fmt.Errorf("homeassistant: domain and service are required")
+	}
+	var body io.Reader
+	if data != nil {
+		raw, err := json.Marshal(data)
+		if err != nil {
+			return fmt.Errorf("homeassistant: encode service payload: %w", err)
+		}
+		body = bytes.NewReader(raw)
+	}
+	resp, err := c.request(ctx, http.MethodPost, "/api/services/"+domain+"/"+serviceName, body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*64))
+		if trimmed := strings.TrimSpace(string(msg)); trimmed != "" {
+			return fmt.Errorf("homeassistant: service %s.%s returned HTTP %d: %s", domain, serviceName, resp.StatusCode, trimmed)
+		}
 		return fmt.Errorf("homeassistant: service %s.%s returned HTTP %d", domain, serviceName, resp.StatusCode)
 	}
 	return nil
