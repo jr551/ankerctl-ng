@@ -3,6 +3,7 @@ name: Docker
 on:
   push:
     branches: [main, ha-camera-ai-monitor]
+  workflow_dispatch:
 
 permissions:
   contents: read
