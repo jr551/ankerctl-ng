@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/django1982/ankerctl/internal/model"
 	"github.com/django1982/ankerctl/internal/notifications"
@@ -44,6 +45,9 @@ func (h *Handler) NotificationsUpdate(w http.ResponseWriter, r *http.Request) {
 	err := h.cfg.Modify(func(cfg *model.Config) (*model.Config, error) {
 		if cfg == nil {
 			return cfg, nil
+		}
+		if v, ok := apprisePayload["key"].(string); ok && strings.TrimSpace(v) == "" {
+			delete(apprisePayload, "key")
 		}
 		updated = cfg.Notifications.Apprise
 		mergeIntoStruct(&updated, apprisePayload)

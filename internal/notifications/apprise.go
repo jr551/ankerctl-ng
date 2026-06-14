@@ -3,14 +3,17 @@ package notifications
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
 	"mime/multipart"
 	"net"
 	"net/http"
+	"net/smtp"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -140,7 +143,7 @@ func readIntEnv(key string) (int, bool) {
 
 // IsConfigured reports whether URL + key are present.
 func (c *Client) IsConfigured() bool {
-	return c.serverURL() != "" && c.key() != ""
+	return c.directJSONURL() != nil || c.directSMTPURL() != nil || (c.serverURL() != "" && c.key() != "")
 }
 
 // IsEnabled reports whether Apprise is enabled and configured.
@@ -191,7 +194,13 @@ func (c *Client) Post(ctx context.Context, title, body, typ string, attachments 
 	if !c.IsConfigured() {
 		return false, "Apprise server URL or key missing"
 	}
-	u := c.notifyURL()
+	if u := c.directSMTPURL(); u != nil {
+		return c.postSMTP(ctx, u, title, body, typ, attachments)
+	}
+	u := c.directJSONURL()
+	if u == nil {
+		u = c.notifyURL()
+	}
 	if u == nil {
 		return false, "Apprise server URL or key missing"
 	}
@@ -254,6 +263,149 @@ func (c *Client) Post(ctx context.Context, title, body, typ string, attachments 
 	defer resp.Body.Close()
 
 	return parseResponse(resp)
+}
+
+func (c *Client) postSMTP(ctx context.Context, u *url.URL, title, body, typ string, attachments []string) (bool, string) {
+	host := u.Hostname()
+	if host == "" {
+		return false, "SMTP host missing"
+	}
+	port := u.Port()
+	if port == "" {
+		if strings.EqualFold(u.Scheme, "mailtos") {
+			port = "465"
+		} else {
+			port = "587"
+		}
+	}
+	from := strings.TrimSpace(u.Query().Get("from"))
+	username := ""
+	password := ""
+	if u.User != nil {
+		username = u.User.Username()
+		password, _ = u.User.Password()
+	}
+	if from == "" {
+		from = username
+	}
+	recipients := smtpRecipients(u)
+	if from == "" {
+		return false, "SMTP from address missing"
+	}
+	if len(recipients) == 0 {
+		return false, "SMTP recipient missing"
+	}
+
+	msgBody := body
+	if len(attachments) > 0 {
+		msgBody += "\n\nAttachments were available to the notification system but SMTP helper emails send text only."
+	}
+
+	addr := net.JoinHostPort(host, port)
+	dialer := &net.Dialer{Timeout: defaultTimeout}
+	var client *smtp.Client
+	var err error
+	if strings.EqualFold(u.Scheme, "mailtos") {
+		conn, dialErr := tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12})
+		if dialErr != nil {
+			return false, dialErr.Error()
+		}
+		client, err = smtp.NewClient(conn, host)
+	} else {
+		conn, dialErr := dialer.DialContext(ctx, "tcp", addr)
+		if dialErr != nil {
+			return false, dialErr.Error()
+		}
+		client, err = smtp.NewClient(conn, host)
+	}
+	if err != nil {
+		return false, err.Error()
+	}
+	defer client.Close()
+
+	if !strings.EqualFold(u.Scheme, "mailtos") {
+		if ok, _ := client.Extension("STARTTLS"); ok {
+			if err := client.StartTLS(&tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}); err != nil {
+				return false, err.Error()
+			}
+		}
+	}
+	if username != "" {
+		if ok, _ := client.Extension("AUTH"); ok {
+			if err := client.Auth(smtp.PlainAuth("", username, password, host)); err != nil {
+				return false, err.Error()
+			}
+		}
+	}
+	if err := client.Mail(from); err != nil {
+		return false, err.Error()
+	}
+	for _, rcpt := range recipients {
+		if err := client.Rcpt(rcpt); err != nil {
+			return false, err.Error()
+		}
+	}
+	w, err := client.Data()
+	if err != nil {
+		return false, err.Error()
+	}
+	msg := smtpMessage(from, recipients, title, typ, msgBody)
+	if _, err := io.WriteString(w, msg); err != nil {
+		_ = w.Close()
+		return false, err.Error()
+	}
+	if err := w.Close(); err != nil {
+		return false, err.Error()
+	}
+	if err := client.Quit(); err != nil {
+		return false, err.Error()
+	}
+	return true, "SMTP notification sent"
+}
+
+func smtpRecipients(u *url.URL) []string {
+	var recipients []string
+	add := func(raw string) {
+		for _, part := range strings.FieldsFunc(raw, func(r rune) bool { return r == ',' || r == ';' || r == ' ' }) {
+			if v := strings.TrimSpace(part); v != "" {
+				recipients = append(recipients, v)
+			}
+		}
+	}
+	for _, raw := range u.Query()["to"] {
+		add(raw)
+	}
+	if path := strings.Trim(u.EscapedPath(), "/"); path != "" {
+		if decoded, err := url.PathUnescape(path); err == nil {
+			add(decoded)
+		}
+	}
+	return recipients
+}
+
+func smtpMessage(from string, to []string, title, typ, body string) string {
+	subject := mime.QEncoding.Encode("utf-8", cleanSMTPHeader(title))
+	headers := []string{
+		"From: " + cleanSMTPHeader(from),
+		"To: " + cleanSMTPHeader(strings.Join(to, ", ")),
+		"Subject: " + subject,
+		"MIME-Version: 1.0",
+		"Content-Type: text/plain; charset=UTF-8",
+		"X-Ankerctl-Notification-Type: " + cleanSMTPHeader(typ),
+	}
+	return strings.Join(headers, "\r\n") + "\r\n\r\n" + normalizeSMTPBody(body) + "\r\n"
+}
+
+func cleanSMTPHeader(v string) string {
+	v = strings.ReplaceAll(v, "\r", " ")
+	v = strings.ReplaceAll(v, "\n", " ")
+	return strings.TrimSpace(v)
+}
+
+func normalizeSMTPBody(v string) string {
+	v = strings.ReplaceAll(v, "\r\n", "\n")
+	v = strings.ReplaceAll(v, "\r", "\n")
+	return strings.ReplaceAll(v, "\n", "\r\n")
 }
 
 // postMultipart uploads local files as multipart/form-data.
@@ -410,6 +562,57 @@ func (c *Client) notifyURL() *url.URL {
 	}
 	if c.isPrivateHost(u) {
 		slog.Warn("Apprise server URL points to private/loopback address, ignoring", "url", full)
+		return nil
+	}
+	return u
+}
+
+func (c *Client) directJSONURL() *url.URL {
+	raw := c.serverURL()
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return nil
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "json":
+		u.Scheme = "http"
+	case "jsons":
+		u.Scheme = "https"
+	default:
+		return nil
+	}
+	if u.Host == "" {
+		return nil
+	}
+	if c.isPrivateHost(u) {
+		slog.Warn("Apprise JSON webhook points to private/loopback address, ignoring", "url", raw)
+		return nil
+	}
+	return u
+}
+
+func (c *Client) directSMTPURL() *url.URL {
+	raw := c.serverURL()
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return nil
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "mailto", "mailtos":
+	default:
+		return nil
+	}
+	if u.Host == "" {
+		return nil
+	}
+	if c.isPrivateHost(u) {
+		slog.Warn("SMTP notification host points to private/loopback address, ignoring", "url", raw)
 		return nil
 	}
 	return u

@@ -100,6 +100,20 @@ func OpenLAN(duid protocol.Duid, host string) (*Client, error) {
 // silently by the firewall. With a fixed port, a single static ufw rule
 // covers both directions.
 func OpenBroadcastLAN(duid protocol.Duid) (*Client, error) {
+	return openBroadcastLANAddr(duid, net.IPv4bcast)
+}
+
+// OpenBroadcastLANTo opens a broadcast-capable client targeting a specific
+// directed-broadcast address on port 32108. This is needed on multi-homed
+// hosts where 255.255.255.255 may leave via the wrong interface.
+func OpenBroadcastLANTo(duid protocol.Duid, broadcastIP net.IP) (*Client, error) {
+	if ip := broadcastIP.To4(); ip != nil {
+		return openBroadcastLANAddr(duid, ip)
+	}
+	return openBroadcastLANAddr(duid, net.IPv4bcast)
+}
+
+func openBroadcastLANAddr(duid protocol.Duid, broadcastIP net.IP) (*Client, error) {
 	conn, err := listenUDPLocal(PPPPLANPort)
 	if err != nil {
 		return nil, err
@@ -120,7 +134,7 @@ func OpenBroadcastLAN(duid protocol.Duid) (*Client, error) {
 		conn.Close()
 		return nil, fmt.Errorf("pppp: set SO_BROADCAST: %w", setSockOptErr)
 	}
-	addr := &net.UDPAddr{IP: net.IPv4bcast, Port: PPPPLANPort}
+	addr := &net.UDPAddr{IP: broadcastIP, Port: PPPPLANPort}
 	c := NewClient(conn, duid, addr)
 	// StateConnecting: handshake begins after ConnectLANSearch.
 	return c, nil

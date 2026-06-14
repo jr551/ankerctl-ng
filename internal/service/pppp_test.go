@@ -221,6 +221,38 @@ func TestPPPPService_HandshakeConnectTimeout(t *testing.T) {
 	}
 }
 
+func TestDirectedBroadcastForTarget(t *testing.T) {
+	target := net.IPv4(192, 168, 69, 33)
+	got, ok := directedBroadcastForTargetWithInterfaces(target, []net.Interface{
+		{Flags: net.FlagUp},
+	}, func(_ net.Interface) ([]net.Addr, error) {
+		return []net.Addr{
+			&net.IPNet{IP: net.IPv4(192, 168, 69, 201), Mask: net.CIDRMask(22, 32)},
+		}, nil
+	})
+	if !ok {
+		t.Fatal("expected directed broadcast match")
+	}
+	want := net.IPv4(192, 168, 71, 255)
+	if !got.Equal(want) {
+		t.Fatalf("broadcast=%v, want %v", got, want)
+	}
+}
+
+func TestDirectedBroadcastForTargetNoMatch(t *testing.T) {
+	target := net.IPv4(192, 168, 69, 33)
+	_, ok := directedBroadcastForTargetWithInterfaces(target, []net.Interface{
+		{Flags: net.FlagUp},
+	}, func(_ net.Interface) ([]net.Addr, error) {
+		return []net.Addr{
+			&net.IPNet{IP: net.IPv4(192, 168, 16, 16), Mask: net.CIDRMask(24, 32)},
+		}, nil
+	})
+	if ok {
+		t.Fatal("expected no directed broadcast match")
+	}
+}
+
 func TestPPPPService_HandshakeTransitionToConnected(t *testing.T) {
 	// Simulate a printer that starts in StateConnecting and transitions to
 	// StateConnected after a short delay, mimicking the LanSearch → PunchPkt

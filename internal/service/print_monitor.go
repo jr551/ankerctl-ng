@@ -24,13 +24,22 @@ import (
 )
 
 type PrintMonitorResult struct {
-	At             time.Time `json:"at"`
-	Filename       string    `json:"filename,omitempty"`
-	ReferenceImage bool      `json:"reference_image"`
-	Failing        bool      `json:"failing"`
-	Confidence     float64   `json:"confidence,omitempty"`
-	Reason         string    `json:"reason,omitempty"`
-	Error          string    `json:"error,omitempty"`
+	At              time.Time      `json:"at"`
+	Filename        string         `json:"filename,omitempty"`
+	ProviderURL     string         `json:"provider_url,omitempty"`
+	Model           string         `json:"model,omitempty"`
+	Prompt          string         `json:"prompt,omitempty"`
+	FrameCount      int            `json:"frame_count,omitempty"`
+	FrameSpacingSec int            `json:"frame_spacing_sec,omitempty"`
+	ContactSheet    string         `json:"contact_sheet,omitempty"`
+	ReferenceImage  bool           `json:"reference_image"`
+	Metadata        map[string]any `json:"metadata,omitempty"`
+	HTTPStatus      int            `json:"http_status,omitempty"`
+	RawResponse     string         `json:"raw_response,omitempty"`
+	Failing         bool           `json:"failing"`
+	Confidence      float64        `json:"confidence,omitempty"`
+	Reason          string         `json:"reason,omitempty"`
+	Error           string         `json:"error,omitempty"`
 }
 
 type PrintMonitorStatus struct {
@@ -59,13 +68,14 @@ type PrintMonitorService struct {
 	snapshotter SnapshotOnly
 	httpClient  *http.Client
 
-	cfg          model.PrintMonitorConfig
-	active       bool
-	filename     string
-	checkRunning bool
-	lastCheck    *time.Time
-	nextCheck    *time.Time
-	lastResult   *PrintMonitorResult
+	cfg           model.PrintMonitorConfig
+	active        bool
+	filename      string
+	lastTelemetry map[string]any
+	checkRunning  bool
+	lastCheck     *time.Time
+	nextCheck     *time.Time
+	lastResult    *PrintMonitorResult
 
 	cmdCh chan any
 }
@@ -108,6 +118,22 @@ func (s *PrintMonitorService) RunOnce() {
 	}
 }
 
+func (s *PrintMonitorService) RunOnceResult(ctx context.Context) (PrintMonitorResult, bool) {
+	s.mu.Lock()
+	if s.checkRunning {
+		s.mu.Unlock()
+		return PrintMonitorResult{At: time.Now(), Error: "print monitor check already running"}, false
+	}
+	cfg := s.cfg
+	filename := s.filename
+	s.checkRunning = true
+	s.mu.Unlock()
+
+	result := s.runCheck(ctx, cfg, filename)
+	s.finishCheck(ctx, cfg, result)
+	return result, true
+}
+
 func (s *PrintMonitorService) Status() PrintMonitorStatus {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -124,7 +150,24 @@ func (s *PrintMonitorService) Status() PrintMonitorStatus {
 func (s *PrintMonitorService) Notify(data any) {
 	s.BaseWorker.Notify(data)
 	payload, ok := data.(map[string]any)
-	if !ok || payload["event"] != "print_state" {
+	if !ok {
+		return
+	}
+
+	if _, hasCommand := payload["commandType"]; hasCommand || payload["event"] == "print_state" {
+		s.mu.Lock()
+		telemetry := cloneMapAny(s.lastTelemetry)
+		if telemetry == nil {
+			telemetry = map[string]any{}
+		}
+		for k, v := range payload {
+			telemetry[k] = v
+		}
+		s.lastTelemetry = telemetry
+		s.mu.Unlock()
+	}
+
+	if payload["event"] != "print_state" {
 		return
 	}
 	state, ok := asIntIface(payload["state"])
@@ -214,29 +257,22 @@ func (s *PrintMonitorService) startCheck(ctx context.Context, manual bool) {
 
 	go func() {
 		result := s.runCheck(ctx, cfg, filename)
-		now := time.Now()
-		s.mu.Lock()
-		s.checkRunning = false
-		s.lastCheck = &now
-		s.lastResult = &result
-		if cfg.Enabled && s.active {
-			next := now.Add(time.Duration(cfg.IntervalSec) * time.Second)
-			s.nextCheck = &next
-		} else {
-			s.nextCheck = nil
-		}
-		s.mu.Unlock()
-		s.Notify(map[string]any{"type": "print_monitor.result", "result": result})
-		if result.Failing {
-			s.maybeAutoOff(ctx)
-		}
+		s.finishCheck(ctx, cfg, result)
 	}()
 }
 
 func (s *PrintMonitorService) runCheck(ctx context.Context, cfg model.PrintMonitorConfig, filename string) PrintMonitorResult {
-	result := PrintMonitorResult{At: time.Now(), Filename: filename}
+	result := PrintMonitorResult{
+		At:              time.Now(),
+		Filename:        filename,
+		ProviderURL:     printMonitorChatCompletionsURL(cfg.OpenRouterURL),
+		Model:           cfg.Model,
+		Prompt:          cfg.Prompt,
+		FrameCount:      cfg.FrameCount,
+		FrameSpacingSec: cfg.FrameSpacingSec,
+	}
 	if strings.TrimSpace(cfg.OpenRouterKey) == "" {
-		result.Error = "OpenRouter API key is not configured"
+		result.Error = "AI provider API key is not configured"
 		return result
 	}
 	if s.snapshotter == nil {
@@ -274,9 +310,13 @@ func (s *PrintMonitorService) runCheck(ctx context.Context, cfg model.PrintMonit
 		result.Error = err.Error()
 		return result
 	}
+	result.ContactSheet = "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(sheet)
+	result.Metadata = s.printMonitorMetadata(ctx, cfg, filename)
 	referenceImage := s.referenceThumbnail(filename)
 	result.ReferenceImage = len(referenceImage) > 0
-	failing, confidence, reason, err := s.callOpenRouter(ctx, cfg, sheet, referenceImage)
+	failing, confidence, reason, rawResponse, status, err := s.callOpenRouter(ctx, cfg, sheet, referenceImage, result.Metadata)
+	result.RawResponse = rawResponse
+	result.HTTPStatus = status
 	if err != nil {
 		result.Error = err.Error()
 		return result
@@ -287,10 +327,30 @@ func (s *PrintMonitorService) runCheck(ctx context.Context, cfg model.PrintMonit
 	return result
 }
 
-func (s *PrintMonitorService) callOpenRouter(ctx context.Context, cfg model.PrintMonitorConfig, imageJPEG []byte, referencePNG []byte) (bool, float64, string, error) {
+func (s *PrintMonitorService) finishCheck(ctx context.Context, cfg model.PrintMonitorConfig, result PrintMonitorResult) {
+	now := time.Now()
+	s.mu.Lock()
+	s.checkRunning = false
+	s.lastCheck = &now
+	s.lastResult = &result
+	if cfg.Enabled && s.active {
+		next := now.Add(time.Duration(cfg.IntervalSec) * time.Second)
+		s.nextCheck = &next
+	} else {
+		s.nextCheck = nil
+	}
+	s.mu.Unlock()
+	s.Notify(map[string]any{"type": "print_monitor.result", "result": result})
+	if result.Failing {
+		s.maybeAutoOff(ctx)
+	}
+}
+
+func (s *PrintMonitorService) callOpenRouter(ctx context.Context, cfg model.PrintMonitorConfig, imageJPEG []byte, referencePNG []byte, metadata map[string]any) (bool, float64, string, string, int, error) {
 	imageURL := "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(imageJPEG)
+	metaJSON, _ := json.MarshalIndent(metadata, "", "  ")
 	userContent := []map[string]any{
-		{"type": "text", "text": "Inspect the live 5-frame contact sheet. If a reference slicer thumbnail is present, use it as the expected shape/layout. Reply with strict JSON only."},
+		{"type": "text", "text": "Inspect the live camera contact sheet and metadata. If a reference slicer thumbnail is present, use it as the expected shape/layout. Reply with strict JSON only.\n\nMetadata:\n" + string(metaJSON)},
 		{"type": "image_url", "image_url": map[string]string{"url": imageURL}},
 	}
 	if len(referencePNG) > 0 {
@@ -313,11 +373,11 @@ func (s *PrintMonitorService) callOpenRouter(ctx context.Context, cfg model.Prin
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return false, 0, "", err
+		return false, 0, "", "", 0, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, printMonitorChatCompletionsURL(cfg.OpenRouterURL), bytes.NewReader(body))
 	if err != nil {
-		return false, 0, "", err
+		return false, 0, "", "", 0, err
 	}
 	req.Header.Set("Authorization", "Bearer "+cfg.OpenRouterKey)
 	req.Header.Set("Content-Type", "application/json")
@@ -325,12 +385,13 @@ func (s *PrintMonitorService) callOpenRouter(ctx context.Context, cfg model.Prin
 	req.Header.Set("X-Title", "ankerctl")
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return false, 0, "", err
+		return false, 0, "", "", 0, err
 	}
 	defer resp.Body.Close()
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
+	rawBody := strings.TrimSpace(string(data))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return false, 0, "", fmt.Errorf("openrouter returned HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+		return false, 0, "", rawBody, resp.StatusCode, fmt.Errorf("AI provider returned HTTP %d: %s", resp.StatusCode, rawBody)
 	}
 	var apiResp struct {
 		Choices []struct {
@@ -339,11 +400,11 @@ func (s *PrintMonitorService) callOpenRouter(ctx context.Context, cfg model.Prin
 			} `json:"message"`
 		} `json:"choices"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-		return false, 0, "", err
+	if err := json.Unmarshal(data, &apiResp); err != nil {
+		return false, 0, "", rawBody, resp.StatusCode, err
 	}
 	if len(apiResp.Choices) == 0 {
-		return false, 0, "", fmt.Errorf("openrouter returned no choices")
+		return false, 0, "", rawBody, resp.StatusCode, fmt.Errorf("AI provider returned no choices")
 	}
 	var parsed struct {
 		Failing    bool    `json:"failing"`
@@ -352,9 +413,66 @@ func (s *PrintMonitorService) callOpenRouter(ctx context.Context, cfg model.Prin
 	}
 	content := strings.TrimSpace(apiResp.Choices[0].Message.Content)
 	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
-		return false, 0, "", fmt.Errorf("openrouter returned non-JSON content: %w", err)
+		return false, 0, "", content, resp.StatusCode, fmt.Errorf("AI provider returned non-JSON content: %w", err)
 	}
-	return parsed.Failing, parsed.Confidence, parsed.Reason, nil
+	return parsed.Failing, parsed.Confidence, parsed.Reason, content, resp.StatusCode, nil
+}
+
+func (s *PrintMonitorService) printMonitorMetadata(ctx context.Context, cfg model.PrintMonitorConfig, filename string) map[string]any {
+	s.mu.Lock()
+	telemetry := cloneMapAny(s.lastTelemetry)
+	active := s.active
+	s.mu.Unlock()
+
+	meta := map[string]any{
+		"filename": filename,
+		"active":   active,
+		"monitor": map[string]any{
+			"interval_sec":      cfg.IntervalSec,
+			"frame_count":       cfg.FrameCount,
+			"frame_spacing_sec": cfg.FrameSpacingSec,
+			"model":             cfg.Model,
+			"provider_url":      printMonitorChatCompletionsURL(cfg.OpenRouterURL),
+		},
+	}
+	if len(telemetry) > 0 {
+		meta["printer_telemetry"] = telemetry
+	}
+	if s.cfgMgr != nil {
+		if appCfg, err := s.cfgMgr.Load(); err == nil && appCfg != nil {
+			meta["camera"] = map[string]any{
+				"configured": appCfg.Camera.PerPrinter != nil,
+			}
+			if appCfg.SmartSocket.Enabled {
+				socket := map[string]any{
+					"enabled":              appCfg.SmartSocket.Enabled,
+					"switch_entity":        appCfg.SmartSocket.SwitchEntity,
+					"power_entity":         appCfg.SmartSocket.PowerEntity,
+					"power_saving_enabled": appCfg.SmartSocket.PowerSavingEnabled,
+				}
+				if appCfg.SmartSocket.PowerEntity != "" {
+					client := NewHomeAssistantClient(appCfg.SmartSocket.BaseURL, appCfg.SmartSocket.Token)
+					if state, err := client.State(ctx, appCfg.SmartSocket.PowerEntity); err == nil {
+						socket["power"] = state.State
+						if unit, ok := state.Attributes["unit_of_measurement"].(string); ok {
+							socket["power_unit"] = unit
+						}
+					}
+				}
+				if appCfg.SmartSocket.SwitchEntity != "" {
+					client := NewHomeAssistantClient(appCfg.SmartSocket.BaseURL, appCfg.SmartSocket.Token)
+					if state, err := client.State(ctx, appCfg.SmartSocket.SwitchEntity); err == nil {
+						socket["state"] = state.State
+						if !state.LastChanged.IsZero() {
+							socket["last_changed"] = state.LastChanged
+						}
+					}
+				}
+				meta["smart_socket"] = socket
+			}
+		}
+	}
+	return meta
 }
 
 func (s *PrintMonitorService) referenceThumbnail(filename string) []byte {
@@ -505,4 +623,15 @@ func clonePrintMonitorResult(r *PrintMonitorResult) *PrintMonitorResult {
 	}
 	v := *r
 	return &v
+}
+
+func cloneMapAny(src map[string]any) map[string]any {
+	if src == nil {
+		return nil
+	}
+	dst := make(map[string]any, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
 }

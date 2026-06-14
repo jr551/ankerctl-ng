@@ -45,6 +45,20 @@ $(function () {
      */
     $("#copyYear").text(new Date().getFullYear());
 
+    const savedSecretPlaceholder = "Saved - leave blank to keep";
+    const markSavedSecret = (field, configured, label) => {
+        if (!field || !field.length) return;
+        field.val("");
+        field.attr("placeholder", configured ? `Saved ${label || "secret"} - leave blank to keep` : "");
+    };
+    const addSecretIfEntered = (payload, key, field) => {
+        const value = field && field.length ? field.val().trim() : "";
+        if (value) payload[key] = value;
+    };
+    const setPrintingGlow = (active) => {
+        document.body.classList.toggle("print-active-glow", Boolean(active));
+    };
+
     /**
      * Version display + update notification.
      * Fetches /api/ankerctl/version once on load. Shows version in footer
@@ -390,6 +404,7 @@ $(function () {
                     if (_preparing) {
                         _preparing = false;
                         $("#progressbar").removeClass("progress-bar-striped progress-bar-animated");
+                        _syncPrintGlow();
                     }
                     $("#print-layer").text("0 / 0");
                 }
@@ -413,6 +428,7 @@ $(function () {
                         if (_preparing) {
                             _preparing = false;
                             $("#progressbar").removeClass("progress-bar-striped progress-bar-animated");
+                            _syncPrintGlow();
                         }
                         _lastDisplayedProgress = progress;
                         $("#progressbar").attr("aria-valuenow", progress);
@@ -479,6 +495,7 @@ $(function () {
                 if (baseName) { $("#print-name").text(baseName); }
                 _lastDisplayedProgress = 0;
                 _preparing = true;
+                _syncPrintGlow();
                 $("#progressbar")
                     .attr("aria-valuenow", 100)
                     .attr("style", "width: 100%")
@@ -1006,6 +1023,16 @@ $(function () {
             snapshotFallback: $("#apprise-snapshot-fallback"),
             snapshotLight: $("#apprise-snapshot-light"),
             progressIncludeImage: $("#apprise-progress-image"),
+            smtp: {
+                host: $("#apprise-smtp-host"),
+                port: $("#apprise-smtp-port"),
+                user: $("#apprise-smtp-user"),
+                password: $("#apprise-smtp-password"),
+                from: $("#apprise-smtp-from"),
+                to: $("#apprise-smtp-to"),
+                secure: $("#apprise-smtp-secure"),
+                build: $("#apprise-smtp-build"),
+            },
             events: {
                 print_started: $("#apprise-event-print-started"),
                 print_finished: $("#apprise-event-print-finished"),
@@ -1027,10 +1054,9 @@ $(function () {
         const buildAppriseConfig = () => {
             const interval = parseInt(appriseFields.progressInterval.val(), 10);
             const snapshotQuality = appriseFields.snapshotQuality.val().trim().toLowerCase();
-            return {
+            const config = {
                 enabled: appriseFields.enabled.is(":checked"),
                 server_url: appriseFields.serverUrl.val().trim(),
-                key: appriseFields.key.val().trim(),
                 tag: appriseFields.tag.val().trim(),
                 events: {
                     print_started: appriseFields.events.print_started.is(":checked"),
@@ -1047,6 +1073,8 @@ $(function () {
                     snapshot_light: appriseFields.snapshotLight.is(":checked"),
                 },
             };
+            addSecretIfEntered(config, "key", appriseFields.key);
+            return config;
         };
 
         const applyAppriseSettings = (apprise) => {
@@ -1055,7 +1083,7 @@ $(function () {
             const progress = settings.progress || {};
             appriseFields.enabled.prop("checked", Boolean(settings.enabled));
             appriseFields.serverUrl.val(settings.server_url || "");
-            appriseFields.key.val(settings.key || "");
+            markSavedSecret(appriseFields.key, Boolean(settings.key), "key");
             appriseFields.tag.val(settings.tag || "");
             appriseFields.events.print_started.prop("checked", Boolean(events.print_started));
             appriseFields.events.print_finished.prop("checked", Boolean(events.print_finished));
@@ -1140,6 +1168,42 @@ $(function () {
             } finally {
                 setAppriseBusy(false);
             }
+        });
+
+        appriseFields.smtp.build.on("click", function () {
+            const host = appriseFields.smtp.host.val().trim();
+            if (!host) {
+                flash_message("SMTP host is required", "warning");
+                appriseFields.smtp.host.trigger("focus");
+                return;
+            }
+            const scheme = appriseFields.smtp.secure.is(":checked") ? "mailtos" : "mailto";
+            const user = appriseFields.smtp.user.val().trim();
+            const pass = appriseFields.smtp.password.val();
+            const port = parseInt(appriseFields.smtp.port.val(), 10);
+            const params = new URLSearchParams();
+            const from = appriseFields.smtp.from.val().trim();
+            const to = appriseFields.smtp.to.val().trim();
+            if (from) params.set("from", from);
+            if (to) params.set("to", to);
+            let auth = "";
+            if (user) {
+                auth = encodeURIComponent(user);
+                if (pass) auth += `:${encodeURIComponent(pass)}`;
+                auth += "@";
+            }
+            let built = `${scheme}://${auth}${host}`;
+            if (Number.isFinite(port) && port > 0) {
+                built += `:${port}`;
+            }
+            const query = params.toString();
+            if (query) {
+                built += `/?${query}`;
+            }
+            appriseFields.serverUrl.val(built);
+            appriseFields.enabled.prop("checked", true);
+            appriseFields.key.val("");
+            flash_message("SMTP Apprise URL populated", "success", 3000);
         });
 
         loadAppriseSettings();
@@ -1317,6 +1381,11 @@ $(function () {
         $("#print-pause").toggleClass("d-none", !printing);
         $("#print-resume").toggleClass("d-none", !paused);
         $("#print-stop").toggleClass("d-none", !active);
+        _syncPrintGlow();
+    }
+
+    function _syncPrintGlow() {
+        setPrintingGlow(_preparing || _currentPrintState === PRINT_STATE.PRINTING || _currentPrintState === PRINT_STATE.PAUSED);
     }
 
     const getStepDist = () => $('input[name="step-dist"]:checked').val() || "1";
@@ -2479,7 +2548,7 @@ $(function () {
     }
 
     // Load on tab show; auto-refresh every 15 s while active.
-    const timelapseTabBtn = document.querySelector('button[data-bs-target="#timelapse"]');
+    const timelapseTabBtn = document.querySelector('button[data-bs-target="#timelapse"]') || historyTabBtn;
     let _timelapseInterval = null;
     if (timelapseTabBtn) {
         timelapseTabBtn.addEventListener("shown.bs.tab", function () {
@@ -2526,11 +2595,23 @@ $(function () {
             refresh: $("#camera-refresh"),
             stream: $("#camera-stream-url"),
             snapshot: $("#camera-snapshot-url"),
+            directURLFields: $(".camera-direct-url-field"),
             haEnabled: $("#ha-camera-enabled"),
             haBaseURL: $("#ha-camera-base-url"),
             haToken: $("#ha-camera-token"),
             haEntity: $("#ha-camera-entity"),
             detail: $("#camera-detail"),
+        };
+
+        const updateCameraSourceFields = () => {
+            const usingHA = cameraFields.haEnabled.is(":checked");
+            cameraFields.directURLFields.toggleClass("d-none", usingHA);
+            if (usingHA) {
+                const refresh = parseInt(cameraFields.refresh.val(), 10);
+                if (!Number.isFinite(refresh) || refresh < 1 || refresh === 3) {
+                    cameraFields.refresh.val(1);
+                }
+            }
         };
 
         const loadCameraSettings = async () => {
@@ -2543,14 +2624,15 @@ $(function () {
                 const ha = ext.home_assistant || {};
                 cameraFields.source.val(cfg.configured_source || cfg.source || "printer");
                 cameraFields.name.val(ext.name || "");
-                cameraFields.refresh.val(ext.refresh_sec || 3);
+                cameraFields.refresh.val(ext.refresh_sec || 1);
                 cameraFields.stream.val(ext.stream_url || "");
                 cameraFields.snapshot.val(ext.snapshot_url || "");
                 cameraFields.haEnabled.prop("checked", Boolean(ha.enabled));
                 cameraFields.haBaseURL.val(ha.base_url || "");
-                cameraFields.haToken.val(ha.token || "");
+                markSavedSecret(cameraFields.haToken, Boolean(ha.token_configured || ha.token), "token");
                 cameraFields.haEntity.val(ha.camera_entity_id || "");
                 cameraFields.detail.text(cfg.detail || "");
+                updateCameraSourceFields();
             } catch (err) {
                 console.error("Failed to load camera settings:", err);
             }
@@ -2559,21 +2641,25 @@ $(function () {
         $("#camera-save").on("click", async function () {
             const btn = $(this);
             btn.prop("disabled", true);
+            const haSettings = {
+                enabled: cameraFields.haEnabled.is(":checked"),
+                base_url: cameraFields.haBaseURL.val().trim(),
+                camera_entity_id: cameraFields.haEntity.val().trim(),
+            };
+            addSecretIfEntered(haSettings, "token", cameraFields.haToken);
+            const external = {
+                name: cameraFields.name.val().trim(),
+                refresh_sec: parseInt(cameraFields.refresh.val(), 10) || 1,
+                home_assistant: haSettings,
+            };
+            if (!haSettings.enabled) {
+                external.stream_url = cameraFields.stream.val().trim();
+                external.snapshot_url = cameraFields.snapshot.val().trim();
+            }
             const payload = {
                 camera: {
                     source: cameraFields.source.val(),
-                    external: {
-                        name: cameraFields.name.val().trim(),
-                        refresh_sec: parseInt(cameraFields.refresh.val(), 10) || 3,
-                        stream_url: cameraFields.stream.val().trim(),
-                        snapshot_url: cameraFields.snapshot.val().trim(),
-                        home_assistant: {
-                            enabled: cameraFields.haEnabled.is(":checked"),
-                            base_url: cameraFields.haBaseURL.val().trim(),
-                            token: cameraFields.haToken.val().trim(),
-                            camera_entity_id: cameraFields.haEntity.val().trim(),
-                        },
-                    },
+                    external,
                 },
             };
             try {
@@ -2596,20 +2682,111 @@ $(function () {
             }
         });
 
+        cameraFields.haEnabled.on("change", updateCameraSourceFields);
         loadCameraSettings();
     }
 
     const pmForm = $("#print-monitor-form");
     if (pmForm.length) {
+        const pmDefaults = {
+            url: "https://api.kilo.ai/api/gateway",
+            model: "kilo-auto/balanced",
+        };
         const pmFields = {
             enabled: $("#print-monitor-enabled"),
             interval: $("#print-monitor-interval"),
             frameCount: $("#print-monitor-frame-count"),
             spacing: $("#print-monitor-spacing"),
+            url: $("#print-monitor-url"),
             model: $("#print-monitor-model"),
             key: $("#print-monitor-key"),
             prompt: $("#print-monitor-prompt"),
             status: $("#print-monitor-status"),
+            debug: $("#print-monitor-debug"),
+            debugImage: $("#print-monitor-debug-image"),
+            debugRequest: $("#print-monitor-debug-request"),
+            debugResponse: $("#print-monitor-debug-response"),
+        };
+        const pmButtons = {
+            save: $("#print-monitor-save"),
+            check: $("#print-monitor-check"),
+        };
+
+        const printMonitorMinutes = (seconds) => {
+            const value = parseInt(seconds, 10);
+            return Math.max(1, Math.round((Number.isFinite(value) && value > 0 ? value : 300) / 60));
+        };
+
+        const setPrintMonitorBusy = (busy) => {
+            pmButtons.save.prop("disabled", busy);
+            pmButtons.check.prop("disabled", busy);
+        };
+
+        const applyPrintMonitorConfig = (cfg) => {
+            const settings = cfg || {};
+            pmFields.enabled.prop("checked", Boolean(settings.enabled));
+            pmFields.interval.val(printMonitorMinutes(settings.interval_sec || 300));
+            pmFields.frameCount.val(settings.frame_count || 5);
+            pmFields.spacing.val(settings.frame_spacing_sec || 1);
+            pmFields.url.val(settings.openrouter_url || pmDefaults.url);
+            pmFields.model.val(settings.model || pmDefaults.model);
+            markSavedSecret(pmFields.key, Boolean(settings.openrouter_key), "API key");
+            pmFields.prompt.val(settings.prompt || "");
+        };
+
+        const buildPrintMonitorPayload = () => {
+            const minutes = parseInt(pmFields.interval.val(), 10);
+            const cfg = {
+                enabled: pmFields.enabled.is(":checked"),
+                interval_sec: (Number.isFinite(minutes) && minutes > 0 ? minutes : 5) * 60,
+                frame_count: parseInt(pmFields.frameCount.val(), 10) || 5,
+                frame_spacing_sec: parseInt(pmFields.spacing.val(), 10) || 1,
+                openrouter_url: pmFields.url.val().trim() || pmDefaults.url,
+                model: pmFields.model.val().trim() || pmDefaults.model,
+                prompt: pmFields.prompt.val().trim(),
+            };
+            addSecretIfEntered(cfg, "openrouter_key", pmFields.key);
+            return { print_monitor: cfg };
+        };
+
+        const renderPrintMonitorDebug = (result) => {
+            if (!result) {
+                pmFields.debug.prop("hidden", true);
+                return;
+            }
+            if (result.contact_sheet) {
+                pmFields.debugImage.attr("src", result.contact_sheet);
+                pmFields.debugImage.closest(".col-lg-6").show();
+            } else {
+                pmFields.debugImage.attr("src", "");
+                pmFields.debugImage.closest(".col-lg-6").hide();
+            }
+            const request = {
+                provider_url: result.provider_url || pmFields.url.val().trim() || pmDefaults.url,
+                model: result.model || pmFields.model.val().trim() || pmDefaults.model,
+                prompt: result.prompt || pmFields.prompt.val().trim(),
+                images: {
+                    contact_sheet: Boolean(result.contact_sheet),
+                    reference_image: Boolean(result.reference_image),
+                    frame_count: result.frame_count || parseInt(pmFields.frameCount.val(), 10) || 5,
+                    frame_spacing_sec: result.frame_spacing_sec || parseInt(pmFields.spacing.val(), 10) || 1,
+                },
+                metadata: result.metadata || {},
+            };
+            const response = {
+                http_status: result.http_status || null,
+                raw_response: result.raw_response || "",
+                parsed: {
+                    failing: Boolean(result.failing),
+                    confidence: result.confidence || 0,
+                    reason: result.reason || "",
+                },
+                error: result.error || "",
+                checked_at: result.at || null,
+            };
+            pmFields.debugRequest.text(JSON.stringify(request, null, 2));
+            pmFields.debugResponse.text(JSON.stringify(response, null, 2));
+            pmFields.debug.prop("hidden", false);
         };
 
         const renderPrintMonitorStatus = (status) => {
@@ -2626,6 +2803,7 @@ $(function () {
                 if (last.confidence) text += ` (${Math.round(last.confidence * 100)}%)`;
                 if (last.reason) text += ` - ${last.reason}`;
                 if (last.error) text += ` - ${last.error}`;
+                renderPrintMonitorDebug(last);
             }
             pmFields.status.text(text);
         };
@@ -2635,14 +2813,7 @@ $(function () {
                 const resp = await fetch("/api/settings/print-monitor");
                 if (resp.ok) {
                     const data = await resp.json();
-                    const cfg = data.print_monitor || {};
-                    pmFields.enabled.prop("checked", Boolean(cfg.enabled));
-                    pmFields.interval.val(cfg.interval_sec || 300);
-                    pmFields.frameCount.val(cfg.frame_count || 5);
-                    pmFields.spacing.val(cfg.frame_spacing_sec || 1);
-                    pmFields.model.val(cfg.model || "google/gemini-2.5-flash");
-                    pmFields.key.val(cfg.openrouter_key || "");
-                    pmFields.prompt.val(cfg.prompt || "");
+                    applyPrintMonitorConfig(data.print_monitor || {});
                 }
                 const statusResp = await fetch("/api/print-monitor/status");
                 if (statusResp.ok) renderPrintMonitorStatus(await statusResp.json());
@@ -2651,44 +2822,66 @@ $(function () {
             }
         };
 
-        $("#print-monitor-save").on("click", async function () {
-            const btn = $(this);
-            btn.prop("disabled", true);
-            const payload = {
-                print_monitor: {
-                    enabled: pmFields.enabled.is(":checked"),
-                    interval_sec: parseInt(pmFields.interval.val(), 10) || 300,
-                    frame_count: parseInt(pmFields.frameCount.val(), 10) || 5,
-                    frame_spacing_sec: parseInt(pmFields.spacing.val(), 10) || 1,
-                    model: pmFields.model.val().trim(),
-                    openrouter_key: pmFields.key.val().trim(),
-                    prompt: pmFields.prompt.val().trim(),
-                },
-            };
+        const savePrintMonitorSettings = async (quiet) => {
+            const payload = buildPrintMonitorPayload();
+            const resp = await fetch("/api/settings/print-monitor", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+            });
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok) {
+                throw new Error(data.error || resp.statusText);
+            }
+            if (data.print_monitor) {
+                applyPrintMonitorConfig(data.print_monitor);
+            }
+            if (!quiet) {
+                flash_message("Print monitor settings saved", "success");
+            }
+            return data;
+        };
+
+        pmButtons.save.on("click", async function () {
+            setPrintMonitorBusy(true);
             try {
-                const resp = await fetch("/api/settings/print-monitor", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload),
-                });
-                if (resp.ok) {
-                    flash_message("Print monitor settings saved", "success");
-                    loadPrintMonitorSettings();
-                } else {
-                    const data = await resp.json().catch(() => ({}));
-                    flash_message(`Failed to save monitor: ${data.error || resp.statusText}`, "danger");
-                }
+                await savePrintMonitorSettings(false);
+                await loadPrintMonitorSettings();
             } catch (err) {
                 flash_message(`Error: ${err.message}`, "danger");
             } finally {
-                btn.prop("disabled", false);
+                setPrintMonitorBusy(false);
             }
         });
 
-        $("#print-monitor-check").on("click", async function () {
-            const resp = await fetch("/api/print-monitor/check", { method: "POST" });
-            flash_message(resp.ok ? "Print monitor check queued" : "Failed to queue print monitor check", resp.ok ? "success" : "danger");
-            setTimeout(loadPrintMonitorSettings, 2000);
+        pmButtons.check.on("click", async function () {
+            setPrintMonitorBusy(true);
+            pmFields.debug.prop("hidden", true);
+            pmFields.status.text("Saving settings, capturing frames, and waiting for AI response...");
+            try {
+                await savePrintMonitorSettings(true);
+                const resp = await fetch("/api/print-monitor/check", { method: "POST" });
+                const data = await resp.json().catch(() => ({}));
+                if (data.result) {
+                    renderPrintMonitorDebug(data.result);
+                }
+                if (resp.ok) {
+                    const result = data.result || {};
+                    const verdict = result.error ? `error - ${result.error}` : result.failing ? "failing" : "ok";
+                    pmFields.status.text(`Manual check result: ${verdict}${result.reason ? ` - ${result.reason}` : ""}`);
+                    flash_message("Print monitor check completed", "success");
+                } else {
+                    const msg = data.error || (data.result && data.result.error) || `HTTP ${resp.status}`;
+                    pmFields.status.text(`Manual check failed: ${msg}`);
+                    flash_message(`Print monitor check failed: ${msg}`, "danger");
+                }
+                await loadPrintMonitorSettings();
+            } catch (err) {
+                pmFields.status.text(`Manual check failed: ${err.message}`);
+                flash_message(`Print monitor check failed: ${err.message}`, "danger");
+            } finally {
+                setPrintMonitorBusy(false);
+            }
         });
 
         loadPrintMonitorSettings();
@@ -2745,7 +2938,7 @@ $(function () {
                     const cfg = data.smart_socket || {};
                     ssFields.enabled.prop("checked", Boolean(cfg.enabled));
                     ssFields.baseURL.val(cfg.base_url || "");
-                    ssFields.token.val(cfg.token || "");
+                    markSavedSecret(ssFields.token, Boolean(cfg.token), "token");
                     ssFields.switchEntity.val(cfg.switch_entity || "");
                     ssFields.powerEntity.val(cfg.power_entity || "");
                     ssFields.autoOff.prop("checked", Boolean(cfg.auto_off_on_fail));
@@ -2766,7 +2959,6 @@ $(function () {
                 smart_socket: {
                     enabled: ssFields.enabled.is(":checked"),
                     base_url: ssFields.baseURL.val().trim(),
-                    token: ssFields.token.val().trim(),
                     switch_entity: ssFields.switchEntity.val().trim(),
                     power_entity: ssFields.powerEntity.val().trim(),
                     auto_off_on_fail: ssFields.autoOff.is(":checked"),
@@ -2775,6 +2967,7 @@ $(function () {
                     power_saving_idle_off_sec: parseInt(ssFields.idleSec.val(), 10) || 1800,
                 },
             };
+            addSecretIfEntered(payload.smart_socket, "token", ssFields.token);
             try {
                 const resp = await fetch("/api/settings/smart-socket", {
                     method: "POST",
@@ -2911,7 +3104,7 @@ $(function () {
                     mqttFields.host.val(cfg.mqtt_host || "");
                     mqttFields.port.val(cfg.mqtt_port || 1883);
                     mqttFields.user.val(cfg.mqtt_username || "");
-                    mqttFields.password.val(cfg.mqtt_password || "");
+                    markSavedSecret(mqttFields.password, Boolean(cfg.mqtt_password), "password");
                     mqttFields.prefix.val(cfg.discovery_prefix || "homeassistant");
                 }
             } catch (err) {
@@ -2928,10 +3121,10 @@ $(function () {
                     mqtt_host: mqttFields.host.val().trim(),
                     mqtt_port: parseInt(mqttFields.port.val(), 10) || 1883,
                     mqtt_username: mqttFields.user.val().trim(),
-                    mqtt_password: mqttFields.password.val().trim(),
                     discovery_prefix: mqttFields.prefix.val().trim(),
                 }
             };
+            addSecretIfEntered(payload.home_assistant, "mqtt_password", mqttFields.password);
             try {
                 const resp = await fetch("/api/settings/mqtt", {
                     method: "POST",

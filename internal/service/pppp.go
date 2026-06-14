@@ -103,20 +103,21 @@ func defaultPPPPClientFactory(cfgMgr *config.Manager, printerIndex int, database
 			return nil, fmt.Errorf("ppppservice: parse p2p duid: %w", err)
 		}
 
-		// Always use broadcast LAN handshake (LanSearch on port 32108).
-		// The printer only responds to broadcast LanSearch, not unicast.
-		// After PunchPkt is received the client replies to the printer's
-		// source address; the DUID filter ensures we latch onto the right
-		// printer even when multiple AnkerMake devices are on the network.
-		if knownIP := printer.IPAddr; knownIP != "" {
-			slog.Info("ppppservice: known IP in config (broadcasting for handshake)", "ip", knownIP, "duid", logging.RedactID(printer.P2PDUID, 4))
-		} else if database != nil && printer.SN != "" {
+		// Prefer a directed broadcast derived from the printer subnet when we
+		// know the printer IP. On multi-homed hosts, 255.255.255.255 can leave
+		// through the wrong interface and never reach the printer VLAN.
+		knownIP := strings.TrimSpace(printer.IPAddr)
+		if knownIP == "" && database != nil && printer.SN != "" {
 			if cachedIP, dbErr := database.GetPrinterIP(printer.SN); dbErr == nil && cachedIP != "" {
-				slog.Info("ppppservice: known cached IP (broadcasting for handshake)", "ip", cachedIP, "sn", printer.SN)
+				knownIP = strings.TrimSpace(cachedIP)
+				slog.Info("ppppservice: known cached IP for handshake", "ip", knownIP, "sn", printer.SN)
 			}
 		}
+		if knownIP != "" {
+			slog.Info("ppppservice: known IP for handshake", "ip", knownIP, "duid", logging.RedactID(printer.P2PDUID, 4))
+		}
 
-		cli, err := ppppclient.OpenBroadcastLAN(duid)
+		cli, err := openHandshakePPPPClient(duid, knownIP)
 		if err != nil {
 			return nil, fmt.Errorf("ppppservice: open broadcast lan client: %w", err)
 		}
@@ -127,6 +128,62 @@ func defaultPPPPClientFactory(cfgMgr *config.Manager, printerIndex int, database
 		slog.Info("ppppservice: LanSearch broadcast sent, awaiting PunchPkt", "duid", logging.RedactID(printer.P2PDUID, 4))
 		return cli, nil
 	}
+}
+
+func openHandshakePPPPClient(duid protocol.Duid, knownIP string) (*ppppclient.Client, error) {
+	if ip := net.ParseIP(strings.TrimSpace(knownIP)); ip != nil {
+		if broadcastIP, ok := directedBroadcastForTarget(ip); ok {
+			slog.Info("ppppservice: using directed broadcast for handshake", "broadcast", broadcastIP.String(), "target", ip.String())
+			return ppppclient.OpenBroadcastLANTo(duid, broadcastIP)
+		}
+	}
+	return ppppclient.OpenBroadcastLAN(duid)
+}
+
+func directedBroadcastForTarget(target net.IP) (net.IP, bool) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil, false
+	}
+	return directedBroadcastForTargetWithInterfaces(target, ifaces, func(iface net.Interface) ([]net.Addr, error) {
+		return iface.Addrs()
+	})
+}
+
+func directedBroadcastForTargetWithInterfaces(target net.IP, ifaces []net.Interface, addrsFn func(net.Interface) ([]net.Addr, error)) (net.IP, bool) {
+	target = target.To4()
+	if target == nil {
+		return nil, false
+	}
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		addrs, err := addrsFn(iface)
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			ipnet, ok := addr.(*net.IPNet)
+			if !ok || ipnet == nil {
+				continue
+			}
+			localIP := ipnet.IP.To4()
+			mask := ipnet.Mask
+			if localIP == nil || len(mask) != net.IPv4len {
+				continue
+			}
+			if !ipnet.Contains(target) {
+				continue
+			}
+			broadcast := make(net.IP, net.IPv4len)
+			for i := 0; i < net.IPv4len; i++ {
+				broadcast[i] = (localIP[i] & mask[i]) | (^mask[i])
+			}
+			return broadcast, true
+		}
+	}
+	return nil, false
 }
 
 // RegisterXzyhHandler registers a handler for XZYH frames on the given channel.

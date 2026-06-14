@@ -38,6 +38,10 @@
                     </div>
                 </div>
 
+                {{if .VideoSupported}}
+                {{template "tabs/timelapse.html" .}}
+                {{end}}
+
             </div>
         </div>
     </div>

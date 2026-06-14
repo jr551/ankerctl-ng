@@ -297,6 +297,9 @@ func (h *Handler) SettingsMQTTUpdate(w http.ResponseWriter, r *http.Request) {
 		if cfg == nil {
 			return cfg, nil
 		}
+		if v, ok := haPayload["mqtt_password"].(string); ok && strings.TrimSpace(v) == "" {
+			delete(haPayload, "mqtt_password")
+		}
 		updated = cfg.HomeAssistant
 		mergeIntoStruct(&updated, haPayload)
 		cfg.HomeAssistant = updated
@@ -538,7 +541,7 @@ func normalizeCameraSource(val, fallback string) string {
 
 func normalizeExternalSettings(e model.ExternalCameraSettings) model.ExternalCameraSettings {
 	if e.RefreshSec < 1 {
-		e.RefreshSec = 3
+		e.RefreshSec = model.DefaultExternalCameraSettings().RefreshSec
 	}
 	if e.RefreshSec > 30 {
 		e.RefreshSec = 30
@@ -597,7 +600,7 @@ func mergeHomeAssistantCamera(dst *model.HomeAssistantCameraSettings, src map[st
 	}
 	if v, ok := src["token"]; ok {
 		var s string
-		if json.Unmarshal(v, &s) == nil {
+		if json.Unmarshal(v, &s) == nil && strings.TrimSpace(s) != "" {
 			dst.Token = strings.TrimSpace(s)
 		}
 	}

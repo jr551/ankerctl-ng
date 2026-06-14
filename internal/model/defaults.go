@@ -174,7 +174,7 @@ func DefaultCameraConfig() CameraConfig {
 
 // DefaultExternalCameraSettings returns default external camera settings.
 func DefaultExternalCameraSettings() ExternalCameraSettings {
-	return ExternalCameraSettings{RefreshSec: 3}
+	return ExternalCameraSettings{RefreshSec: 1}
 }
 
 // PrintMonitorConfig holds vision-model print failure detection settings.
@@ -196,8 +196,8 @@ func DefaultPrintMonitorConfig() PrintMonitorConfig {
 		IntervalSec:     300,
 		FrameCount:      5,
 		FrameSpacingSec: 1,
-		OpenRouterURL:   "https://openrouter.ai/api/v1/chat/completions",
-		Model:           "google/gemini-2.5-flash",
+		OpenRouterURL:   "https://api.kilo.ai/api/gateway",
+		Model:           "kilo-auto/balanced",
 		Prompt:          "You are monitoring a 3D printer. The first image is a contact sheet of sequential camera frames taken one second apart. A second image may be a slicer/G-code preview reference for the expected part. Reply with strict JSON only: {\"failing\": boolean, \"confidence\": number, \"reason\": string}. Set failing true only when the print appears to be failing, detached, spaghetti, blobbed, severely shifted, or otherwise visibly going wrong.",
 	}
 }

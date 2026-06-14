@@ -40,6 +40,9 @@ func (h *Handler) SettingsPrintMonitorUpdate(w http.ResponseWriter, r *http.Requ
 		if cfg == nil {
 			return cfg, nil
 		}
+		if v, ok := pmPayload["openrouter_key"].(string); ok && strings.TrimSpace(v) == "" {
+			delete(pmPayload, "openrouter_key")
+		}
 		updated = cfg.PrintMonitor
 		mergeIntoStruct(&updated, pmPayload)
 		cfg.PrintMonitor = updated
@@ -64,14 +67,18 @@ func (h *Handler) PrintMonitorStatus(w http.ResponseWriter, _ *http.Request) {
 	h.writeJSON(w, http.StatusOK, map[string]any{"available": true, "status": pm.Status()})
 }
 
-func (h *Handler) PrintMonitorCheck(w http.ResponseWriter, _ *http.Request) {
+func (h *Handler) PrintMonitorCheck(w http.ResponseWriter, r *http.Request) {
 	pm, ok := h.printMonitor()
 	if !ok {
 		h.writeError(w, http.StatusServiceUnavailable, "print monitor service unavailable")
 		return
 	}
-	pm.RunOnce()
-	h.writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued"})
+	result, started := pm.RunOnceResult(r.Context())
+	if !started {
+		h.writeJSON(w, http.StatusConflict, map[string]any{"status": "busy", "result": result})
+		return
+	}
+	h.writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "result": result})
 }
 
 func (h *Handler) SettingsSmartSocketGet(w http.ResponseWriter, _ *http.Request) {
@@ -103,6 +110,9 @@ func (h *Handler) SettingsSmartSocketUpdate(w http.ResponseWriter, r *http.Reque
 	err := h.cfg.Modify(func(cfg *model.Config) (*model.Config, error) {
 		if cfg == nil {
 			return cfg, nil
+		}
+		if v, ok := ssPayload["token"].(string); ok && strings.TrimSpace(v) == "" {
+			delete(ssPayload, "token")
 		}
 		updated = cfg.SmartSocket
 		mergeIntoStruct(&updated, ssPayload)

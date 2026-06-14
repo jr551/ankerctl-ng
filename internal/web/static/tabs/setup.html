@@ -63,6 +63,13 @@
                             <i class="bi-share px-1"></i> Home Assistant
                         </button>
                     </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="setup-instructions-tab" data-bs-toggle="pill"
+                            data-bs-target="#setup-instructions-pane" type="button" role="tab"
+                            aria-controls="setup-instructions-pane" aria-selected="false">
+                            <i class="bi-list-check px-1"></i> Instructions
+                        </button>
+                    </li>
                 </ul>
 
                 <!-- Tab content -->
@@ -478,10 +485,10 @@
 
                                     <div class="row g-3">
                                         <div class="col-lg-7">
-                                            <label class="form-label" for="apprise-server-url">Apprise server
-                                                URL</label>
+                                            <label class="form-label" for="apprise-server-url">Apprise server or JSON
+                                                webhook URL</label>
                                             <input class="form-control" type="text" id="apprise-server-url"
-                                                placeholder="http://apprise:8000" />
+                                                placeholder="jsons://hermes.example.com/hookincoming/printer" />
                                         </div>
                                         <div class="col-lg-5 col-md-6">
                                             <label class="form-label" for="apprise-tag">Tag (filter)</label>
@@ -497,10 +504,57 @@
                                         <div class="row g-3 mt-1">
                                             <div class="col-lg-4 col-md-6">
                                                 <label class="form-label" for="apprise-key">Key</label>
-                                                <input class="form-control" type="text" id="apprise-key"
-                                                    placeholder="ankerctl" />
+                                                <input class="form-control" type="password" id="apprise-key"
+                                                    placeholder="Saved key - leave blank to keep" autocomplete="off" />
                                                 <div class="form-text">Used for <code>/notify/&lt;key&gt;</code> on the
                                                     Apprise server.</div>
+                                            </div>
+                                        </div>
+                                    </details>
+
+                                    <details class="mt-2">
+                                        <summary class="text-muted small">SMTP helper</summary>
+                                        <div class="row g-3 mt-1 align-items-end">
+                                            <div class="col-md-4">
+                                                <label class="form-label" for="apprise-smtp-host">SMTP host</label>
+                                                <input class="form-control" type="text" id="apprise-smtp-host"
+                                                    placeholder="smtp.example.com" autocomplete="off" />
+                                            </div>
+                                            <div class="col-md-2">
+                                                <label class="form-label" for="apprise-smtp-port">Port</label>
+                                                <input class="form-control" type="number" id="apprise-smtp-port"
+                                                    placeholder="587" min="1" max="65535" />
+                                            </div>
+                                            <div class="col-md-3">
+                                                <label class="form-label" for="apprise-smtp-user">Username</label>
+                                                <input class="form-control" type="text" id="apprise-smtp-user"
+                                                    autocomplete="off" />
+                                            </div>
+                                            <div class="col-md-3">
+                                                <label class="form-label" for="apprise-smtp-password">Password</label>
+                                                <input class="form-control" type="password" id="apprise-smtp-password"
+                                                    autocomplete="off" />
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label" for="apprise-smtp-from">From</label>
+                                                <input class="form-control" type="email" id="apprise-smtp-from"
+                                                    placeholder="printer@example.com" autocomplete="off" />
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label" for="apprise-smtp-to">To</label>
+                                                <input class="form-control" type="email" id="apprise-smtp-to"
+                                                    placeholder="you@example.com" autocomplete="off" />
+                                            </div>
+                                            <div class="col-md-2">
+                                                <div class="form-check form-switch">
+                                                    <input class="form-check-input" type="checkbox" role="switch"
+                                                        id="apprise-smtp-secure" checked />
+                                                    <label class="form-check-label" for="apprise-smtp-secure">TLS</label>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-2">
+                                                <button class="btn btn-secondary w-100" type="button"
+                                                    id="apprise-smtp-build">Use SMTP</button>
                                             </div>
                                         </div>
                                     </details>
@@ -600,8 +654,9 @@
                                             test</button>
                                     </div>
                                     <div class="form-text">
-                                        Apprise posts to <code>/notify/&lt;key&gt;</code>. Leave tag empty to notify all
-                                        URLs under the key.
+                                        Use an Apprise API server plus key, paste a direct <code>jsons://</code>
+                                        webhook, or use <code>mailto://</code>/<code>mailtos://</code> for SMTP.
+                                        Leave tag empty to notify all URLs under the key.
                                     </div>
                                     <div class="form-text">Environment variables (<code>APPRISE_*</code>) override these
                                         values.</div>
@@ -669,15 +724,15 @@
                                                 <div class="col-md-6">
                                                     <label class="form-label" for="camera-refresh">Refresh seconds</label>
                                                     <input class="form-control" type="number" min="1" max="30"
-                                                        id="camera-refresh" value="3" />
+                                                        id="camera-refresh" value="1" />
                                                 </div>
                                             </div>
-                                            <div>
+                                            <div class="camera-direct-url-field">
                                                 <label class="form-label" for="camera-stream-url">Stream URL</label>
                                                 <input class="form-control" type="url" id="camera-stream-url"
                                                     placeholder="http://camera.local/stream" />
                                             </div>
-                                            <div>
+                                            <div class="camera-direct-url-field">
                                                 <label class="form-label" for="camera-snapshot-url">Snapshot URL</label>
                                                 <input class="form-control" type="url" id="camera-snapshot-url"
                                                     placeholder="http://camera.local/snapshot.jpg" />
@@ -696,7 +751,7 @@
                                             <div>
                                                 <label class="form-label" for="ha-camera-token">Home Assistant token</label>
                                                 <input class="form-control" type="password" id="ha-camera-token"
-                                                    autocomplete="off" />
+                                                    placeholder="Saved token - leave blank to keep" autocomplete="off" />
                                             </div>
                                             <div>
                                                 <label class="form-label" for="ha-camera-entity">Camera entity</label>
@@ -726,9 +781,9 @@
                                             <div class="row g-3">
                                                 <div class="col-md-4">
                                                     <label class="form-label" for="print-monitor-interval">Interval
-                                                        seconds</label>
-                                                    <input class="form-control" type="number" min="30"
-                                                        id="print-monitor-interval" value="300" />
+                                                        minutes</label>
+                                                    <input class="form-control" type="number" min="1"
+                                                        id="print-monitor-interval" value="5" />
                                                 </div>
                                                 <div class="col-md-4">
                                                     <label class="form-label" for="print-monitor-frame-count">Frames</label>
@@ -743,14 +798,19 @@
                                                 </div>
                                             </div>
                                             <div>
-                                                <label class="form-label" for="print-monitor-model">OpenRouter model</label>
-                                                <input class="form-control" type="text" id="print-monitor-model"
-                                                    placeholder="google/gemini-2.5-flash" />
+                                                <label class="form-label" for="print-monitor-url">OpenAI-compatible URL</label>
+                                                <input class="form-control" type="url" id="print-monitor-url"
+                                                    placeholder="https://api.kilo.ai/api/gateway" />
                                             </div>
                                             <div>
-                                                <label class="form-label" for="print-monitor-key">OpenRouter API key</label>
+                                                <label class="form-label" for="print-monitor-model">Model</label>
+                                                <input class="form-control" type="text" id="print-monitor-model"
+                                                    placeholder="kilo-auto/balanced" />
+                                            </div>
+                                            <div>
+                                                <label class="form-label" for="print-monitor-key">API key</label>
                                                 <input class="form-control" type="password" id="print-monitor-key"
-                                                    autocomplete="off" />
+                                                    placeholder="Saved key - leave blank to keep" autocomplete="off" />
                                             </div>
                                             <div>
                                                 <label class="form-label" for="print-monitor-prompt">Prompt</label>
@@ -763,6 +823,21 @@
                                                     id="print-monitor-check">Run check</button>
                                             </div>
                                             <div class="small text-body-secondary" id="print-monitor-status"></div>
+                                            <div class="print-monitor-debug border rounded p-2" id="print-monitor-debug" hidden>
+                                                <div class="row g-2">
+                                                    <div class="col-lg-6">
+                                                        <div class="small text-body-secondary mb-1">Image sent</div>
+                                                        <img class="w-100 rounded border" id="print-monitor-debug-image"
+                                                            alt="AI monitor contact sheet preview" />
+                                                    </div>
+                                                    <div class="col-lg-6">
+                                                        <div class="small text-body-secondary mb-1">Request</div>
+                                                        <pre class="small mb-2 print-monitor-debug-pre" id="print-monitor-debug-request"></pre>
+                                                        <div class="small text-body-secondary mb-1">Response</div>
+                                                        <pre class="small mb-0 print-monitor-debug-pre" id="print-monitor-debug-response"></pre>
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </form>
                                     </div>
                                 </div>
@@ -783,7 +858,7 @@
                                             <div>
                                                 <label class="form-label" for="smart-socket-token">Home Assistant token</label>
                                                 <input class="form-control" type="password" id="smart-socket-token"
-                                                    autocomplete="off" />
+                                                    placeholder="Saved token - leave blank to keep" autocomplete="off" />
                                             </div>
                                             <div class="row g-3">
                                                 <div class="col-md-6">
@@ -922,7 +997,7 @@
                                         <div class="col-md-6">
                                             <label class="form-label" for="mqtt-password">Password</label>
                                             <input class="form-control" type="password" id="mqtt-password"
-                                                autocomplete="off" />
+                                                placeholder="Saved password - leave blank to keep" autocomplete="off" />
                                         </div>
                                     </div>
                                     <div class="row g-3">
@@ -940,6 +1015,8 @@
                             </div>
                         </div>
                     </div>
+
+                    {{template "tabs/instructions.html" .}}
 
                 </div>
             </div>

@@ -8,6 +8,38 @@
     --ared2: #d40000;
 }
 
+body.print-active-glow {
+    position: relative;
+}
+
+body.print-active-glow::before {
+    animation: print-active-page-glow 4.8s ease-in-out infinite;
+    background:
+        radial-gradient(circle at 18% 12%, rgba(32, 201, 151, 0.20), transparent 36%),
+        radial-gradient(circle at 82% 18%, rgba(136, 243, 135, 0.16), transparent 34%),
+        linear-gradient(180deg, rgba(25, 135, 84, 0.10), transparent 46%);
+    content: "";
+    inset: 0;
+    pointer-events: none;
+    position: fixed;
+    z-index: 0;
+}
+
+body.print-active-glow > * {
+    position: relative;
+    z-index: 1;
+}
+
+@keyframes print-active-page-glow {
+    0%,
+    100% {
+        opacity: 0.32;
+    }
+    50% {
+        opacity: 0.58;
+    }
+}
+
 .nav-pills {
     --bs-nav-link-color: var(--agreen2);
 
@@ -265,6 +297,18 @@ code {
 .printer-power-tile.status-muted {
     background: rgba(108, 117, 125, 0.12);
     border-left-color: #6c757d;
+}
+
+.print-monitor-debug-pre {
+    background: var(--bs-tertiary-bg);
+    border: 1px solid var(--bs-border-color);
+    border-radius: var(--bs-border-radius);
+    color: var(--bs-body-color);
+    max-height: 220px;
+    overflow: auto;
+    padding: 0.5rem;
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 
 @media (max-width: 991.98px) {
