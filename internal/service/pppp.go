@@ -125,19 +125,25 @@ func defaultPPPPClientFactory(cfgMgr *config.Manager, printerIndex int, database
 			_ = cli.Close()
 			return nil, fmt.Errorf("ppppservice: connect lan search: %w", err)
 		}
-		slog.Info("ppppservice: LanSearch broadcast sent, awaiting PunchPkt", "duid", logging.RedactID(printer.P2PDUID, 4))
+		slog.Info("ppppservice: LanSearch sent, awaiting PunchPkt", "duid", logging.RedactID(printer.P2PDUID, 4))
 		return cli, nil
 	}
 }
 
 func openHandshakePPPPClient(duid protocol.Duid, knownIP string) (*ppppclient.Client, error) {
-	if ip := net.ParseIP(strings.TrimSpace(knownIP)); ip != nil {
-		if broadcastIP, ok := directedBroadcastForTarget(ip); ok {
-			slog.Info("ppppservice: using directed broadcast for handshake", "broadcast", broadcastIP.String(), "target", ip.String())
-			return ppppclient.OpenBroadcastLANTo(duid, broadcastIP)
-		}
+	if ip, ok := handshakeTargetForKnownIP(knownIP); ok {
+		slog.Info("ppppservice: using known printer IP for unicast handshake", "target", ip.String())
+		return ppppclient.OpenBroadcastLANTo(duid, ip)
 	}
 	return ppppclient.OpenBroadcastLAN(duid)
+}
+
+func handshakeTargetForKnownIP(knownIP string) (net.IP, bool) {
+	ip := net.ParseIP(strings.TrimSpace(knownIP))
+	if !util.IsValidPrinterIP(ip) {
+		return nil, false
+	}
+	return ip.To4(), true
 }
 
 func directedBroadcastForTarget(target net.IP) (net.IP, bool) {
@@ -297,6 +303,8 @@ func (s *PPPPService) waitConnected(ctx context.Context) (ppppConn, error) {
 	}
 }
 
+var aabbReplyTimeout = 15 * time.Second
+
 // Upload implements PPPPFileUploader interface.
 func (s *PPPPService) Upload(ctx context.Context, info UploadInfo, payload []byte, progress func(sent, total int64)) error {
 	cli, err := s.waitConnected(ctx)
@@ -351,7 +359,7 @@ func (s *PPPPService) Upload(ctx context.Context, info UploadInfo, payload []byt
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(15 * time.Second):
+		case <-time.After(aabbReplyTimeout):
 			return errors.New("timeout waiting for aabb reply")
 		case err := <-replyCh:
 			return err
@@ -528,11 +536,8 @@ func (s *PPPPService) Upload(ctx context.Context, info UploadInfo, payload []byt
 		return fmt.Errorf("write aabb end: %w", err)
 	}
 
-	// END ACK is best-effort: the printer has already queued the job and starts
-	// preheating regardless. If the ACK is lost (UDP) or the printer does not
-	// send one, we log a warning but treat the upload as successful.
 	if err := waitReply(); err != nil {
-		s.log.Warn("ppppservice: no END ACK from printer (print job already accepted)", "err", err)
+		return fmt.Errorf("aabb end reply: %w", err)
 	}
 	return nil
 }
@@ -591,7 +596,8 @@ func (s *PPPPService) WorkerRun(ctx context.Context) error {
 			if cli.State() != ppppclient.StateConnected {
 				// Not yet connected — wait for PunchPkt handshake to complete.
 				// Python waits up to 10 s for StateConnected; we do the same.
-				if time.Now().After(connectDeadline) {
+				now := time.Now()
+				if now.After(connectDeadline) {
 					s.log.Warn("ppppservice: connection timeout, restarting")
 					return ErrServiceRestartSignal
 				}

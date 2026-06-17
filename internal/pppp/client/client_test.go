@@ -205,6 +205,46 @@ func TestLANHandshakePunchPkt(t *testing.T) {
 	}
 }
 
+func TestRunRetriesLanSearchWhileConnecting(t *testing.T) {
+	oldInterval := lanSearchRetryInterval
+	lanSearchRetryInterval = 30 * time.Millisecond
+	defer func() { lanSearchRetryInterval = oldInterval }()
+
+	duid := protocol.Duid{Prefix: "EUPRAKM", Serial: 100001, Check: "ABCDE"}
+	printerAddr := &net.UDPAddr{IP: net.IPv4(192, 168, 1, 100), Port: PPPPLANPort}
+	mock := &mockUDPConn{}
+	cli := NewClient(mock, duid, printerAddr)
+
+	if err := cli.ConnectLANSearch(); err != nil {
+		t.Fatalf("ConnectLANSearch: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Millisecond)
+	defer cancel()
+	if err := cli.Run(ctx); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	mock.mu.Lock()
+	writes := make([]queuedRead, len(mock.writes))
+	copy(writes, mock.writes)
+	mock.mu.Unlock()
+
+	lanSearchWrites := 0
+	for _, write := range writes {
+		decoded, err := protocol.DecodePacket(write.data)
+		if err != nil {
+			t.Fatalf("decode write: %v", err)
+		}
+		if _, ok := decoded.(protocol.LanSearch); ok {
+			lanSearchWrites++
+		}
+	}
+	if lanSearchWrites < 2 {
+		t.Fatalf("LanSearch writes = %d, want at least 2", lanSearchWrites)
+	}
+}
+
 // TestProcessPunchPktIgnoredWhenNotConnecting verifies that PunchPkt is
 // ignored (no outbound packets) when the client is not Connecting.
 func TestProcessPunchPktIgnoredWhenNotConnecting(t *testing.T) {

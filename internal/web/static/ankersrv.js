@@ -371,6 +371,11 @@ $(function () {
     let uploadName = "";
     let uploadSize = 0;
     let uploadResetTimer = null;
+    let uploadActive = false;
+
+    function setUploadActive(active) {
+        uploadActive = !!active;
+    }
 
     function setUploadProgress(percent) {
         if (!uploadBar.length) {
@@ -397,6 +402,361 @@ $(function () {
         uploadSize = 0;
     }
 
+    const stateFields = {
+        phase: document.getElementById("printer-state-phase"),
+        phaseDetail: document.getElementById("printer-state-detail"),
+        upload: document.getElementById("printer-state-upload"),
+        uploadDetail: document.getElementById("printer-state-upload-detail"),
+        nozzle: document.getElementById("printer-state-nozzle"),
+        nozzleDetail: document.getElementById("printer-state-nozzle-detail"),
+        bed: document.getElementById("printer-state-bed"),
+        bedDetail: document.getElementById("printer-state-bed-detail"),
+        feed: document.getElementById("printer-debug-feed"),
+    };
+    const dashboardState = {
+        phase: "Idle",
+        phaseDetail: "Waiting for upload",
+        phaseTone: "muted",
+        upload: "Idle",
+        uploadDetail: "No active transfer",
+        uploadTone: "muted",
+        nozzleCurrent: null,
+        nozzleTarget: null,
+        bedCurrent: null,
+        bedTarget: null,
+    };
+    let uploadDebugBucket = -1;
+    let uploadStateHoldUntil = 0;
+    let lastDashboardPrintState = "";
+    let lastDashboardProgressBucket = -1;
+    let lastDashboardTargetText = "";
+    let lastDashboardPPPPStatus = "";
+    let lastDashboardCameraStatus = "";
+
+    function setElementText(element, text) {
+        if (element) {
+            element.textContent = text;
+        }
+    }
+
+    function stateTileFor(element) {
+        return element ? element.closest(".state-tile") : null;
+    }
+
+    function setStateTileStatus(tile, status) {
+        if (!tile) {
+            return;
+        }
+        tile.classList.remove("status-good", "status-info", "status-warn", "status-bad", "status-muted");
+        if (status) {
+            tile.classList.add(`status-${status}`);
+        }
+    }
+
+    function normalizeStateNumber(value) {
+        const numeric = Number(value);
+        return Number.isFinite(numeric) ? numeric : null;
+    }
+
+    function normalizeStateTemp(value) {
+        const numeric = normalizeStateNumber(value);
+        return numeric === null ? null : Math.round(numeric);
+    }
+
+    function formatStateTemp(current, target) {
+        const currentTemp = normalizeStateTemp(current);
+        const targetTemp = normalizeStateTemp(target);
+        const currentText = currentTemp === null ? "--" : `${currentTemp}°C`;
+        const targetText = targetTemp === null ? "--" : `${targetTemp}°C`;
+        return `${currentText} -> ${targetText}`;
+    }
+
+    function formatStateTempDetail(target) {
+        const targetTemp = normalizeStateTemp(target);
+        if (targetTemp === null) {
+            return "current -> target unknown";
+        }
+        if (targetTemp <= 0) {
+            return "current -> target off";
+        }
+        return `current -> target ${targetTemp}°C`;
+    }
+
+    function tempTileTone(current, target) {
+        const currentTemp = normalizeStateTemp(current);
+        const targetTemp = normalizeStateTemp(target);
+        if (targetTemp !== null && targetTemp > 0) {
+            if (currentTemp === null) {
+                return "warn";
+            }
+            return Math.abs(currentTemp - targetTemp) <= 3 ? "good" : "warn";
+        }
+        if (currentTemp !== null && currentTemp > 45) {
+            return "info";
+        }
+        return "muted";
+    }
+
+    function renderDashboardState() {
+        if (!stateFields.phase) {
+            return;
+        }
+        setElementText(stateFields.phase, dashboardState.phase);
+        setElementText(stateFields.phaseDetail, dashboardState.phaseDetail);
+        setElementText(stateFields.upload, dashboardState.upload);
+        setElementText(stateFields.uploadDetail, dashboardState.uploadDetail);
+        setElementText(stateFields.nozzle, formatStateTemp(dashboardState.nozzleCurrent, dashboardState.nozzleTarget));
+        setElementText(stateFields.nozzleDetail, formatStateTempDetail(dashboardState.nozzleTarget));
+        setElementText(stateFields.bed, formatStateTemp(dashboardState.bedCurrent, dashboardState.bedTarget));
+        setElementText(stateFields.bedDetail, formatStateTempDetail(dashboardState.bedTarget));
+
+        setStateTileStatus(stateTileFor(stateFields.phase), dashboardState.phaseTone);
+        setStateTileStatus(stateTileFor(stateFields.upload), dashboardState.uploadTone);
+        setStateTileStatus(stateTileFor(stateFields.nozzle), tempTileTone(dashboardState.nozzleCurrent, dashboardState.nozzleTarget));
+        setStateTileStatus(stateTileFor(stateFields.bed), tempTileTone(dashboardState.bedCurrent, dashboardState.bedTarget));
+    }
+
+    function dashboardTimestamp() {
+        const now = new Date();
+        return `${now.getHours().toString().padStart(2, "0")}:` +
+            `${now.getMinutes().toString().padStart(2, "0")}:` +
+            `${now.getSeconds().toString().padStart(2, "0")}`;
+    }
+
+    function addDebugFeed(message, tone = "info") {
+        if (!stateFields.feed || !message) {
+            return;
+        }
+        const line = document.createElement("div");
+        line.className = `state-debug-line ${tone}`;
+        line.textContent = `${dashboardTimestamp()} ${message}`;
+        const placeholder = stateFields.feed.querySelector(".state-debug-line.muted");
+        if (placeholder && placeholder.textContent === "Waiting for live events...") {
+            placeholder.remove();
+        }
+        stateFields.feed.prepend(line);
+        while (stateFields.feed.children.length > 12) {
+            stateFields.feed.removeChild(stateFields.feed.lastElementChild);
+        }
+    }
+
+    function updateDashboardState(patch, debugMessage, tone = "info") {
+        Object.assign(dashboardState, patch || {});
+        renderDashboardState();
+        if (debugMessage) {
+            addDebugFeed(debugMessage, tone);
+        }
+    }
+
+    function shortTempPair(current, target) {
+        const currentTemp = normalizeStateTemp(current);
+        const targetTemp = normalizeStateTemp(target);
+        const currentText = currentTemp === null ? "--" : `${currentTemp}`;
+        const targetText = targetTemp === null ? "--" : `${targetTemp}`;
+        return `${currentText}->${targetText}C`;
+    }
+
+    function uploadDetailText(name, size) {
+        const safeName = name || "file";
+        const sizeText = size ? ` (${formatBytes(size)})` : "";
+        return `${safeName}${sizeText}`;
+    }
+
+    function startDashboardUpload(name, size) {
+        uploadName = name || uploadName;
+        uploadSize = size || uploadSize;
+        uploadDebugBucket = -1;
+        uploadStateHoldUntil = 0;
+        updateDashboardState({
+            phase: "Uploading",
+            phaseDetail: "Sending file to printer",
+            phaseTone: "info",
+            upload: "Starting",
+            uploadDetail: uploadDetailText(uploadName, uploadSize),
+            uploadTone: "info",
+        }, `upload start: ${uploadDetailText(uploadName, uploadSize)}`, "info");
+    }
+
+    function progressDashboardUpload(percent, sent, total) {
+        const pct = Math.max(0, Math.min(100, Number(percent) || 0));
+        const detail = total ? `${formatBytes(sent || 0)} / ${formatBytes(total)}` : uploadDetailText(uploadName, uploadSize);
+        let message = "";
+        const bucket = pct === 100 ? 100 : Math.floor(pct / 25) * 25;
+        if (bucket !== uploadDebugBucket) {
+            uploadDebugBucket = bucket;
+            message = `upload ${pct}%: ${uploadName || "file"}`;
+        }
+        updateDashboardState({
+            phase: "Uploading",
+            phaseDetail: "Transfer in progress",
+            phaseTone: "info",
+            upload: `${pct}%`,
+            uploadDetail: detail,
+            uploadTone: "info",
+        }, message, "info");
+    }
+
+    function completeDashboardUpload(name, size, currentPrint) {
+        uploadStateHoldUntil = Date.now() + 45000;
+        const printName = (currentPrint || "").trim();
+        updateDashboardState({
+            phase: printName ? "Printing" : "Upload accepted",
+            phaseDetail: printName ? `Printing ${printName}` : "Waiting for printer heat/start",
+            phaseTone: printName ? "good" : "warn",
+            upload: "Accepted",
+            uploadDetail: printName ? `Started ${printName}` : uploadDetailText(name || uploadName, size || uploadSize),
+            uploadTone: "good",
+        }, `upload done: ${uploadDetailText(name || uploadName, size || uploadSize)}`, "good");
+    }
+
+    function failDashboardUpload(errorText) {
+        uploadStateHoldUntil = 0;
+        updateDashboardState({
+            phase: "Upload failed",
+            phaseDetail: errorText || "Printer did not accept the transfer",
+            phaseTone: "bad",
+            upload: "Failed",
+            uploadDetail: errorText || "Upload failed",
+            uploadTone: "bad",
+        }, `upload failed: ${errorText || "unknown error"}`, "bad");
+    }
+
+    function noteDashboardTargetChange() {
+        const targetText = `target nozzle ${shortTempPair(dashboardState.nozzleCurrent, dashboardState.nozzleTarget)} ` +
+            `bed ${shortTempPair(dashboardState.bedCurrent, dashboardState.bedTarget)}`;
+        if (targetText !== lastDashboardTargetText) {
+            lastDashboardTargetText = targetText;
+            addDebugFeed(targetText, "info");
+        }
+    }
+
+    function updateDashboardPrintPhase(phase, detail, tone, sourceKey, debugLabel) {
+        if (phase === "Idle" && Date.now() < uploadStateHoldUntil &&
+                (dashboardState.phase === "Upload accepted" || dashboardState.phase === "Preparing")) {
+            return;
+        }
+        if (phase === "Printing" || phase === "Preparing" || phase === "Paused") {
+            uploadStateHoldUntil = 0;
+        }
+        const debugKey = `${sourceKey}:${phase}:${detail}`;
+        const message = debugKey !== lastDashboardPrintState ? debugLabel : "";
+        lastDashboardPrintState = debugKey;
+        updateDashboardState({
+            phase,
+            phaseDetail: detail,
+            phaseTone: tone,
+        }, message, tone);
+    }
+
+    function updateDashboardPrintStateFromMqtt(rawState) {
+        const state = Number(rawState);
+        if (state === 1) {
+            const printName = ($("#print-name").text() || "").trim();
+            updateDashboardPrintPhase("Printing", printName ? `Printing ${printName}` : "Active print", "good", `mqtt-${state}`, "mqtt state: printing");
+        } else if (state === 2) {
+            updateDashboardPrintPhase("Paused", "Print is paused", "warn", `mqtt-${state}`, "mqtt state: paused");
+        } else if (state === 8) {
+            updateDashboardPrintPhase("Preparing", "Printer is calibrating or preparing", "info", `mqtt-${state}`, "mqtt state: preparing");
+        } else {
+            updateDashboardPrintPhase("Idle", "No active print", "muted", `mqtt-${state}`, "mqtt state: idle");
+        }
+    }
+
+    function updateDashboardProgress(progress, remainingSeconds) {
+        const pct = Math.max(0, Math.min(100, Number(progress) || 0));
+        if (pct <= 0 && dashboardState.phase !== "Printing") {
+            return;
+        }
+        const detail = Number.isFinite(Number(remainingSeconds))
+            ? `Progress ${pct}%, ${getTime(Number(remainingSeconds))} remaining`
+            : `Progress ${pct}%`;
+        const bucket = Math.floor(pct / 10) * 10;
+        const message = bucket !== lastDashboardProgressBucket && pct > 0 ? `print progress: ${pct}%` : "";
+        if (message) {
+            lastDashboardProgressBucket = bucket;
+        }
+        updateDashboardPrintPhase("Printing", detail, "good", `progress-${bucket}`, message);
+    }
+
+    function applyRuntimeState(data, fromTick = false) {
+        if (!data || typeof data !== "object") {
+            return;
+        }
+        const temperature = data.temperature || {};
+        updateDashboardState({
+            nozzleCurrent: normalizeStateTemp(temperature.nozzle),
+            nozzleTarget: normalizeStateTemp(temperature.nozzle_target),
+            bedCurrent: normalizeStateTemp(temperature.bed),
+            bedTarget: normalizeStateTemp(temperature.bed_target),
+        });
+
+        const print = data.print || {};
+        const progress = print.last_progress !== null && print.last_progress !== undefined
+            ? getPercentage(print.last_progress)
+            : null;
+        const filename = print.last_filename || "";
+        const printState = print.print_state || "unknown";
+
+        if (printState === "printing") {
+            const detail = progress !== null
+                ? `Progress ${progress}%${filename ? `, ${filename}` : ""}`
+                : (filename ? `Printing ${filename}` : "Active print");
+            updateDashboardPrintPhase("Printing", detail, "good", `runtime-${printState}-${progress}`, "");
+        } else if (printState === "paused") {
+            updateDashboardPrintPhase("Paused", print.pause_reason_label || "Print is paused", "warn", `runtime-${printState}`, "");
+        } else if (printState === "pre_print" || printState === "preparing") {
+            updateDashboardPrintPhase("Preparing", filename ? `Preparing ${filename}` : "Heating/homing before print", "info", `runtime-${printState}`, "");
+        } else if (printState === "idle") {
+            updateDashboardPrintPhase("Idle", "No active print", "muted", `runtime-${printState}`, "");
+        }
+
+        noteDashboardTargetChange();
+        if (fromTick) {
+            const pctText = progress !== null ? ` ${progress}%` : "";
+            addDebugFeed(`tick: ${printState}${pctText} nozzle ${shortTempPair(temperature.nozzle, temperature.nozzle_target)} bed ${shortTempPair(temperature.bed, temperature.bed_target)}`, "muted");
+        }
+    }
+
+    async function loadDashboardRuntimeState() {
+        if (!stateFields.phase) {
+            return;
+        }
+        try {
+            const resp = await fetch(`/api/printer/runtime-state?t=${Date.now()}`, { cache: "no-store" });
+            if (!resp.ok) {
+                addDebugFeed(`tick failed: runtime HTTP ${resp.status}`, "warn");
+                return;
+            }
+            applyRuntimeState(await resp.json(), true);
+        } catch (err) {
+            addDebugFeed(`tick failed: ${err.message || err}`, "warn");
+        }
+    }
+
+    function notePPPPStatus(status) {
+        if (!status || status === lastDashboardPPPPStatus) {
+            return;
+        }
+        lastDashboardPPPPStatus = status;
+        const tone = status === "connected" ? "good" : (status === "dormant" ? "muted" : "bad");
+        addDebugFeed(`pppp: ${status}`, tone);
+    }
+
+    function noteCameraStatus(status, tone) {
+        if (!status || status === lastDashboardCameraStatus) {
+            return;
+        }
+        lastDashboardCameraStatus = status;
+        addDebugFeed(`camera: ${status}`, tone);
+    }
+
+    renderDashboardState();
+    if (stateFields.phase) {
+        addDebugFeed("dashboard ready", "muted");
+        loadDashboardRuntimeState();
+        window.setInterval(loadDashboardRuntimeState, 5000);
+    }
+
     /**
      * Auto web sockets
      */
@@ -418,6 +778,7 @@ $(function () {
             if (data.commandType == 1000) {
                 // Printer state machine: value=0 idle, value=1 printing, value=2 paused
                 _updatePrintControlButtons(data.value);
+                updateDashboardPrintStateFromMqtt(data.value);
                 if (data.value === PRINT_STATE.IDLE) {
                     if (_preparing) {
                         _preparing = false;
@@ -455,6 +816,7 @@ $(function () {
                         document.title = progress > 0 && progress < 100
                             ? `\u{1F5A8}\uFE0F ${progress}% | ankerctl-ng`
                             : "ankerctl-ng";
+                        updateDashboardProgress(progress, data.time);
                     }
                 }
             } else if (data.commandType == 1003) {
@@ -470,6 +832,12 @@ $(function () {
                 }
                 updateTemperatureVisual($("#nozzle-temp"), current, target, "nozzle");
                 pushTempData("nozzle", getTemp(data.currentTemp), getTemp(data.targetTemp));
+                const tempPatch = { nozzleCurrent: current };
+                if (data.hasOwnProperty('targetTemp')) {
+                    tempPatch.nozzleTarget = target;
+                }
+                updateDashboardState(tempPatch);
+                noteDashboardTargetChange();
             } else if (data.commandType == 1004) {
                 // Returns Bed Temp
                 const current = getTempRounded(data.currentTemp);
@@ -483,6 +851,12 @@ $(function () {
                 }
                 updateTemperatureVisual($("#bed-temp"), current, target, "bed");
                 pushTempData("bed", getTemp(data.currentTemp), getTemp(data.targetTemp));
+                const tempPatch = { bedCurrent: current };
+                if (data.hasOwnProperty('targetTemp')) {
+                    tempPatch.bedTarget = target;
+                }
+                updateDashboardState(tempPatch);
+                noteDashboardTargetChange();
             } else if (data.commandType == 1006) {
                 // Returns Print Speed
                 const X = getSpeedFactor(data.value);
@@ -524,6 +898,14 @@ $(function () {
                     .addClass("progress-bar-striped progress-bar-animated");
                 $("#progress").text("Preparing…");
                 document.title = "ankerctl-ng";
+                updateDashboardState({
+                    phase: "Preparing",
+                    phaseDetail: baseName ? `Preparing ${baseName}` : "Printer acknowledged start",
+                    phaseTone: "info",
+                    upload: "Print starting",
+                    uploadDetail: baseName || "Printer acknowledged start",
+                    uploadTone: "good",
+                }, baseName ? `mqtt print start: ${baseName}` : "mqtt print start", "good");
             } else if (data.commandType == 1052) {
                 // Returns Layer Info — layer display only; progress comes from ct=1001
                 const layer = `${data.real_print_layer} / ${data.total_layer}`;
@@ -553,6 +935,15 @@ $(function () {
             $("#print-layer").text("0 / 0");
             document.title = "ankerctl-ng";
             _updatePrintControlButtons(PRINT_STATE.IDLE);
+            updateDashboardState({
+                phase: "MQTT disconnected",
+                phaseDetail: "Waiting for printer telemetry",
+                phaseTone: "bad",
+                nozzleCurrent: null,
+                nozzleTarget: null,
+                bedCurrent: null,
+                bedTarget: null,
+            }, "mqtt: disconnected", "bad");
         },
     });
 
@@ -724,24 +1115,41 @@ $(function () {
         const externalCameraFrame = externalCameraPlayer.closest(".camera-frame-shell");
         const frameSrc = externalCameraPlayer.dataset.frameSrc || "/api/camera/frame";
         const refreshSec = Math.max(1, parseInt(externalCameraPlayer.dataset.refreshSec || "3", 10) || 3);
+        const cameraFrameTimeoutMs = Math.max(10000, (refreshSec * 1000) + 4000);
         let cameraRefreshInFlight = false;
+        let cameraRefreshTimer = null;
+        let cameraErrorCount = 0;
+        let refreshExternalCamera;
 
         const frameURL = () => `${frameSrc}${frameSrc.includes("?") ? "&" : "?"}t=${Date.now()}`;
+        const cameraBackoffMs = () => Math.min(30000, (refreshSec * 1000) * Math.pow(2, Math.min(cameraErrorCount, 3)));
+        const scheduleExternalCameraRefresh = (delayMs) => {
+            if (cameraRefreshTimer) {
+                window.clearTimeout(cameraRefreshTimer);
+            }
+            cameraRefreshTimer = window.setTimeout(() => {
+                refreshExternalCamera();
+            }, delayMs);
+        };
         const markCameraLoaded = () => {
+            cameraErrorCount = 0;
             externalCameraPlayer.classList.add("is-loaded");
             externalCameraPlayer.classList.remove("is-fading");
             if (externalCameraFrame) {
                 externalCameraFrame.classList.remove("is-loading", "is-error", "is-refreshing");
                 externalCameraFrame.setAttribute("aria-busy", "false");
             }
+            noteCameraStatus("frame ok", "good");
         };
         const markCameraError = () => {
+            cameraErrorCount += 1;
             externalCameraPlayer.classList.remove("is-fading");
             if (externalCameraFrame) {
                 externalCameraFrame.classList.remove("is-loading", "is-refreshing");
                 externalCameraFrame.classList.add("is-error");
                 externalCameraFrame.setAttribute("aria-busy", "false");
             }
+            noteCameraStatus(`frame failed (retry ${Math.min(cameraErrorCount, 4)})`, "warn");
         };
 
         externalCameraPlayer.addEventListener("load", markCameraLoaded);
@@ -751,6 +1159,11 @@ $(function () {
         } else if (externalCameraFrame) {
             externalCameraFrame.classList.add("is-loading");
             externalCameraFrame.setAttribute("aria-busy", "true");
+            window.setTimeout(() => {
+                if (!externalCameraPlayer.classList.contains("is-loaded")) {
+                    markCameraError();
+                }
+            }, cameraFrameTimeoutMs);
         }
 
         const swapExternalCameraFrame = (url) => {
@@ -760,8 +1173,9 @@ $(function () {
                 window.requestAnimationFrame(markCameraLoaded);
             }, 90);
         };
-        const refreshExternalCamera = async () => {
-            if (cameraRefreshInFlight) {
+        refreshExternalCamera = async () => {
+            if (uploadActive || cameraRefreshInFlight) {
+                scheduleExternalCameraRefresh(refreshSec * 1000);
                 return;
             }
             cameraRefreshInFlight = true;
@@ -771,7 +1185,25 @@ $(function () {
 
             const url = frameURL();
             const nextFrame = new Image();
+            let settled = false;
+            const failTimer = window.setTimeout(() => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                cameraRefreshInFlight = false;
+                nextFrame.onload = null;
+                nextFrame.onerror = null;
+                nextFrame.src = "";
+                markCameraError();
+                scheduleExternalCameraRefresh(cameraBackoffMs());
+            }, cameraFrameTimeoutMs);
             nextFrame.onload = async () => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                window.clearTimeout(failTimer);
                 try {
                     if (nextFrame.decode) {
                         await nextFrame.decode();
@@ -781,14 +1213,21 @@ $(function () {
                 }
                 swapExternalCameraFrame(url);
                 cameraRefreshInFlight = false;
+                scheduleExternalCameraRefresh(refreshSec * 1000);
             };
             nextFrame.onerror = () => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                window.clearTimeout(failTimer);
                 cameraRefreshInFlight = false;
                 markCameraError();
+                scheduleExternalCameraRefresh(cameraBackoffMs());
             };
             nextFrame.src = url;
         };
-        setInterval(refreshExternalCamera, refreshSec * 1000);
+        scheduleExternalCameraRefresh(refreshSec * 1000);
     }
 
     const powerStrip = document.getElementById("printer-power-strip");
@@ -1002,6 +1441,7 @@ $(function () {
             } else if (data.status === "dormant") {
                 $(this.badge).removeClass("text-bg-success text-bg-danger text-bg-warning").addClass("text-bg-secondary");
             }
+            notePPPPStatus(data.status);
         },
     });
 
@@ -1026,6 +1466,7 @@ $(function () {
                 uploadSize = data.size;
             }
             if (data.status === "start") {
+                setUploadActive(true);
                 if (uploadResetTimer) {
                     clearTimeout(uploadResetTimer);
                     uploadResetTimer = null;
@@ -1034,7 +1475,9 @@ $(function () {
                 setUploadProgress(0);
                 const sizeText = uploadSize ? ` (${formatBytes(uploadSize)})` : "";
                 uploadMeta.text(uploadName ? `Starting upload: ${uploadName}${sizeText}` : "Starting upload");
+                startDashboardUpload(uploadName, uploadSize);
             } else if (data.status === "progress") {
+                setUploadActive(true);
                 const total = data.size || uploadSize;
                 const sent = data.sent || 0;
                 const percent = total ? Math.round((sent / total) * 100) : 0;
@@ -1042,23 +1485,30 @@ $(function () {
                 const metaName = uploadName ? `Uploading ${uploadName}` : "Uploading";
                 const metaSize = total ? ` (${formatBytes(sent)} / ${formatBytes(total)})` : "";
                 uploadMeta.text(`${metaName}${metaSize}`);
+                progressDashboardUpload(percent, sent, total);
             } else if (data.status === "done") {
+                setUploadActive(false);
                 uploadBar.removeClass("bg-danger");
                 setUploadProgress(100);
                 const total = data.size || uploadSize;
                 const sizeText = total ? ` (${formatBytes(total)})` : "";
                 const currentPrint = ($("#print-name").text() || "").trim();
                 uploadMeta.text(currentPrint ? `Printing: ${currentPrint}` : (uploadName ? `Upload complete: ${uploadName}${sizeText}` : "Upload complete"));
+                completeDashboardUpload(uploadName, total, currentPrint);
                 uploadResetTimer = setTimeout(() => resetUploadProgress(currentPrint ? `Printing: ${currentPrint}` : "Idle"), 3500);
             } else if (data.status === "error") {
+                setUploadActive(false);
                 uploadBar.addClass("bg-danger");
                 setUploadProgress(0);
                 const errorText = data.error ? `: ${data.error}` : "";
                 uploadMeta.text(`Upload failed${errorText}`);
+                failDashboardUpload(data.error || "Upload failed");
             }
         },
         close: function () {
-            resetUploadProgress("Idle");
+            if (!uploadActive) {
+                resetUploadProgress("Idle");
+            }
         },
     });
 
@@ -2356,21 +2806,34 @@ $(function () {
         formData.append("print", startPrint ? "true" : "false");
         const action = startPrint ? "Uploading print job" : "Uploading file";
         gcodeLog(`» ${action}: ${file.name} (${formatBytes(file.size)})`);
-        const resp = await fetch("/api/files/local", {
-            method: "POST",
-            body: formData,
-        });
+        setUploadActive(true);
+        startDashboardUpload(file.name, file.size);
+        let resp;
+        try {
+            resp = await fetch("/api/files/local", {
+                method: "POST",
+                body: formData,
+            });
+        } catch (err) {
+            setUploadActive(false);
+            failDashboardUpload(err.message || "Request failed");
+            throw err;
+        }
         if (resp.ok) {
             const data = await resp.json().catch(() => ({}));
             const rate = data.upload_rate_mbps;
             const source = data.upload_rate_source;
             const rateText = rate ? ` using ${rate} Mbps (${source})` : "";
+            setUploadActive(false);
+            completeDashboardUpload(file.name, file.size, ($("#print-name").text() || "").trim());
             gcodeLog(startPrint
-                ? `✓ Upload started${rateText}, printer should begin after transfer completes`
-                : `✓ Upload started${rateText}`);
+                ? `✓ Upload complete${rateText}, printer start acknowledged`
+                : `✓ Upload complete${rateText}`);
             return true;
         }
+        setUploadActive(false);
         const text = (await resp.text()).trim();
+        failDashboardUpload(text || "Upload failed");
         gcodeLog(`✗ Error ${resp.status}: ${text || "Upload failed"}`);
         return false;
     }

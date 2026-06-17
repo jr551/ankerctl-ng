@@ -239,6 +239,60 @@ func TestDirectedBroadcastForTarget(t *testing.T) {
 	}
 }
 
+func TestHandshakeTargetForKnownIP(t *testing.T) {
+	tests := []struct {
+		name    string
+		knownIP string
+		wantIP  net.IP
+		wantOK  bool
+	}{
+		{
+			name:    "valid printer IP",
+			knownIP: "192.168.69.33",
+			wantIP:  net.IPv4(192, 168, 69, 33),
+			wantOK:  true,
+		},
+		{
+			name:    "trim whitespace",
+			knownIP: " 192.168.69.33\n",
+			wantIP:  net.IPv4(192, 168, 69, 33),
+			wantOK:  true,
+		},
+		{
+			name:    "empty falls back to broadcast",
+			knownIP: "",
+			wantOK:  false,
+		},
+		{
+			name:    "global broadcast rejected",
+			knownIP: "255.255.255.255",
+			wantOK:  false,
+		},
+		{
+			name:    "loopback rejected",
+			knownIP: "127.0.0.1",
+			wantOK:  false,
+		},
+		{
+			name:    "invalid rejected",
+			knownIP: "not-an-ip",
+			wantOK:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotIP, gotOK := handshakeTargetForKnownIP(tt.knownIP)
+			if gotOK != tt.wantOK {
+				t.Fatalf("ok=%v, want %v", gotOK, tt.wantOK)
+			}
+			if tt.wantOK && !gotIP.Equal(tt.wantIP) {
+				t.Fatalf("ip=%v, want %v", gotIP, tt.wantIP)
+			}
+		})
+	}
+}
+
 func TestDirectedBroadcastForTargetNoMatch(t *testing.T) {
 	target := net.IPv4(192, 168, 69, 33)
 	_, ok := directedBroadcastForTargetWithInterfaces(target, []net.Interface{

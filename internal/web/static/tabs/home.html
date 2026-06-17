@@ -230,6 +230,34 @@
                             </div>
                         </div>
                     </div>
+                    <div class="card-header fs-6">Current State</div>
+                    <div class="card-body py-3">
+                        <div class="state-strip mb-3" id="printer-state-strip">
+                            <div class="state-tile state-primary">
+                                <span class="state-label">Phase</span>
+                                <span class="state-value" id="printer-state-phase">Idle</span>
+                                <span class="state-detail" id="printer-state-detail">Waiting for upload</span>
+                            </div>
+                            <div class="state-tile">
+                                <span class="state-label">Upload</span>
+                                <span class="state-value" id="printer-state-upload">Idle</span>
+                                <span class="state-detail" id="printer-state-upload-detail">No active transfer</span>
+                            </div>
+                            <div class="state-tile">
+                                <span class="state-label">Nozzle</span>
+                                <span class="state-value" id="printer-state-nozzle">-- / --°C</span>
+                                <span class="state-detail" id="printer-state-nozzle-detail">current / target</span>
+                            </div>
+                            <div class="state-tile">
+                                <span class="state-label">Bed</span>
+                                <span class="state-value" id="printer-state-bed">-- / --°C</span>
+                                <span class="state-detail" id="printer-state-bed-detail">current / target</span>
+                            </div>
+                        </div>
+                        <div class="state-debug-feed" id="printer-debug-feed" aria-live="polite">
+                            <div class="state-debug-line muted">Waiting for live events...</div>
+                        </div>
+                    </div>
                     {{if and .VideoSupported (ne .CameraEffectiveSource "external")}}
                     <div class="card-header d-flex align-items-center justify-content-between">
                         <span class="fs-6">Video Controls</span>

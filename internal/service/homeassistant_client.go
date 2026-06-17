@@ -185,5 +185,25 @@ func HomeAssistantCameraStreamURL(cfg model.HomeAssistantCameraSettings) string 
 
 func HomeAssistantCameraSnapshot(ctx context.Context, cfg model.HomeAssistantCameraSettings, outputPath string) error {
 	client := NewHomeAssistantClient(cfg.BaseURL, cfg.Token)
-	return client.DownloadCameraSnapshot(ctx, cfg.CameraEntityID, outputPath)
+	if err := client.DownloadCameraSnapshot(ctx, cfg.CameraEntityID, outputPath); err != nil {
+		streamURL := HomeAssistantCameraStreamURL(cfg)
+		if streamURL == "" {
+			return err
+		}
+		if streamErr := SnapshotExternalWithHeaders(ctx, streamURL, homeAssistantAuthHeaders(cfg), outputPath); streamErr != nil {
+			return fmt.Errorf("%w; stream fallback failed: %v", err, streamErr)
+		}
+	}
+	return nil
+}
+
+func homeAssistantAuthHeaders(cfg model.HomeAssistantCameraSettings) map[string]string {
+	token := strings.TrimSpace(cfg.Token)
+	if token == "" {
+		return nil
+	}
+	return map[string]string{
+		"Authorization": "Bearer " + token,
+		"User-Agent":    "ankerctl",
+	}
 }

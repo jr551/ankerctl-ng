@@ -21,6 +21,8 @@ const (
 	PPPPDiscoveryPort = 32109    // local bind port for CLI LAN discovery (avoids conflict with server's 32108)
 )
 
+var lanSearchRetryInterval = time.Second
+
 // State represents PPPP connection lifecycle state.
 type State int
 
@@ -294,19 +296,28 @@ func (c *Client) Run(ctx context.Context) error {
 
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
+	nextLANSearchRetry := time.Now().Add(lanSearchRetryInterval)
 
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
+			now := time.Now()
 			// Check if we were disconnected by a remote Close packet.
-			if c.State() == StateDisconnected {
+			state := c.State()
+			if state == StateDisconnected {
 				return ErrConnectionReset
+			}
+			if state == StateConnecting && !now.Before(nextLANSearchRetry) {
+				if err := c.SendPacket(protocol.LanSearch{}, nil); err != nil {
+					slog.Warn("pppp: retry lan search failed", "err", err)
+				}
+				nextLANSearchRetry = now.Add(lanSearchRetryInterval)
 			}
 
 			for _, ch := range c.chans {
-				for _, pkt := range ch.Poll(time.Now()) {
+				for _, pkt := range ch.Poll(now) {
 					_ = c.SendPacket(pkt, nil)
 				}
 			}

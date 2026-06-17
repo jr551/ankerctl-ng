@@ -63,6 +63,7 @@ func (h *Handler) SlicerUpload(w http.ResponseWriter, r *http.Request) {
 	// Python parity: filetransfer.py calls pppp_open() which waits for
 	// StateConnected before sending any data.
 	if _, err := h.svc.Borrow("ppppservice"); err != nil {
+		h.log.Warn("slicer upload: pppp service unavailable", "file", hdr.Filename, "size", len(data), "err", err)
 		h.writeError(w, http.StatusServiceUnavailable, "pppp service unavailable")
 		return
 	}
@@ -70,6 +71,7 @@ func (h *Handler) SlicerUpload(w http.ResponseWriter, r *http.Request) {
 
 	// Borrow filetransfer so its WorkerRun loop is active to process the request.
 	if _, err := h.svc.Borrow("filetransfer"); err != nil {
+		h.log.Warn("slicer upload: file transfer service unavailable", "file", hdr.Filename, "size", len(data), "err", err)
 		h.writeError(w, http.StatusServiceUnavailable, "file transfer service unavailable")
 		return
 	}
@@ -77,6 +79,7 @@ func (h *Handler) SlicerUpload(w http.ResponseWriter, r *http.Request) {
 
 	ft, ok := h.fileTransfer()
 	if !ok {
+		h.log.Warn("slicer upload: file transfer service missing", "file", hdr.Filename, "size", len(data))
 		h.writeError(w, http.StatusServiceUnavailable, "file transfer service unavailable")
 		return
 	}
@@ -100,9 +103,11 @@ func (h *Handler) SlicerUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := ft.SendFile(r.Context(), hdr.Filename, userName, userID, data, rateLimit, startPrint); err != nil {
+		h.log.Warn("slicer upload: file transfer failed", "file", hdr.Filename, "size", len(data), "rate_mbps", rateLimit, "start_print", startPrint, "err", err)
 		h.writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
+	h.log.Info("slicer upload: file transfer completed", "file", hdr.Filename, "size", len(data), "rate_mbps", rateLimit, "start_print", startPrint)
 
 	// If archiving succeeded and we have a DB, back-fill the latest history
 	// row for this file so that reprint works.

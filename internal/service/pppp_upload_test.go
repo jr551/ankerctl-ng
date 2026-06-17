@@ -58,6 +58,41 @@ func aabbReplyWorker(ctx context.Context, svc *PPPPService, ch *protocol.Channel
 	}
 }
 
+func aabbReplyWorkerExcept(ctx context.Context, svc *PPPPService, ch *protocol.Channel, chanIdx byte, skip protocol.FileTransfer) {
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			drws := ch.Poll(time.Now())
+			for _, drw := range drws {
+				ch.RXAck([]uint16{drw.Index})
+				if len(drw.Data) < 2 {
+					continue
+				}
+				if drw.Data[0] == 0xAA && drw.Data[1] == 0xBB {
+					aabb, _, err := protocol.ParseAabbWithCRC(drw.Data)
+					if err == nil && aabb.FrameType != skip {
+						svc.dispatchAabb(chanIdx, protocol.Aabb{}, []byte{0x00})
+					}
+				}
+				if len(drw.Data) >= 4 && string(drw.Data[:4]) == "XZYH" {
+					if len(drw.Data) >= 10 {
+						cmd := binary.LittleEndian.Uint16(drw.Data[4:6])
+						if protocol.P2PCmdType(cmd) == protocol.P2PCmdP2pSendFile {
+							reply := make([]byte, 4)
+							binary.LittleEndian.PutUint32(reply, 0)
+							svc.dispatchXzyh(0, reply)
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 func TestPPPPService_Upload(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -180,6 +215,54 @@ func TestPPPPService_Upload(t *testing.T) {
 			}
 			progressMu.Unlock()
 		})
+	}
+}
+
+func TestPPPPService_Upload_StartPrintRequiresEndAck(t *testing.T) {
+	oldTimeout := aabbReplyTimeout
+	aabbReplyTimeout = 20 * time.Millisecond
+	defer func() { aabbReplyTimeout = oldTimeout }()
+
+	fake := newFakePPPPConn()
+	fake.runDelay = 30 * time.Second
+
+	svc := &PPPPService{
+		BaseWorker:   NewBaseWorker("ppppservice"),
+		log:          slog.Default(),
+		client:       fake,
+		clientFactor: func(context.Context) (ppppConn, error) { return fake, nil },
+		pollInterval: 1 * time.Millisecond,
+		handlers:     make(map[byte][]func([]byte)),
+		aabbHandlers: make(map[byte][]func(protocol.Aabb, []byte)),
+	}
+	svc.BindHooks(svc)
+
+	workerCtx, workerCancel := context.WithCancel(context.Background())
+	defer workerCancel()
+
+	ch0, _ := fake.Channel(0)
+	ch1, _ := fake.Channel(1)
+	go aabbReplyWorker(workerCtx, svc, ch0, 0)
+	go aabbReplyWorkerExcept(workerCtx, svc, ch1, 1, protocol.FileTransferEnd)
+
+	info := UploadInfo{
+		Name:       "no_end_ack.gcode",
+		UserName:   "alice",
+		UserID:     "u1",
+		MachineID:  "TESTMACHINE12345",
+		Size:       4,
+		StartPrint: true,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	err := svc.Upload(ctx, info, []byte("G28\n"), nil)
+	if err == nil {
+		t.Fatal("expected missing END ACK error, got nil")
+	}
+	if !strings.Contains(err.Error(), "aabb end reply") {
+		t.Fatalf("error %q does not mention END reply", err.Error())
 	}
 }
 

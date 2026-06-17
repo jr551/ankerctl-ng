@@ -246,6 +246,10 @@ code {
     opacity: 1;
 }
 
+.camera-frame-shell.is-error .camera-frame-overlay .spinner-border {
+    display: none;
+}
+
 .camera-frame-shell.is-error .camera-frame-overlay::after {
     color: rgba(255, 255, 255, 0.82);
     content: "Camera unavailable";
@@ -334,6 +338,125 @@ code {
     border-left-color: #6c757d;
 }
 
+.state-strip {
+    display: grid;
+    gap: 0.5rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.state-tile {
+    background: var(--bs-tertiary-bg);
+    border: 1px solid var(--bs-border-color);
+    border-left: 4px solid var(--bs-secondary);
+    border-radius: var(--bs-border-radius);
+    min-height: 70px;
+    padding: 0.55rem 0.65rem;
+}
+
+.state-label,
+.state-value,
+.state-detail {
+    display: block;
+    min-width: 0;
+}
+
+.state-label {
+    color: var(--bs-secondary-color);
+    font-size: 0.72rem;
+    line-height: 1.15;
+    margin-bottom: 0.2rem;
+    text-transform: uppercase;
+}
+
+.state-value {
+    color: var(--bs-body-color);
+    font-size: 1rem;
+    font-weight: 700;
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.state-detail {
+    color: var(--bs-secondary-color);
+    font-size: 0.72rem;
+    line-height: 1.25;
+    margin-top: 0.15rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.state-tile.state-primary,
+.state-tile.status-info {
+    background: rgba(13, 202, 240, 0.12);
+    border-left-color: #0dcaf0;
+}
+
+.state-tile.status-good {
+    background: rgba(25, 135, 84, 0.14);
+    border-left-color: #20c997;
+}
+
+.state-tile.status-warn {
+    background: rgba(255, 193, 7, 0.14);
+    border-left-color: #ffc107;
+}
+
+.state-tile.status-bad {
+    background: rgba(220, 53, 69, 0.14);
+    border-left-color: #dc3545;
+}
+
+.state-tile.status-muted {
+    background: rgba(108, 117, 125, 0.12);
+    border-left-color: #6c757d;
+}
+
+.state-debug-feed {
+    background: var(--bs-tertiary-bg);
+    border: 1px solid var(--bs-border-color);
+    border-radius: var(--bs-border-radius);
+    color: var(--bs-secondary-color);
+    display: flex;
+    flex-direction: column;
+    font-family: var(--bs-font-monospace);
+    font-size: 0.72rem;
+    gap: 0.2rem;
+    height: 10rem;
+    line-height: 1.25;
+    overflow: hidden;
+    padding: 0.5rem 0.6rem;
+}
+
+.state-debug-line {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.state-debug-line.good {
+    color: #75e3ad;
+}
+
+.state-debug-line.warn {
+    color: #ffd86b;
+}
+
+.state-debug-line.bad {
+    color: #ff8b9b;
+}
+
+.state-debug-line.info {
+    color: #70dfff;
+}
+
+.state-debug-line.muted {
+    color: var(--bs-secondary-color);
+}
+
 .print-monitor-debug-pre {
     background: var(--bs-tertiary-bg);
     border: 1px solid var(--bs-border-color);
@@ -347,13 +470,15 @@ code {
 }
 
 @media (max-width: 991.98px) {
-    .printer-power-strip {
+    .printer-power-strip,
+    .state-strip {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 
 @media (max-width: 420px) {
-    .printer-power-strip {
+    .printer-power-strip,
+    .state-strip {
         grid-template-columns: 1fr;
     }
 }

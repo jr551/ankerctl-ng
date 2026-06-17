@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/django1982/ankerctl/internal/model"
 	"github.com/django1982/ankerctl/internal/service"
@@ -25,6 +26,8 @@ const (
 
 	cameraMultipartBoundary = "frame"
 )
+
+var cameraSnapshotTimeout = 8 * time.Second
 
 // CameraFrame returns a single JPEG snapshot from the active camera source.
 // GET /api/camera/frame
@@ -66,14 +69,18 @@ func (h *Handler) CameraFrame(w http.ResponseWriter, r *http.Request) {
 			h.writeError(w, http.StatusServiceUnavailable, "video service not available")
 			return
 		}
-		if err := vq.CaptureSnapshot(r.Context(), tmpPath); err != nil {
+		cameraCtx, cancel := context.WithTimeout(r.Context(), cameraSnapshotTimeout)
+		defer cancel()
+		if err := vq.CaptureSnapshot(cameraCtx, tmpPath); err != nil {
 			h.writeError(w, http.StatusInternalServerError, fmt.Sprintf("snapshot failed: %v", err))
 			return
 		}
 	case model.CameraSourceExternal:
+		cameraCtx, cancel := context.WithTimeout(r.Context(), cameraSnapshotTimeout)
+		defer cancel()
 		haCfg := resolved.External.HomeAssistant
 		if service.HomeAssistantCameraConfigured(haCfg) {
-			if err := service.HomeAssistantCameraSnapshot(r.Context(), haCfg, tmpPath); err != nil {
+			if err := service.HomeAssistantCameraSnapshot(cameraCtx, haCfg, tmpPath); err != nil {
 				h.writeError(w, http.StatusBadGateway, fmt.Sprintf("home assistant camera snapshot failed: %v", err))
 				return
 			}
@@ -84,7 +91,7 @@ func (h *Handler) CameraFrame(w http.ResponseWriter, r *http.Request) {
 			h.writeError(w, http.StatusBadRequest, "External camera is selected, but no stream or snapshot URL is configured.")
 			return
 		}
-		if err := service.SnapshotExternal(r.Context(), input, tmpPath); err != nil {
+		if err := service.SnapshotExternal(cameraCtx, input, tmpPath); err != nil {
 			h.writeError(w, http.StatusBadGateway, fmt.Sprintf("external camera snapshot failed: %v", err))
 			return
 		}
