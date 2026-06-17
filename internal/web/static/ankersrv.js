@@ -412,6 +412,7 @@ $(function () {
         bed: document.getElementById("printer-state-bed"),
         bedDetail: document.getElementById("printer-state-bed-detail"),
         feed: document.getElementById("printer-debug-feed"),
+        commandFeed: document.getElementById("printer-command-feed"),
     };
     const dashboardState = {
         phase: "Idle",
@@ -540,6 +541,33 @@ $(function () {
         }
     }
 
+    function addCommandFeed(message, tone = "info") {
+        if (!stateFields.commandFeed || !message) {
+            return;
+        }
+        const line = document.createElement("div");
+        line.className = `state-debug-line ${tone}`;
+        line.textContent = `${dashboardTimestamp()} ${message}`;
+        const placeholder = stateFields.commandFeed.querySelector(".state-debug-line.muted");
+        if (placeholder && placeholder.textContent === "Waiting for commands...") {
+            placeholder.remove();
+        }
+        stateFields.commandFeed.prepend(line);
+        while (stateFields.commandFeed.children.length > 8) {
+            stateFields.commandFeed.removeChild(stateFields.commandFeed.lastElementChild);
+        }
+    }
+
+    function logInstructionLines(prefix, gcode, tone = "info") {
+        const lines = String(gcode || "")
+            .split(/\r?\n/)
+            .map(line => line.split(";", 1)[0].trim())
+            .filter(Boolean);
+        const shown = lines.slice(0, 4).join(" | ");
+        const suffix = lines.length > 4 ? ` | +${lines.length - 4} more` : "";
+        addCommandFeed(`${prefix}: ${shown || "(empty)"}${suffix}`, tone);
+    }
+
     function updateDashboardState(patch, debugMessage, tone = "info") {
         Object.assign(dashboardState, patch || {});
         renderDashboardState();
@@ -599,6 +627,9 @@ $(function () {
     function completeDashboardUpload(name, size, currentPrint) {
         uploadStateHoldUntil = Date.now() + 45000;
         const printName = (currentPrint || "").trim();
+        if (!printName && typeof setPrintPreparing === "function") {
+            setPrintPreparing(true);
+        }
         updateDashboardState({
             phase: printName ? "Printing" : "Upload accepted",
             phaseDetail: printName ? `Printing ${printName}` : "Waiting for printer heat/start",
@@ -781,9 +812,8 @@ $(function () {
                 updateDashboardPrintStateFromMqtt(data.value);
                 if (data.value === PRINT_STATE.IDLE) {
                     if (_preparing) {
-                        _preparing = false;
                         $("#progressbar").removeClass("progress-bar-striped progress-bar-animated");
-                        _syncPrintGlow();
+                        setPrintPreparing(false);
                     }
                     $("#print-layer").text("0 / 0");
                 }
@@ -805,9 +835,8 @@ $(function () {
                         _currentPrintState !== PRINT_STATE.IDLE;
                     if (!isSpuriousZero) {
                         if (_preparing) {
-                            _preparing = false;
                             $("#progressbar").removeClass("progress-bar-striped progress-bar-animated");
-                            _syncPrintGlow();
+                            setPrintPreparing(false);
                         }
                         _lastDisplayedProgress = progress;
                         $("#progressbar").attr("aria-valuenow", progress);
@@ -890,8 +919,7 @@ $(function () {
                 const baseName = filePath.split("/").pop().split("\\").pop();
                 if (baseName) { $("#print-name").text(baseName); }
                 _lastDisplayedProgress = 0;
-                _preparing = true;
-                _syncPrintGlow();
+                setPrintPreparing(true);
                 $("#progressbar")
                     .attr("aria-valuenow", 100)
                     .attr("style", "width: 100%")
@@ -917,7 +945,7 @@ $(function () {
 
         close: function () {
             _lastDisplayedProgress = 0;
-            _preparing = false;
+            setPrintPreparing(false);
             $("#progressbar").removeClass("progress-bar-striped progress-bar-animated");
             $("#print-name").text("");
             $("#time-elapsed").text("00:00:00");
@@ -1911,6 +1939,84 @@ $(function () {
         })();
     });
 
+    const tempOverrideForm = $("#temperature-overrides-form");
+    if (tempOverrideForm.length) {
+        const tempOverrideFields = {
+            enabled: $("#temp-override-enabled"),
+            nozzle: $("#temp-override-nozzle"),
+            bed: $("#temp-override-bed"),
+            save: $("#temperature-overrides-save"),
+            status: $("#temperature-overrides-status"),
+        };
+
+        const clampInputInt = (field, fallback) => {
+            const raw = parseInt(field.val(), 10);
+            if (isNaN(raw)) {
+                return fallback;
+            }
+            const min = parseInt(field.attr("min"), 10);
+            const max = parseInt(field.attr("max"), 10);
+            return Math.max(min, Math.min(max, raw));
+        };
+
+        const loadTemperatureOverrides = async () => {
+            try {
+                const resp = await fetch("/api/settings/temperature-overrides");
+                if (!resp.ok) {
+                    return;
+                }
+                const data = await resp.json();
+                const cfg = data.temperature_overrides || {};
+                tempOverrideFields.enabled.prop("checked", Boolean(cfg.enabled));
+                tempOverrideFields.nozzle.val(cfg.nozzle_min_temp_c || 0);
+                tempOverrideFields.bed.val(cfg.bed_min_temp_c || 0);
+                tempOverrideFields.status.text(data.printer_name ? `Active printer: ${data.printer_name}` : "");
+            } catch (err) {
+                console.error("Failed to load temperature overrides:", err);
+            }
+        };
+
+        tempOverrideFields.save.on("click", async function () {
+            const btn = $(this);
+            btn.prop("disabled", true);
+            const payload = {
+                temperature_overrides: {
+                    enabled: tempOverrideFields.enabled.is(":checked"),
+                    nozzle_min_temp_c: clampInputInt(tempOverrideFields.nozzle, 0),
+                    bed_min_temp_c: clampInputInt(tempOverrideFields.bed, 0),
+                }
+            };
+            tempOverrideFields.nozzle.val(payload.temperature_overrides.nozzle_min_temp_c);
+            tempOverrideFields.bed.val(payload.temperature_overrides.bed_min_temp_c);
+            try {
+                const resp = await fetch("/api/settings/temperature-overrides", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                });
+                if (resp.ok) {
+                    const data = await resp.json().catch(() => ({}));
+                    const cfg = data.temperature_overrides || payload.temperature_overrides;
+                    flash_message("Temperature overrides saved", "success");
+                    tempOverrideFields.status.text(
+                        cfg.enabled
+                            ? `Enabled: nozzle >= ${cfg.nozzle_min_temp_c || 0}°C, bed >= ${cfg.bed_min_temp_c || 0}°C`
+                            : "Disabled",
+                    );
+                } else {
+                    const data = await resp.json().catch(() => ({}));
+                    flash_message(`Failed to save temperature overrides: ${data.error || resp.statusText}`, "danger");
+                }
+            } catch (err) {
+                flash_message(`Error: ${err.message}`, "danger");
+            } finally {
+                btn.prop("disabled", false);
+            }
+        });
+
+        loadTemperatureOverrides();
+    }
+
     $("#printer-lan-search-btn").on("click", async function () {
         const btn = $(this);
         const status = $("#printer-lan-search-result");
@@ -1960,6 +2066,7 @@ $(function () {
     function sendPrinterGCode(gcode) {
         if (!gcode) return;
         console.log("Sending GCode:", gcode);
+        logInstructionLines("gcode", gcode, "info");
         fetch("/api/printer/gcode", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1969,6 +2076,10 @@ $(function () {
 
     function sendPrintControl(value) {
         console.log("Sending Print Control:", value);
+        const label = value === PRINT_CONTROL.PAUSE ? "pause" :
+            (value === PRINT_CONTROL.RESUME ? "resume" :
+                (value === PRINT_CONTROL.STOP ? "stop" : String(value)));
+        addCommandFeed(`control: ${label}`, value === PRINT_CONTROL.STOP ? "warn" : "info");
         fetch("/api/printer/control", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1989,14 +2100,23 @@ $(function () {
     let _lastDisplayedProgress = 0;
     let _preparing = false; // true between ct=1044 and first real ct=1001 progress
 
+    function setPrintPreparing(preparing) {
+        _preparing = Boolean(preparing);
+        const state = Number.isFinite(Number(_currentPrintState)) ? _currentPrintState : PRINT_STATE.IDLE;
+        _updatePrintControlButtons(state);
+    }
+
     function _updatePrintControlButtons(state) {
         _currentPrintState = state;
         const printing = state === PRINT_STATE.PRINTING;
         const paused = state === PRINT_STATE.PAUSED;
-        const active = printing || paused;
+        const cancelable = printing || paused || _preparing || Date.now() < uploadStateHoldUntil;
         $("#print-pause").toggleClass("d-none", !printing);
         $("#print-resume").toggleClass("d-none", !paused);
-        $("#print-stop").toggleClass("d-none", !active);
+        $("#print-stop").toggleClass("d-none", !cancelable);
+        $("#print-stop").html((_preparing || (!printing && !paused)) ?
+            '<i class="bi-x-circle-fill px-1"></i> Cancel' :
+            '<i class="bi-stop-fill px-1"></i> Stop');
         _syncPrintGlow();
     }
 
@@ -2782,6 +2902,7 @@ $(function () {
             return false;
         }
         gcodeLog(`» ${normalized.replace(/\n/g, " | ")}`);
+        logInstructionLines("console", normalized, "info");
         const resp = await fetch("/api/printer/gcode", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -2824,6 +2945,13 @@ $(function () {
             const rate = data.upload_rate_mbps;
             const source = data.upload_rate_source;
             const rateText = rate ? ` using ${rate} Mbps (${source})` : "";
+            const tempOverride = data.temperature_overrides || {};
+            if (tempOverride.applied) {
+                addCommandFeed(
+                    `upload override: nozzle ${tempOverride.nozzle_commands || 0}, bed ${tempOverride.bed_commands || 0}`,
+                    "warn",
+                );
+            }
             setUploadActive(false);
             completeDashboardUpload(file.name, file.size, ($("#print-name").text() || "").trim());
             gcodeLog(startPrint
@@ -2904,6 +3032,11 @@ $(function () {
     $("#print-stop").on("click", function () {
         if (confirm("Are you sure you want to stop the print?")) {
             sendPrintControl(PRINT_CONTROL.STOP);
+            updateDashboardState({
+                phase: "Cancel requested",
+                phaseDetail: "Waiting for printer confirmation",
+                phaseTone: "warn",
+            }, "cancel requested", "warn");
             // Do NOT send M104/M140/M106 GCode alongside stop — the printer may interpret
             // incoming GCode during stop-transition as a resume signal, cancelling the stop.
             // The printer will cool down automatically after a confirmed stop.

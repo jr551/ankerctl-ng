@@ -216,6 +216,7 @@ func TestAuth_ProtectedGETPaths_TableDriven(t *testing.T) {
 		{"settings_filament_service", "/api/settings/filament-service"},
 		{"settings_filament_service_advanced", "/api/settings/filament-service/advanced"},
 		{"settings_timelapse", "/api/settings/timelapse"},
+		{"settings_temperature_overrides", "/api/settings/temperature-overrides"},
 		{"settings_camera", "/api/settings/camera"},
 		{"notifications_settings", "/api/notifications/settings"},
 		{"printers", "/api/printers"},

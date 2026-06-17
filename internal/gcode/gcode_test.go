@@ -40,6 +40,49 @@ func TestPatchGCodeTime(t *testing.T) {
 	}
 }
 
+func TestApplyTemperatureOverrides(t *testing.T) {
+	input := strings.Join([]string{
+		"; header M104 S150 is a comment",
+		"M104 S150 ; low nozzle",
+		"M104S150 ; compact low nozzle",
+		"M109 S150.5",
+		"M104 S0 ; cooldown stays off",
+		"M140 S55",
+		"M140S55",
+		"M190 S65",
+		"M140 S0 ; bed cooldown",
+		"M104 S230 ; higher nozzle unchanged",
+		"G1 X1 S150 ; non-temp command unchanged",
+		"",
+	}, "\n")
+	want := strings.Join([]string{
+		"; header M104 S150 is a comment",
+		"M104 S210 ; low nozzle",
+		"M104S210 ; compact low nozzle",
+		"M109 S210",
+		"M104 S0 ; cooldown stays off",
+		"M140 S60",
+		"M140S60",
+		"M190 S65",
+		"M140 S0 ; bed cooldown",
+		"M104 S230 ; higher nozzle unchanged",
+		"G1 X1 S150 ; non-temp command unchanged",
+		"",
+	}, "\n")
+
+	got, stats := ApplyTemperatureOverrides([]byte(input), TemperatureOverrides{
+		NozzleMinTempC: 210,
+		BedMinTempC:    60,
+	})
+
+	if string(got) != want {
+		t.Fatalf("ApplyTemperatureOverrides() = %q, want %q", string(got), want)
+	}
+	if stats.NozzleCommands != 3 || stats.BedCommands != 2 {
+		t.Fatalf("stats = %+v, want nozzle=3 bed=2", stats)
+	}
+}
+
 func TestExtractLayerCount(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -117,6 +160,22 @@ func TestGCodeRegex_NoReDoS(t *testing.T) {
 			pattern: `(?i)^;\s*total layer(?:s)?\s*(?:number|count)?\s*[=:]\s*(\d+)`,
 			input:   func() string { return ";total layers number count" + strings.Repeat(" ", 1000) },
 			match:   func(s string) bool { return layerCountPatterns[1].MatchString(s) },
+		},
+		{
+			// gcodeCommandPattern: `(?i)^\s*([A-Z]+\d+)`
+			// Worst-case: long letter prefix with no digit.
+			name:    "gcodeCommandPattern adversarial",
+			pattern: `(?i)^\s*([A-Z]+\d+)`,
+			input:   func() string { return strings.Repeat("M", 1000) },
+			match:   func(s string) bool { return gcodeCommandPattern.MatchString(s) },
+		},
+		{
+			// tempParamPattern: `(?i)(^|[ \t])S[ \t]*([-+]?[0-9]+(?:\.[0-9]+)?)`
+			// Worst-case: valid S prefix followed by a long non-number suffix.
+			name:    "tempParamPattern adversarial",
+			pattern: `(?i)(^|[ \t])S[ \t]*([-+]?[0-9]+(?:\.[0-9]+)?)`,
+			input:   func() string { return "S" + strings.Repeat("x", 1000) },
+			match:   func(s string) bool { return tempParamPattern.MatchString(s) },
 		},
 	}
 

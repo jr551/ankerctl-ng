@@ -362,6 +362,100 @@ func (h *Handler) SettingsAppearanceUpdate(w http.ResponseWriter, r *http.Reques
 	h.writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "appearance": updated})
 }
 
+// SettingsTemperatureOverridesGet returns upload-time temperature overrides for the active printer.
+func (h *Handler) SettingsTemperatureOverridesGet(w http.ResponseWriter, _ *http.Request) {
+	cfg, _ := h.loadConfig()
+	if cfg == nil {
+		h.writeError(w, http.StatusBadRequest, "No printers configured")
+		return
+	}
+	printer, _, _ := h.activePrinter(cfg)
+	if printer == nil {
+		h.writeError(w, http.StatusBadRequest, "No active printer configured")
+		return
+	}
+	entry := temperatureOverrideEntryForPrinter(cfg, printer.SN)
+	h.writeJSON(w, http.StatusOK, map[string]any{
+		"temperature_overrides": entry,
+		"printer_sn":            printer.SN,
+		"printer_name":          printer.Name,
+	})
+}
+
+// SettingsTemperatureOverridesUpdate updates upload-time temperature overrides for the active printer.
+func (h *Handler) SettingsTemperatureOverridesUpdate(w http.ResponseWriter, r *http.Request) {
+	var payload map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		h.writeError(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+	tempPayload := payload
+	if raw, ok := payload["temperature_overrides"]; ok {
+		m, ok := raw.(map[string]any)
+		if !ok {
+			h.writeError(w, http.StatusBadRequest, "Invalid temperature_overrides payload")
+			return
+		}
+		tempPayload = m
+	}
+
+	var updated model.TemperatureOverrideEntry
+	var printerSN, printerName string
+	err := h.cfg.Modify(func(cfg *model.Config) (*model.Config, error) {
+		if cfg == nil {
+			return cfg, nil
+		}
+		printer, _, _ := h.activePrinter(cfg)
+		if printer == nil {
+			return nil, fmt.Errorf("No active printer configured")
+		}
+		printerSN = printer.SN
+		printerName = printer.Name
+		updated = temperatureOverrideEntryForPrinter(cfg, printer.SN)
+		if v, ok := tempPayload["enabled"].(bool); ok {
+			updated.Enabled = v
+		}
+		if v, ok := tempPayload["nozzle_min_temp_c"]; ok {
+			n, ok := intFromAny(v)
+			if !ok {
+				return nil, fmt.Errorf("nozzle_min_temp_c must be an integer")
+			}
+			updated.NozzleMinTempC = n
+		}
+		if v, ok := tempPayload["bed_min_temp_c"]; ok {
+			n, ok := intFromAny(v)
+			if !ok {
+				return nil, fmt.Errorf("bed_min_temp_c must be an integer")
+			}
+			updated.BedMinTempC = n
+		}
+		updated = model.NormalizeTemperatureOverrideEntry(updated)
+		if cfg.TemperatureOverrides.PerPrinter == nil {
+			cfg.TemperatureOverrides.PerPrinter = map[string]model.TemperatureOverrideEntry{}
+		}
+		cfg.TemperatureOverrides.PerPrinter[printer.SN] = updated
+		return cfg, nil
+	})
+	if err != nil {
+		h.writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	h.writeJSON(w, http.StatusOK, map[string]any{
+		"status":                "ok",
+		"temperature_overrides": updated,
+		"printer_sn":            printerSN,
+		"printer_name":          printerName,
+	})
+}
+
+func temperatureOverrideEntryForPrinter(cfg *model.Config, sn string) model.TemperatureOverrideEntry {
+	if cfg == nil || sn == "" || cfg.TemperatureOverrides.PerPrinter == nil {
+		return model.TemperatureOverrideEntry{}
+	}
+	return model.NormalizeTemperatureOverrideEntry(cfg.TemperatureOverrides.PerPrinter[sn])
+}
+
 // SettingsCameraGet returns the resolved camera settings for the active printer.
 func (h *Handler) SettingsCameraGet(w http.ResponseWriter, r *http.Request) {
 	cfg, _ := h.loadConfig()

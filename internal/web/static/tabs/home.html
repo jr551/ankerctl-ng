@@ -257,6 +257,9 @@
                         <div class="state-debug-feed" id="printer-debug-feed" aria-live="polite">
                             <div class="state-debug-line muted">Waiting for live events...</div>
                         </div>
+                        <div class="state-command-feed mt-2" id="printer-command-feed" aria-live="polite">
+                            <div class="state-debug-line muted">Waiting for commands...</div>
+                        </div>
                     </div>
                     {{if and .VideoSupported (ne .CameraEffectiveSource "external")}}
                     <div class="card-header d-flex align-items-center justify-content-between">

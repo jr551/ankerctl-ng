@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/django1982/ankerctl/internal/gcode"
 	"github.com/django1982/ankerctl/internal/model"
 )
 
@@ -56,6 +57,27 @@ func (h *Handler) SlicerUpload(w http.ResponseWriter, r *http.Request) {
 	if v := strings.TrimSpace(r.FormValue("upload_rate_mbps")); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			rateLimit = n
+		}
+	}
+
+	var overrideStats gcode.TemperatureOverrideStats
+	if startPrint && cfg != nil {
+		if printer, _, _ := h.activePrinter(cfg); printer != nil {
+			override := temperatureOverrideEntryForPrinter(cfg, printer.SN)
+			if override.Enabled {
+				data, overrideStats = gcode.ApplyTemperatureOverrides(data, gcode.TemperatureOverrides{
+					NozzleMinTempC: override.NozzleMinTempC,
+					BedMinTempC:    override.BedMinTempC,
+				})
+				if overrideStats.NozzleCommands > 0 || overrideStats.BedCommands > 0 {
+					h.log.Info("slicer upload: applied temperature overrides",
+						"file", hdr.Filename,
+						"nozzle_min_temp_c", override.NozzleMinTempC,
+						"bed_min_temp_c", override.BedMinTempC,
+						"nozzle_commands", overrideStats.NozzleCommands,
+						"bed_commands", overrideStats.BedCommands)
+				}
+			}
 		}
 	}
 
@@ -132,5 +154,10 @@ func (h *Handler) SlicerUpload(w http.ResponseWriter, r *http.Request) {
 		"status":             "ok",
 		"upload_rate_mbps":   effectiveRate,
 		"upload_rate_source": rateSource,
+		"temperature_overrides": map[string]any{
+			"applied":         overrideStats.NozzleCommands > 0 || overrideStats.BedCommands > 0,
+			"nozzle_commands": overrideStats.NozzleCommands,
+			"bed_commands":    overrideStats.BedCommands,
+		},
 	})
 }

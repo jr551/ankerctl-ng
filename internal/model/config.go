@@ -8,52 +8,55 @@ import (
 // Config is the top-level configuration structure.
 // It holds account info, printer list, and feature settings.
 type Config struct {
-	Account            *Account              `json:"-"`
-	Printers           []Printer             `json:"-"`
-	UploadRateMbps     int                   `json:"-"`
-	ActivePrinterIndex int                   `json:"-"`
-	Notifications      NotificationsConfig   `json:"-"`
-	Timelapse          TimelapseConfig       `json:"-"`
-	HomeAssistant      HomeAssistantConfig   `json:"-"`
-	FilamentService    FilamentServiceConfig `json:"-"`
-	Appearance         AppearanceConfig      `json:"-"`
-	Camera             CameraConfig          `json:"-"`
-	PrintMonitor       PrintMonitorConfig    `json:"-"`
-	SmartSocket        SmartSocketConfig     `json:"-"`
+	Account              *Account                   `json:"-"`
+	Printers             []Printer                  `json:"-"`
+	UploadRateMbps       int                        `json:"-"`
+	ActivePrinterIndex   int                        `json:"-"`
+	Notifications        NotificationsConfig        `json:"-"`
+	Timelapse            TimelapseConfig            `json:"-"`
+	HomeAssistant        HomeAssistantConfig        `json:"-"`
+	FilamentService      FilamentServiceConfig      `json:"-"`
+	Appearance           AppearanceConfig           `json:"-"`
+	TemperatureOverrides TemperatureOverridesConfig `json:"-"`
+	Camera               CameraConfig               `json:"-"`
+	PrintMonitor         PrintMonitorConfig         `json:"-"`
+	SmartSocket          SmartSocketConfig          `json:"-"`
 }
 
 // configJSON is the JSON wire format for Config.
 type configJSON struct {
-	Type               string          `json:"__type__,omitempty"`
-	Account            json.RawMessage `json:"account"`
-	Printers           json.RawMessage `json:"printers"`
-	UploadRateMbps     int             `json:"upload_rate_mbps"`
-	ActivePrinterIndex int             `json:"active_printer_index"`
-	Notifications      json.RawMessage `json:"notifications,omitempty"`
-	Timelapse          json.RawMessage `json:"timelapse,omitempty"`
-	HomeAssistant      json.RawMessage `json:"home_assistant,omitempty"`
-	FilamentService    json.RawMessage `json:"filament_service,omitempty"`
-	Appearance         json.RawMessage `json:"appearance,omitempty"`
-	Camera             json.RawMessage `json:"camera,omitempty"`
-	PrintMonitor       json.RawMessage `json:"print_monitor,omitempty"`
-	SmartSocket        json.RawMessage `json:"smart_socket,omitempty"`
+	Type                 string          `json:"__type__,omitempty"`
+	Account              json.RawMessage `json:"account"`
+	Printers             json.RawMessage `json:"printers"`
+	UploadRateMbps       int             `json:"upload_rate_mbps"`
+	ActivePrinterIndex   int             `json:"active_printer_index"`
+	Notifications        json.RawMessage `json:"notifications,omitempty"`
+	Timelapse            json.RawMessage `json:"timelapse,omitempty"`
+	HomeAssistant        json.RawMessage `json:"home_assistant,omitempty"`
+	FilamentService      json.RawMessage `json:"filament_service,omitempty"`
+	Appearance           json.RawMessage `json:"appearance,omitempty"`
+	TemperatureOverrides json.RawMessage `json:"temperature_overrides,omitempty"`
+	Camera               json.RawMessage `json:"camera,omitempty"`
+	PrintMonitor         json.RawMessage `json:"print_monitor,omitempty"`
+	SmartSocket          json.RawMessage `json:"smart_socket,omitempty"`
 }
 
 // NewConfig creates a Config with default settings.
 func NewConfig(account *Account, printers []Printer) *Config {
 	return &Config{
-		Account:            account,
-		Printers:           printers,
-		UploadRateMbps:     DefaultUploadRateMbps,
-		ActivePrinterIndex: 0,
-		Notifications:      DefaultNotificationsConfig(),
-		Timelapse:          DefaultTimelapseConfig(),
-		HomeAssistant:      DefaultHomeAssistantConfig(),
-		FilamentService:    DefaultFilamentServiceConfig(),
-		Appearance:         DefaultAppearanceConfig(),
-		Camera:             DefaultCameraConfig(),
-		PrintMonitor:       DefaultPrintMonitorConfig(),
-		SmartSocket:        DefaultSmartSocketConfig(),
+		Account:              account,
+		Printers:             printers,
+		UploadRateMbps:       DefaultUploadRateMbps,
+		ActivePrinterIndex:   0,
+		Notifications:        DefaultNotificationsConfig(),
+		Timelapse:            DefaultTimelapseConfig(),
+		HomeAssistant:        DefaultHomeAssistantConfig(),
+		FilamentService:      DefaultFilamentServiceConfig(),
+		Appearance:           DefaultAppearanceConfig(),
+		TemperatureOverrides: DefaultTemperatureOverridesConfig(),
+		Camera:               DefaultCameraConfig(),
+		PrintMonitor:         DefaultPrintMonitorConfig(),
+		SmartSocket:          DefaultSmartSocketConfig(),
 	}
 }
 
@@ -112,6 +115,11 @@ func (c Config) MarshalJSON() ([]byte, error) {
 		return nil, fmt.Errorf("marshal appearance: %w", err)
 	}
 
+	temperatureOverridesData, err := json.Marshal(c.TemperatureOverrides)
+	if err != nil {
+		return nil, fmt.Errorf("marshal temperature_overrides: %w", err)
+	}
+
 	cameraData, err := json.Marshal(c.Camera)
 	if err != nil {
 		return nil, fmt.Errorf("marshal camera: %w", err)
@@ -128,19 +136,20 @@ func (c Config) MarshalJSON() ([]byte, error) {
 	}
 
 	return json.Marshal(configJSON{
-		Type:               "Config",
-		Account:            accountData,
-		Printers:           printersData,
-		UploadRateMbps:     c.UploadRateMbps,
-		ActivePrinterIndex: c.ActivePrinterIndex,
-		Notifications:      notifData,
-		Timelapse:          timelapseData,
-		HomeAssistant:      haData,
-		FilamentService:    fsData,
-		Appearance:         appData,
-		Camera:             cameraData,
-		PrintMonitor:       printMonitorData,
-		SmartSocket:        smartSocketData,
+		Type:                 "Config",
+		Account:              accountData,
+		Printers:             printersData,
+		UploadRateMbps:       c.UploadRateMbps,
+		ActivePrinterIndex:   c.ActivePrinterIndex,
+		Notifications:        notifData,
+		Timelapse:            timelapseData,
+		HomeAssistant:        haData,
+		FilamentService:      fsData,
+		Appearance:           appData,
+		TemperatureOverrides: temperatureOverridesData,
+		Camera:               cameraData,
+		PrintMonitor:         printMonitorData,
+		SmartSocket:          smartSocketData,
 	})
 }
 
@@ -225,6 +234,20 @@ func (c *Config) UnmarshalJSON(data []byte) error {
 	if raw.Appearance != nil && string(raw.Appearance) != "null" {
 		if err := json.Unmarshal(raw.Appearance, &c.Appearance); err != nil {
 			c.Appearance = DefaultAppearanceConfig()
+		}
+	}
+
+	// Temperature overrides with defaults merge
+	c.TemperatureOverrides = DefaultTemperatureOverridesConfig()
+	if raw.TemperatureOverrides != nil && string(raw.TemperatureOverrides) != "null" {
+		if err := json.Unmarshal(raw.TemperatureOverrides, &c.TemperatureOverrides); err != nil {
+			c.TemperatureOverrides = DefaultTemperatureOverridesConfig()
+		}
+		if c.TemperatureOverrides.PerPrinter == nil {
+			c.TemperatureOverrides.PerPrinter = map[string]TemperatureOverrideEntry{}
+		}
+		for sn, entry := range c.TemperatureOverrides.PerPrinter {
+			c.TemperatureOverrides.PerPrinter[sn] = NormalizeTemperatureOverrideEntry(entry)
 		}
 	}
 

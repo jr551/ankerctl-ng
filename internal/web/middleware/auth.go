@@ -21,6 +21,7 @@ var protectedGETPaths = map[string]bool{
 	"/api/settings/filament-service":          true,
 	"/api/settings/filament-service/advanced": true,
 	"/api/settings/timelapse":                 true,
+	"/api/settings/temperature-overrides":     true,
 	"/api/settings/camera":                    true,
 	"/api/settings/print-monitor":             true,
 	"/api/settings/smart-socket":              true,

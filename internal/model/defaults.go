@@ -143,6 +143,33 @@ type AppearanceConfig struct {
 	AccentColor string `json:"accent_color"`
 }
 
+// TemperatureOverrideEntry holds per-printer upload-time temperature floors.
+type TemperatureOverrideEntry struct {
+	Enabled        bool `json:"enabled"`
+	NozzleMinTempC int  `json:"nozzle_min_temp_c"`
+	BedMinTempC    int  `json:"bed_min_temp_c"`
+}
+
+// TemperatureOverridesConfig holds per-printer temperature override settings.
+type TemperatureOverridesConfig struct {
+	PerPrinter map[string]TemperatureOverrideEntry `json:"per_printer"`
+}
+
+// DefaultTemperatureOverridesConfig returns disabled temperature overrides.
+func DefaultTemperatureOverridesConfig() TemperatureOverridesConfig {
+	return TemperatureOverridesConfig{PerPrinter: map[string]TemperatureOverrideEntry{}}
+}
+
+// NormalizeTemperatureOverrideEntry clamps override values to printer-safe UI bounds.
+func NormalizeTemperatureOverrideEntry(entry TemperatureOverrideEntry) TemperatureOverrideEntry {
+	entry.NozzleMinTempC = clampInt(entry.NozzleMinTempC, 0, 320)
+	entry.BedMinTempC = clampInt(entry.BedMinTempC, 0, 120)
+	if entry.NozzleMinTempC == 0 && entry.BedMinTempC == 0 {
+		entry.Enabled = false
+	}
+	return entry
+}
+
 // PrintersWithoutCamera lists model codes that have no built-in camera.
 // Comparison is case-insensitive. Matches Python's PRINTERS_WITHOUT_CAMERA set.
 var PrintersWithoutCamera = map[string]struct{}{"V8110": {}}
@@ -243,6 +270,16 @@ func DefaultSmartSocketConfig() SmartSocketConfig {
 		PowerSavingDashboardWakeSec: 600,
 		PowerSavingIdleOffSec:       1800,
 	}
+}
+
+func clampInt(value, minValue, maxValue int) int {
+	if value < minValue {
+		return minValue
+	}
+	if value > maxValue {
+		return maxValue
+	}
+	return value
 }
 
 // PrinterSupportsCamera returns true when the printer model has a built-in camera.

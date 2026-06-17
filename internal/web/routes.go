@@ -103,6 +103,8 @@ func (s *Server) registerRoutes() {
 	r.Post("/api/settings/filament-service/advanced/open", h.SettingsFilamentServiceAdvancedOpen)
 	r.Get("/api/settings/appearance", h.SettingsAppearanceGet)
 	r.Post("/api/settings/appearance", h.SettingsAppearanceUpdate)
+	r.Get("/api/settings/temperature-overrides", h.SettingsTemperatureOverridesGet)
+	r.Post("/api/settings/temperature-overrides", h.SettingsTemperatureOverridesUpdate)
 	r.Get("/api/settings/camera", h.SettingsCameraGet)
 	r.Post("/api/settings/camera", h.SettingsCameraUpdate)
 	r.Get("/api/settings/print-monitor", h.SettingsPrintMonitorGet)
