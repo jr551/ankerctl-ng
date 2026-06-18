@@ -2,6 +2,12 @@
 
 Experimental AnkerMake web UI and CLI build.
 
+[![Release](https://img.shields.io/badge/release-v1.0.0-success)](https://github.com/jr551/ankerctl_go_remake/releases/tag/v1.0.0)
+[![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)](https://go.dev/)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![CI](https://github.com/jr551/ankerctl_go_remake/actions/workflows/ci.yml/badge.svg)](https://github.com/jr551/ankerctl_go_remake/actions/workflows/ci.yml)
+[![Docker](https://img.shields.io/badge/ghcr.io-ankerctl--ng-blue?logo=docker)](https://ghcr.io/jr551/ankerctl-ng)
+
 ![ankerctl-ng dashboard](docs/img/screenshot-dashboard-ng.png)
 
 ## What this fork adds
@@ -53,11 +59,33 @@ docker run -d \
 
 Or:
 
+**Docker Compose:**
+
+```yaml
+services:
+  ankerctl-ng:
+    image: ghcr.io/jr551/ankerctl-ng:latest
+    container_name: ankerctl-ng
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ~/.ankerctl-ng:/home/ankerctl/.ankerctl-ng
+      - ankerctl-ng-captures:/captures
+    env_file: .env
+
+volumes:
+  ankerctl-ng-captures:
+```
+
+Copy `.env.example` to `.env` and adjust the values, then run:
+
 ```sh
 docker compose up -d
 ```
 
 `network_mode: host` is still required for printer LAN traffic.
+
+> **Firewall:** If ufw or another stateful firewall is enabled on the host, allow inbound UDP on **32100, 32108, and 32109**. ankerctl binds these as fixed local ports so conntrack can pass the printer's reply to a broadcast LanSearch. See [`docs/operations/firewall.md`](docs/operations/firewall.md) for the full rationale and `ufw allow` commands.
 
 To build locally instead:
 
