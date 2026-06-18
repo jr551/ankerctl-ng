@@ -47,7 +47,7 @@ printf '\377\330\377\331' > "$last"
 	defer srv.Close()
 
 	outPath := filepath.Join(tmpDir, "snapshot.jpg")
-	err := HomeAssistantCameraSnapshot(context.Background(), model.HomeAssistantCameraSettings{
+	err := HomeAssistantCameraSnapshot(context.Background(), &model.HomeAssistantCameraSettings{
 		Enabled:        true,
 		BaseURL:        srv.URL,
 		Token:          "secret-token",

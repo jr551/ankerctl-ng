@@ -132,8 +132,11 @@ func defaultPPPPClientFactory(cfgMgr *config.Manager, printerIndex int, database
 
 func openHandshakePPPPClient(duid protocol.Duid, knownIP string) (*ppppclient.Client, error) {
 	if ip, ok := handshakeTargetForKnownIP(knownIP); ok {
-		slog.Info("ppppservice: using known printer IP for unicast handshake", "target", ip.String())
-		return ppppclient.OpenBroadcastLANTo(duid, ip)
+		if directed, ok := directedBroadcastForTarget(ip); ok {
+			slog.Info("ppppservice: using directed broadcast for handshake", "target", directed.String(), "printer_ip", ip.String())
+			return ppppclient.OpenBroadcastLANTo(duid, directed)
+		}
+		slog.Warn("ppppservice: no directed broadcast match, falling back to global broadcast", "printer_ip", ip.String())
 	}
 	return ppppclient.OpenBroadcastLAN(duid)
 }
@@ -176,6 +179,9 @@ func directedBroadcastForTargetWithInterfaces(target net.IP, ifaces []net.Interf
 			}
 			localIP := ipnet.IP.To4()
 			mask := ipnet.Mask
+			if len(mask) == net.IPv6len {
+				mask = mask[12:]
+			}
 			if localIP == nil || len(mask) != net.IPv4len {
 				continue
 			}

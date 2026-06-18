@@ -426,11 +426,32 @@ func (s *PrintMonitorService) callOpenRouter(ctx context.Context, cfg model.Prin
 		Confidence float64 `json:"confidence"`
 		Reason     string  `json:"reason"`
 	}
-	content := strings.TrimSpace(apiResp.Choices[0].Message.Content)
+	content := stripJSONCodeFence(apiResp.Choices[0].Message.Content)
 	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
 		return false, 0, "", content, resp.StatusCode, fmt.Errorf("AI provider returned non-JSON content: %w", err)
 	}
 	return parsed.Failing, parsed.Confidence, parsed.Reason, content, resp.StatusCode, nil
+}
+
+func stripJSONCodeFence(content string) string {
+	content = strings.TrimSpace(content)
+	if !strings.HasPrefix(content, "```") {
+		return content
+	}
+	rest := strings.TrimPrefix(content, "```")
+	lineEnd := strings.IndexByte(rest, '\n')
+	if lineEnd < 0 {
+		return content
+	}
+	fenceInfo := strings.TrimSpace(rest[:lineEnd])
+	if fenceInfo != "" && !strings.EqualFold(fenceInfo, "json") {
+		return content
+	}
+	body := strings.TrimSpace(rest[lineEnd+1:])
+	if strings.HasSuffix(body, "```") {
+		body = strings.TrimSpace(strings.TrimSuffix(body, "```"))
+	}
+	return body
 }
 
 func (s *PrintMonitorService) printMonitorMetadata(ctx context.Context, cfg model.PrintMonitorConfig, filename string) map[string]any {

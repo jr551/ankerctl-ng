@@ -480,9 +480,9 @@ code {
     color: var(--bs-body-color);
     max-height: 220px;
     overflow: auto;
+    overflow-wrap: break-word;
     padding: 0.5rem;
     white-space: pre-wrap;
-    word-break: break-word;
 }
 
 @media (max-width: 991.98px) {

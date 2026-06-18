@@ -258,6 +258,8 @@ func TestAuth_AllProtectedGETPaths(t *testing.T) {
 		"/api/notifications/settings",
 		"/api/printers",
 		"/api/history",
+		"/api/history/123/thumbnail",
+		"/api/history/123/ai/0/image",
 	}
 
 	state := &authTestState{apiKey: "test-api-key-1234", login: true, sm: NewSessionManager([]byte("secret"))}

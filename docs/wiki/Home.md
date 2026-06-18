@@ -67,5 +67,5 @@ Navigate to [http://localhost:4470](http://localhost:4470) and log in with your 
 
 - [GitHub Repository](https://github.com/jr551/ankerctl_go_remake)
 - [Releases](https://github.com/jr551/ankerctl_go_remake/releases)
-- [Docker Image](https://ghcr.io/jr551/ankerctl-ng)
+- [Docker Image](https://github.com/jr551?tab=packages&package_type=container)
 - [Issue Tracker](https://github.com/jr551/ankerctl_go_remake/issues)

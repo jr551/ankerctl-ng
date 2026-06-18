@@ -49,6 +49,7 @@ var protectedGETPaths = map[string]bool{
 // protectedGETPrefixes covers dynamic path segments that require auth on all sub-paths.
 var protectedGETPrefixes = []string{
 	"/api/debug/",
+	"/api/history/",
 	"/api/timelapse/",
 	"/api/timelapse-snapshot/",
 }

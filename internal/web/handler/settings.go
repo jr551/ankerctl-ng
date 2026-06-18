@@ -640,9 +640,7 @@ func normalizeExternalSettings(e model.ExternalCameraSettings) model.ExternalCam
 	if e.RefreshSec > 30 {
 		e.RefreshSec = 30
 	}
-	e.HomeAssistant.BaseURL = strings.TrimRight(strings.TrimSpace(e.HomeAssistant.BaseURL), "/")
-	e.HomeAssistant.Token = strings.TrimSpace(e.HomeAssistant.Token)
-	e.HomeAssistant.CameraEntityID = strings.TrimSpace(e.HomeAssistant.CameraEntityID)
+	e.HomeAssistant = model.NormalizeHomeAssistantCameraSettings(e.HomeAssistant)
 	return e
 }
 
@@ -674,7 +672,11 @@ func mergeExternalCamera(dst *model.ExternalCameraSettings, src map[string]json.
 	if v, ok := src["home_assistant"]; ok {
 		var patch map[string]json.RawMessage
 		if json.Unmarshal(v, &patch) == nil {
-			mergeHomeAssistantCamera(&dst.HomeAssistant, patch)
+			if dst.HomeAssistant == nil {
+				dst.HomeAssistant = &model.HomeAssistantCameraSettings{}
+			}
+			mergeHomeAssistantCamera(dst.HomeAssistant, patch)
+			dst.HomeAssistant = model.NormalizeHomeAssistantCameraSettings(dst.HomeAssistant)
 		}
 	}
 }

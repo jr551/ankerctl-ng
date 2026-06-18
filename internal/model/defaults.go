@@ -190,11 +190,27 @@ type HomeAssistantCameraSettings struct {
 
 // ExternalCameraSettings holds the external camera configuration.
 type ExternalCameraSettings struct {
-	Name          string                      `json:"name"`
-	StreamURL     string                      `json:"stream_url"`
-	SnapshotURL   string                      `json:"snapshot_url"`
-	RefreshSec    int                         `json:"refresh_sec"`
-	HomeAssistant HomeAssistantCameraSettings `json:"home_assistant,omitempty"`
+	Name          string                       `json:"name"`
+	StreamURL     string                       `json:"stream_url"`
+	SnapshotURL   string                       `json:"snapshot_url"`
+	RefreshSec    int                          `json:"refresh_sec"`
+	HomeAssistant *HomeAssistantCameraSettings `json:"home_assistant,omitempty"`
+}
+
+// NormalizeHomeAssistantCameraSettings trims HA camera settings and returns nil
+// when the object is completely unconfigured.
+func NormalizeHomeAssistantCameraSettings(cfg *HomeAssistantCameraSettings) *HomeAssistantCameraSettings {
+	if cfg == nil {
+		return nil
+	}
+	normalized := *cfg
+	normalized.BaseURL = strings.TrimRight(strings.TrimSpace(normalized.BaseURL), "/")
+	normalized.Token = strings.TrimSpace(normalized.Token)
+	normalized.CameraEntityID = strings.TrimSpace(normalized.CameraEntityID)
+	if !normalized.Enabled && normalized.BaseURL == "" && normalized.Token == "" && normalized.CameraEntityID == "" {
+		return nil
+	}
+	return &normalized
 }
 
 // PrinterCameraEntry holds per-printer camera source settings.

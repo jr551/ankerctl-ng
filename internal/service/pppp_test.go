@@ -239,6 +239,25 @@ func TestDirectedBroadcastForTarget(t *testing.T) {
 	}
 }
 
+func TestDirectedBroadcastForTargetIPv4MappedMask(t *testing.T) {
+	target := net.IPv4(192, 168, 69, 33)
+	mask := net.IPMask(append(make([]byte, 12), 255, 255, 252, 0))
+	got, ok := directedBroadcastForTargetWithInterfaces(target, []net.Interface{
+		{Flags: net.FlagUp},
+	}, func(_ net.Interface) ([]net.Addr, error) {
+		return []net.Addr{
+			&net.IPNet{IP: net.ParseIP("192.168.69.201"), Mask: mask},
+		}, nil
+	})
+	if !ok {
+		t.Fatal("expected directed broadcast match")
+	}
+	want := net.IPv4(192, 168, 71, 255)
+	if !got.Equal(want) {
+		t.Fatalf("broadcast=%v, want %v", got, want)
+	}
+}
+
 func TestHandshakeTargetForKnownIP(t *testing.T) {
 	tests := []struct {
 		name    string

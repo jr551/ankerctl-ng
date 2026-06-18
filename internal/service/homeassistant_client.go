@@ -168,11 +168,14 @@ func (c *HomeAssistantClient) DownloadCameraSnapshot(ctx context.Context, entity
 	return os.Rename(tmp, outputPath)
 }
 
-func HomeAssistantCameraConfigured(cfg model.HomeAssistantCameraSettings) bool {
-	return cfg.Enabled && strings.TrimSpace(cfg.BaseURL) != "" && strings.TrimSpace(cfg.Token) != "" && strings.TrimSpace(cfg.CameraEntityID) != ""
+func HomeAssistantCameraConfigured(cfg *model.HomeAssistantCameraSettings) bool {
+	return cfg != nil && cfg.Enabled && strings.TrimSpace(cfg.BaseURL) != "" && strings.TrimSpace(cfg.Token) != "" && strings.TrimSpace(cfg.CameraEntityID) != ""
 }
 
-func HomeAssistantCameraStreamURL(cfg model.HomeAssistantCameraSettings) string {
+func HomeAssistantCameraStreamURL(cfg *model.HomeAssistantCameraSettings) string {
+	if cfg == nil {
+		return ""
+	}
 	if strings.TrimSpace(cfg.BaseURL) == "" || strings.TrimSpace(cfg.CameraEntityID) == "" {
 		return ""
 	}
@@ -183,7 +186,10 @@ func HomeAssistantCameraStreamURL(cfg model.HomeAssistantCameraSettings) string 
 	return u
 }
 
-func HomeAssistantCameraSnapshot(ctx context.Context, cfg model.HomeAssistantCameraSettings, outputPath string) error {
+func HomeAssistantCameraSnapshot(ctx context.Context, cfg *model.HomeAssistantCameraSettings, outputPath string) error {
+	if cfg == nil {
+		return fmt.Errorf("homeassistant: camera settings are required")
+	}
 	client := NewHomeAssistantClient(cfg.BaseURL, cfg.Token)
 	if err := client.DownloadCameraSnapshot(ctx, cfg.CameraEntityID, outputPath); err != nil {
 		streamURL := HomeAssistantCameraStreamURL(cfg)
@@ -197,7 +203,10 @@ func HomeAssistantCameraSnapshot(ctx context.Context, cfg model.HomeAssistantCam
 	return nil
 }
 
-func homeAssistantAuthHeaders(cfg model.HomeAssistantCameraSettings) map[string]string {
+func homeAssistantAuthHeaders(cfg *model.HomeAssistantCameraSettings) map[string]string {
+	if cfg == nil {
+		return nil
+	}
 	token := strings.TrimSpace(cfg.Token)
 	if token == "" {
 		return nil

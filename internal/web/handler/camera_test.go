@@ -32,7 +32,7 @@ func TestCameraFrame_HomeAssistantSnapshotTimesOutFast(t *testing.T) {
 				"SN001": {
 					Source: model.CameraSourceExternal,
 					External: model.ExternalCameraSettings{
-						HomeAssistant: model.HomeAssistantCameraSettings{
+						HomeAssistant: &model.HomeAssistantCameraSettings{
 							Enabled:        true,
 							BaseURL:        srv.URL,
 							Token:          "token",

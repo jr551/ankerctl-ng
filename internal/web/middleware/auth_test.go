@@ -227,6 +227,8 @@ func TestAuth_ProtectedGETPaths_TableDriven(t *testing.T) {
 		{"filaments", "/api/filaments"},
 		{"filaments_service_swap", "/api/filaments/service/swap"},
 		{"history", "/api/history"},
+		{"history_thumbnail", "/api/history/123/thumbnail"},
+		{"history_ai_image", "/api/history/123/ai/0/image"},
 		{"timelapses", "/api/timelapses"},
 		{"timelapse_snapshots", "/api/timelapse-snapshots"},
 		{"timelapse_prefix_dynamic", "/api/timelapse/123"},

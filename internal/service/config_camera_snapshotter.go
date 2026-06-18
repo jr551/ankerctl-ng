@@ -110,8 +110,6 @@ func normalizeConfigExternalCamera(e model.ExternalCameraSettings) model.Externa
 	}
 	e.StreamURL = strings.TrimSpace(e.StreamURL)
 	e.SnapshotURL = strings.TrimSpace(e.SnapshotURL)
-	e.HomeAssistant.BaseURL = strings.TrimRight(strings.TrimSpace(e.HomeAssistant.BaseURL), "/")
-	e.HomeAssistant.Token = strings.TrimSpace(e.HomeAssistant.Token)
-	e.HomeAssistant.CameraEntityID = strings.TrimSpace(e.HomeAssistant.CameraEntityID)
+	e.HomeAssistant = model.NormalizeHomeAssistantCameraSettings(e.HomeAssistant)
 	return e
 }

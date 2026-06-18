@@ -279,7 +279,7 @@ func (s *NotificationService) send(ctx context.Context, event string, payload ma
 		result := client.SendEventDetailed(ctx, event, payload, attachments)
 		s.recordDelivery(extractFilename(payload), event, result)
 	}
-	if announcement := s.currentAnnouncement(); announcement != nil {
+	if announcement := s.currentAnnouncement(); announcement != nil && announcement.Enabled {
 		result := SendHomeAnnouncement(ctx, *announcement, event, payload)
 		s.recordDelivery(extractFilename(payload), event, result)
 	}

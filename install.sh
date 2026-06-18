@@ -5,7 +5,6 @@ APP_NAME="ankerctl-ng"
 SERVICE_NAME="ankerctl-ng.service"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_OUT="${REPO_DIR}/dist/${APP_NAME}"
-DEFAULT_CONFIG_DIR="${HOME}/.ankerctl-ng"
 
 cmd="${1:-install}"
 
@@ -81,7 +80,12 @@ install_binary() {
 write_service() {
     unit_path="/etc/systemd/system/${SERVICE_NAME}"
     user_name="${SUDO_USER:-$USER}"
-    home_dir="$(eval echo "~${user_name}")"
+    home_dir="$(getent passwd "${user_name}" | cut -d: -f6)"
+    if [ -z "${home_dir}" ]; then
+        echo "Could not resolve home directory for ${user_name}" >&2
+        exit 1
+    fi
+    config_dir="${home_dir}/.ankerctl-ng"
     cat <<EOF | run_as_root tee "${unit_path}" >/dev/null
 [Unit]
 Description=ankerctl-ng experimental web UI
@@ -92,7 +96,7 @@ Wants=network-online.target
 Type=simple
 User=${user_name}
 WorkingDirectory=${REPO_DIR}
-ExecStart=/usr/local/bin/${APP_NAME} --config ${DEFAULT_CONFIG_DIR} webserver --listen 0.0.0.0:4470
+ExecStart=/usr/local/bin/${APP_NAME} --config ${config_dir} webserver --listen 0.0.0.0:4470
 Restart=always
 RestartSec=3
 Environment=HOME=${home_dir}

@@ -241,6 +241,18 @@ $(function () {
         return div.innerHTML;
     }
 
+    function safeHttpURL(raw) {
+        try {
+            const url = new URL(String(raw), window.location.origin);
+            if (url.protocol === "http:" || url.protocol === "https:") {
+                return url.href;
+            }
+        } catch (_) {
+            return "";
+        }
+        return "";
+    }
+
     /**
      * Calculates the AnkerMake M5 Speed ratio ("X-factor")
      * @param {number} speed - The speed value in mm/s
@@ -1415,14 +1427,16 @@ $(function () {
             try {
                 const resp = await fetch(`/api/smart-socket/state?t=${Date.now()}`, { cache: "no-store" });
                 if (!resp.ok) {
-                    renderUnavailablePowerStrip(resp.statusText);
+                    latestPowerState = { available: false, error: resp.statusText || `HTTP ${resp.status}` };
+                    renderPrinterPowerStrip();
                     return;
                 }
                 latestPowerState = await resp.json();
                 renderPrinterPowerStrip();
             } catch (err) {
                 console.error("Failed to load printer power strip:", err);
-                renderUnavailablePowerStrip("State fetch failed");
+                latestPowerState = { available: false, error: "State fetch failed" };
+                renderPrinterPowerStrip();
             }
         };
 
@@ -3197,7 +3211,7 @@ $(function () {
                     const latestAI = Array.isArray(e.ai_history) && e.ai_history.length ? e.ai_history[e.ai_history.length - 1] : null;
                     const latestHook = Array.isArray(e.notification_log) && e.notification_log.length ? e.notification_log[e.notification_log.length - 1] : null;
                     const aiSummary = latestAI
-                        ? `${latestAI.failing ? "Fail" : "OK"}${latestAI.confidence ? ` ${Math.round(latestAI.confidence * 100)}%` : ""}`
+                        ? `${latestAI.failing ? "Fail" : "OK"}${latestAI.confidence != null ? ` ${Math.round(latestAI.confidence * 100)}%` : ""}`
                         : "-";
                     const hookSummary = latestHook
                         ? `${latestHook.ok ? "OK" : "Err"} ${escapeHtml(latestHook.event || latestHook.transport || "")}`
@@ -3205,9 +3219,14 @@ $(function () {
                     const aiDetails = (e.ai_history || []).slice().reverse().map((item) => {
                         const parts = [];
                         parts.push(`<strong>${item.failing ? "Fail" : "OK"}</strong>`);
-                        if (item.confidence) parts.push(`${Math.round(item.confidence * 100)}%`);
+                        if (item.confidence != null) parts.push(`${Math.round(item.confidence * 100)}%`);
                         if (item.reason) parts.push(escapeHtml(item.reason));
-                        if (item.evidence_url) parts.push(`<a href="${item.evidence_url}" target="_blank" rel="noopener">image</a>`);
+                        if (item.evidence_url) {
+                            const safeURL = safeHttpURL(item.evidence_url);
+                            if (safeURL) {
+                                parts.push(`<a href="${escapeHtml(safeURL)}" target="_blank" rel="noopener">image</a>`);
+                            }
+                        }
                         if (item.raw_response) parts.push(`<details><summary>AI reply</summary><pre class="small mb-0">${escapeHtml(item.raw_response)}</pre></details>`);
                         return `<div class="mb-2"><div class="small text-body-secondary">${item.at ? new Date(item.at).toLocaleString() : ""}</div>${parts.join(" · ")}</div>`;
                     }).join("");
@@ -3404,7 +3423,7 @@ $(function () {
             cameraFields.directURLFields.toggleClass("d-none", usingHA);
             if (usingHA) {
                 const refresh = parseInt(cameraFields.refresh.val(), 10);
-                if (!Number.isFinite(refresh) || refresh < 1 || refresh === 3) {
+                if (!Number.isFinite(refresh) || refresh < 1 || refresh > 30) {
                     cameraFields.refresh.val(1);
                 }
             }

@@ -154,13 +154,16 @@ func (s *PowerSavingService) wakeForDashboard(ctx context.Context) {
 	}
 	until := time.Now().Add(time.Duration(wakeSec) * time.Second)
 	s.mu.Lock()
+	alreadyAwake := s.awakeUntil != nil && time.Now().Before(*s.awakeUntil)
 	s.awakeUntil = &until
 	if s.idleSince == nil {
 		now := time.Now()
 		s.idleSince = &now
 	}
 	s.mu.Unlock()
-	s.setSocket(ctx, cfg, true, "dashboard wake")
+	if !alreadyAwake {
+		s.setSocket(ctx, cfg, true, "dashboard wake")
+	}
 }
 
 func (s *PowerSavingService) handlePrintState(ctx context.Context, state int) {
@@ -171,10 +174,13 @@ func (s *PowerSavingService) handlePrintState(ctx context.Context, state int) {
 	switch state {
 	case mqttStatePrinting:
 		s.mu.Lock()
+		wasActive := s.printActive
 		s.printActive = true
 		s.idleSince = nil
 		s.mu.Unlock()
-		s.setSocket(ctx, cfg, true, "print started")
+		if !wasActive {
+			s.setSocket(ctx, cfg, true, "print started")
+		}
 	case mqttStateIdle, mqttStateAborted:
 		now := time.Now()
 		s.mu.Lock()

@@ -126,6 +126,12 @@ func (h *Handler) SettingsSmartSocketUpdate(w http.ResponseWriter, r *http.Reque
 	h.writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "smart_socket": updated})
 }
 
+func smartSocketConfigured(ss model.SmartSocketConfig) bool {
+	return strings.TrimSpace(ss.BaseURL) != "" &&
+		strings.TrimSpace(ss.Token) != "" &&
+		strings.TrimSpace(ss.SwitchEntity) != ""
+}
+
 func (h *Handler) SmartSocketState(w http.ResponseWriter, r *http.Request) {
 	cfg, err := h.loadConfig()
 	if err != nil || cfg == nil || !cfg.SmartSocket.Enabled {
@@ -133,8 +139,8 @@ func (h *Handler) SmartSocketState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ss := cfg.SmartSocket
-	if strings.TrimSpace(ss.SwitchEntity) == "" {
-		h.writeJSON(w, http.StatusOK, map[string]any{"available": false, "error": "switch entity is not configured"})
+	if !smartSocketConfigured(ss) {
+		h.writeJSON(w, http.StatusOK, map[string]any{"available": false, "error": "smart socket is not configured"})
 		return
 	}
 	client := service.NewHomeAssistantClient(ss.BaseURL, ss.Token)
@@ -185,7 +191,7 @@ func (h *Handler) SmartSocketControl(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cfg, err := h.loadConfig()
-	if err != nil || cfg == nil || !cfg.SmartSocket.Enabled || strings.TrimSpace(cfg.SmartSocket.SwitchEntity) == "" {
+	if err != nil || cfg == nil || !cfg.SmartSocket.Enabled || !smartSocketConfigured(cfg.SmartSocket) {
 		h.writeError(w, http.StatusBadRequest, "smart socket is not configured")
 		return
 	}

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/json"
 	"os"
 	"testing"
 )
@@ -80,6 +81,49 @@ func TestDefaultHomeAssistantConfig_Defaults(t *testing.T) {
 	}
 	if cfg.NodeID != "ankermake_m5" {
 		t.Errorf("NodeID = %q, want %q", cfg.NodeID, "ankermake_m5")
+	}
+}
+
+func TestExternalCameraSettings_HomeAssistantJSON(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     ExternalCameraSettings
+		wantKey bool
+	}{
+		{
+			name:    "omits nil home assistant settings",
+			cfg:     DefaultExternalCameraSettings(),
+			wantKey: false,
+		},
+		{
+			name: "includes configured home assistant settings",
+			cfg: ExternalCameraSettings{
+				RefreshSec: 1,
+				HomeAssistant: &HomeAssistantCameraSettings{
+					BaseURL:        "http://ha.local",
+					Token:          "token",
+					CameraEntityID: "camera.printer",
+				},
+			},
+			wantKey: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw, err := json.Marshal(tt.cfg)
+			if err != nil {
+				t.Fatalf("Marshal: %v", err)
+			}
+			var got map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &got); err != nil {
+				t.Fatalf("Unmarshal: %v", err)
+			}
+			_, ok := got["home_assistant"]
+			if ok != tt.wantKey {
+				t.Fatalf("home_assistant present = %v, want %v; json=%s", ok, tt.wantKey, raw)
+			}
+		})
 	}
 }
 
