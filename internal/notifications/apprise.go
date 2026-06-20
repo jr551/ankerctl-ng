@@ -394,11 +394,6 @@ func (c *Client) postSMTP(ctx context.Context, u *url.URL, title, body, typ stri
 		return result
 	}
 
-	msgBody := body
-	if len(attachments) > 0 {
-		msgBody += "\n\nAttachments were available to the notification system but SMTP helper emails send text only."
-	}
-
 	addr := net.JoinHostPort(host, port)
 	dialer := &net.Dialer{Timeout: defaultTimeout}
 	var client *smtp.Client
@@ -457,7 +452,7 @@ func (c *Client) postSMTP(ctx context.Context, u *url.URL, title, body, typ stri
 		result.Message = err.Error()
 		return result
 	}
-	msg := smtpMessage(from, recipients, title, typ, msgBody)
+	msg := smtpMessage(from, recipients, title, typ, body, attachments)
 	if _, err := io.WriteString(w, msg); err != nil {
 		_ = w.Close()
 		result.Message = err.Error()
@@ -509,17 +504,96 @@ func smtpTLSMode(u *url.URL) string {
 	return "starttls"
 }
 
-func smtpMessage(from string, to []string, title, typ, body string) string {
+func smtpMessage(from string, to []string, title, typ, body string, attachments []string) string {
 	subject := mime.QEncoding.Encode("utf-8", cleanSMTPHeader(title))
-	headers := []string{
-		"From: " + cleanSMTPHeader(from),
-		"To: " + cleanSMTPHeader(strings.Join(to, ", ")),
-		"Subject: " + subject,
-		"MIME-Version: 1.0",
-		"Content-Type: text/plain; charset=UTF-8",
-		"X-Ankerctl-Notification-Type: " + cleanSMTPHeader(typ),
+	images := decodeImageAttachments(attachments)
+
+	if len(images) == 0 {
+		headers := []string{
+			"From: " + cleanSMTPHeader(from),
+			"To: " + cleanSMTPHeader(strings.Join(to, ", ")),
+			"Subject: " + subject,
+			"MIME-Version: 1.0",
+			"Content-Type: text/plain; charset=UTF-8",
+			"X-Ankerctl-Notification-Type: " + cleanSMTPHeader(typ),
+		}
+		return strings.Join(headers, "\r\n") + "\r\n\r\n" + normalizeSMTPBody(body) + "\r\n"
 	}
-	return strings.Join(headers, "\r\n") + "\r\n\r\n" + normalizeSMTPBody(body) + "\r\n"
+
+	// Multipart message so the snapshot of the print is embedded in the email.
+	const boundary = "==ankerctl-ng-boundary-3f9a1c=="
+	var b strings.Builder
+	b.WriteString("From: " + cleanSMTPHeader(from) + "\r\n")
+	b.WriteString("To: " + cleanSMTPHeader(strings.Join(to, ", ")) + "\r\n")
+	b.WriteString("Subject: " + subject + "\r\n")
+	b.WriteString("MIME-Version: 1.0\r\n")
+	b.WriteString("X-Ankerctl-Notification-Type: " + cleanSMTPHeader(typ) + "\r\n")
+	b.WriteString("Content-Type: multipart/mixed; boundary=\"" + boundary + "\"\r\n\r\n")
+
+	b.WriteString("--" + boundary + "\r\n")
+	b.WriteString("Content-Type: text/plain; charset=UTF-8\r\n\r\n")
+	b.WriteString(normalizeSMTPBody(body) + "\r\n\r\n")
+
+	for i, img := range images {
+		b.WriteString("--" + boundary + "\r\n")
+		b.WriteString("Content-Type: " + img.mimeType + "\r\n")
+		b.WriteString("Content-Transfer-Encoding: base64\r\n")
+		b.WriteString(fmt.Sprintf("Content-Disposition: inline; filename=\"snapshot-%d.%s\"\r\n\r\n", i+1, img.ext))
+		b.WriteString(wrapBase64(img.b64) + "\r\n")
+	}
+	b.WriteString("--" + boundary + "--\r\n")
+	return b.String()
+}
+
+type smtpImage struct {
+	mimeType string
+	ext      string
+	b64      string // already-base64-encoded payload
+}
+
+// decodeImageAttachments extracts data:image/...;base64,<data> attachments,
+// which is how the snapshot is passed through the notification pipeline.
+// Non-data-URI attachments (e.g. plain URLs) cannot be embedded in email and
+// are skipped.
+func decodeImageAttachments(attachments []string) []smtpImage {
+	var out []smtpImage
+	for _, a := range attachments {
+		if !strings.HasPrefix(a, "data:") {
+			continue
+		}
+		comma := strings.IndexByte(a, ',')
+		if comma < 0 {
+			continue
+		}
+		meta := a[len("data:"):comma]
+		if !strings.Contains(meta, "base64") {
+			continue
+		}
+		mimeType := strings.TrimSuffix(meta, ";base64")
+		if mimeType == "" {
+			mimeType = "application/octet-stream"
+		}
+		ext := "bin"
+		if i := strings.IndexByte(mimeType, '/'); i >= 0 {
+			ext = mimeType[i+1:]
+		}
+		out = append(out, smtpImage{mimeType: mimeType, ext: ext, b64: a[comma+1:]})
+	}
+	return out
+}
+
+// wrapBase64 re-wraps a base64 string to 76-character lines per RFC 2045.
+func wrapBase64(s string) string {
+	s = strings.NewReplacer("\r", "", "\n", "").Replace(s)
+	const width = 76
+	var b strings.Builder
+	for len(s) > width {
+		b.WriteString(s[:width])
+		b.WriteString("\r\n")
+		s = s[width:]
+	}
+	b.WriteString(s)
+	return b.String()
 }
 
 func cleanSMTPHeader(v string) string {

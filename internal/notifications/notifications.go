@@ -117,7 +117,8 @@ func SendTestNotification(ctx context.Context, apprise model.AppriseConfig, snap
 	if !client.IsConfigured() {
 		return false, "Apprise server URL or key missing"
 	}
-	attachments := maybeSnapshotAttachment(ctx, snapshot)
+	want := resolved.Progress.IncludeImage || envBool("APPRISE_ATTACH")
+	attachments := maybeSnapshotAttachment(ctx, snapshot, want)
 	return client.Post(ctx, "Ankerctl Test", "Test notification sent from ankerctl settings page.", "info", attachments)
 }
 
@@ -275,7 +276,11 @@ func (s *NotificationService) handleStateTransition(ctx context.Context, state i
 
 func (s *NotificationService) send(ctx context.Context, event string, payload map[string]any) {
 	if client := s.currentClient(); client != nil {
-		attachments := maybeSnapshotAttachment(ctx, s.snapshot)
+		// Attach a snapshot when the user enabled "include image" (or the
+		// APPRISE_ATTACH env override). This is what puts a photo of the
+		// finished print in the notification / email.
+		want := client.settings.Progress.IncludeImage || envBool("APPRISE_ATTACH")
+		attachments := maybeSnapshotAttachment(ctx, s.snapshot, want)
 		result := client.SendEventDetailed(ctx, event, payload, attachments)
 		s.recordDelivery(extractFilename(payload), event, result)
 	}
@@ -329,8 +334,8 @@ func (s *NotificationService) recordDelivery(filename, event string, result Deli
 	}
 }
 
-func maybeSnapshotAttachment(ctx context.Context, snapshot SnapshotCapturer) []string {
-	if !envBool("APPRISE_ATTACH") || snapshot == nil {
+func maybeSnapshotAttachment(ctx context.Context, snapshot SnapshotCapturer, want bool) []string {
+	if !want || snapshot == nil {
 		return nil
 	}
 	tmp, err := os.CreateTemp("", "apprise-*.jpg")
