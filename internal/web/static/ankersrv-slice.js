@@ -18,6 +18,7 @@ if (fileInput) {
         scad: $("slice-scad"), scadRender: $("slice-scad-render"),
         scadLive: $("slice-scad-live"), scadPreviewCanvas: $("scad-preview-canvas"),
         scadAiPrompt: $("scad-ai-prompt"), scadAiGo: $("scad-ai-go"), scadAiUndo: $("scad-ai-undo"),
+        scadAiIters: $("scad-ai-iters"),
         scadAiImages: $("scad-ai-images"), scadAiImagesNote: $("scad-ai-images-note"),
         model: $("slice-printer-model"), layerHeight: $("slice-layer-height"),
         infill: $("slice-infill"), infillLabel: $("slice-infill-label"), pattern: $("slice-pattern"),
@@ -50,6 +51,9 @@ if (fileInput) {
         els.status.className = "form-text mb-0" + (kind === "error" ? " text-danger" : kind === "ok" ? " text-success" : "");
     };
     const clampInt = (v, lo, hi, d) => { v = parseInt(v, 10); return Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d; };
+    // Escape all HTML metacharacters before inserting (possibly AI/model-derived)
+    // text into innerHTML, to prevent XSS.
+    const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#x27;" }[c]));
 
     // ── Upload verification + complexity thresholds ──────────────────────
     const TRI_WARN = 400000;          // triangles: slicing gets slow beyond this
@@ -64,6 +68,7 @@ if (fileInput) {
         if (size < 15) return { ok: false, error: "the file is too small to be an STL" };
         if (size >= 84) {
             const n = new DataView(buf).getUint32(80, true);
+            if (n > 10000000) return { ok: false, error: "binary STL triangle count is implausibly large" };
             if (84 + n * 50 === size) return { ok: true, kind: "binary" };
         }
         const head = new TextDecoder().decode(new Uint8Array(buf, 0, Math.min(size, 2048))).trim().toLowerCase();
@@ -274,7 +279,7 @@ if (fileInput) {
 
     const applyVerdict = (issues) => {
         if (issues.length) {
-            els.warning.innerHTML = "<strong>Heads up:</strong> " + issues.map((i) => i.replace(/</g, "&lt;")).join(" ");
+            els.warning.innerHTML = "<strong>Heads up:</strong> " + issues.map((i) => escapeHtml(i)).join(" ");
             els.warning.classList.remove("d-none"); els.continueBtn.classList.remove("d-none"); els.print.disabled = true;
         } else {
             els.warning.classList.add("d-none"); els.continueBtn.classList.add("d-none"); els.print.disabled = false;
@@ -306,12 +311,14 @@ if (fileInput) {
             if (tris > TRI_WARN) issues.push(`Very complex model (~${tris.toLocaleString()} triangles) — slicing is slow and the print may take a long time.`);
             if (moves > MOVE_WARN) issues.push(`Very large toolpath (${moves.toLocaleString()} moves) — long print and a big upload; inspect carefully first.`);
             setStatus(`Sliced in ${dt} ms — ${parsed.layers.length} layers, ${moves} moves. Running AI check…`);
+            let aiChecked = false;
             try {
                 const r = await fetch("/api/slice/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: els.canvas.toDataURL("image/jpeg", 0.6) }) });
-                if (r.ok) { const d = await r.json(); if (d.serious && d.issue) issues.push("AI flagged: " + d.issue); }
-            } catch (e) { /* AI optional */ }
+                if (r.ok) { const d = await r.json(); aiChecked = !d.skipped; if (d.serious && d.issue) issues.push("AI flagged: " + d.issue); }
+            } catch (e) { /* AI optional — surfaced below */ }
             applyVerdict(issues);
-            setStatus(`Sliced in ${dt} ms — ${parsed.layers.length} layers, ${moves} moves.` + (issues.length ? " A check flagged an issue (below)." : " Download & inspect before printing a new model."), issues.length ? "error" : "ok");
+            const aiNote = aiChecked ? "" : " (AI check unavailable)";
+            setStatus(`Sliced in ${dt} ms — ${parsed.layers.length} layers, ${moves} moves.` + (issues.length ? " A check flagged an issue (below)." : " Download & inspect before printing a new model.") + aiNote, issues.length ? "error" : "ok");
         } catch (err) { setStatus("Slice failed: " + (err && err.message ? err.message : err), "error"); }
         finally { els.run.disabled = false; els.run.innerHTML = runLabel; }
     };
@@ -416,7 +423,7 @@ if (fileInput) {
     const initScadPreview = () => {
         if (preview || !els.scadPreviewCanvas) return;
         const THREE = libs.THREE, cv = els.scadPreviewCanvas, size = cv.clientWidth || 300;
-        const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true });
+        const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true, preserveDrawingBuffer: true });
         renderer.setPixelRatio(window.devicePixelRatio || 1);
         renderer.setSize(size, size, false);
         const scene = new THREE.Scene();
@@ -457,6 +464,20 @@ if (fileInput) {
         geo.translate(-(bb.min.x + bb.max.x) / 2, -(bb.min.y + bb.max.y) / 2, -bb.min.z);
         const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x88f387, metalness: 0.1, roughness: 0.6, flatShading: true }));
         preview.scene.add(mesh); preview.mesh = mesh;
+    };
+    // Compile + render the current SCAD and grab the preview canvas as an image,
+    // so the AI can SEE what it produced during iterative refinement.
+    const renderScadToImage = async (src) => {
+        try {
+            await loadLibs();
+            const stl = await compileScad(src);
+            setScadPreviewGeometry(new libs.STLLoader().parse(stl.buffer.slice(stl.byteOffset, stl.byteOffset + stl.byteLength)));
+            initScadPreview();
+            if (!preview) return null;
+            preview.controls.update();
+            preview.renderer.render(preview.scene, preview.camera);
+            return preview.renderer.domElement.toDataURL("image/jpeg", 0.7);
+        } catch (e) { return null; }
     };
     const scheduleLivePreview = () => {
         if (!els.scadLive || !els.scadLive.checked || !els.scad.value.trim()) return;
@@ -514,31 +535,58 @@ if (fileInput) {
         els.scadAiGo.addEventListener("click", async () => {
             const prompt = (els.scadAiPrompt.value || "").trim();
             if (!prompt) { setStatus("Describe the change for the AI first.", "error"); els.scadAiPrompt.focus(); return; }
-            // Loading indicator: spinner on the button + a live elapsed counter, because
-            // the model can take 20-60s and otherwise the button just looks frozen.
+            const iterations = clampInt(els.scadAiIters && els.scadAiIters.value, 1, 5, 1);
+            // Loading indicator: spinner on the button + a live elapsed counter and
+            // frequent phase updates, because each AI pass can take 20-60s and the
+            // user must never think it has frozen.
             els.scadAiGo.disabled = true;
             els.scadAiPrompt.disabled = true;
+            if (els.scadAiIters) els.scadAiIters.disabled = true;
             els.scadAiGo.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
             const t0 = performance.now();
-            const timer = setInterval(() => {
-                const s = Math.round((performance.now() - t0) / 1000);
-                setStatus(`Asking the AI to edit the model… ${s}s (this can take up to a minute)`);
-            }, 500);
-            setStatus("Asking the AI to edit the model…");
+            let phase = "Asking the AI to edit the model", settled = false;
+            // settled guards against the 400ms ticker overwriting a terminal (error/done) message.
+            const tick = () => { if (settled) return; const s = Math.round((performance.now() - t0) / 1000); setStatus(`${phase}… ${s}s`); };
+            const setPhase = (p) => { phase = p; tick(); };
+            const timer = setInterval(tick, 400);
+            tick();
+            let pushedUndo = false, scad = els.scad.value, applied = false, didConverge = false;
             try {
-                const resp = await fetch("/api/openscad/edit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scad: els.scad.value, prompt, images: scadRefImages }) });
-                const d = await resp.json().catch(() => ({}));
-                if (d.skipped) { setStatus(d.error ? "AI edit failed: " + d.error : "AI not configured (set it up under Camera & AI).", "error"); return; }
-                if (!d.scad) { setStatus("AI returned no code.", "error"); return; }
-                scadUndo.push(els.scad.value);
-                els.scadAiUndo.disabled = false;
-                els.scad.value = d.scad;
-                els.scadRender.disabled = !els.scad.value.trim();
-                const det = document.getElementById("slice-scad-details"); if (det) det.open = true;
-                scheduleLivePreview();
-                setStatus("AI updated the model — rendering preview. Use Undo to revert.", "ok");
-            } catch (err) { setStatus("AI edit error: " + (err && err.message ? err.message : err), "error"); }
-            finally { clearInterval(timer); els.scadAiGo.disabled = false; els.scadAiGo.innerHTML = aiGoLabel; els.scadAiPrompt.disabled = false; }
+                for (let i = 1; i <= iterations; i++) {
+                    let promptForCall, images;
+                    if (i === 1) {
+                        setPhase(iterations > 1 ? `AI editing — pass 1 of ${iterations}` : "Asking the AI to edit the model");
+                        promptForCall = prompt; images = scadRefImages;
+                    } else {
+                        setPhase(`Rendering the result so the AI can review it — pass ${i} of ${iterations}`);
+                        const img = await renderScadToImage(scad);
+                        setPhase(`AI reviewing its own result & refining — pass ${i} of ${iterations}`);
+                        promptForCall = `You previously wrote this OpenSCAD for the request: "${prompt}". The code above is your current version` + (img ? ", and the attached image is a render of it" : "") + `. Critically review it and improve it so it better satisfies the request — fix mistakes, add missing detail, refine proportions and geometry. If it already fully satisfies the request, return it unchanged. Reply with ONLY the complete updated OpenSCAD.`;
+                        images = img ? [img] : [];
+                    }
+                    const resp = await fetch("/api/openscad/edit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scad, prompt: promptForCall, images }) });
+                    if (!resp.ok) { settled = true; setStatus(`AI request failed (HTTP ${resp.status}) on pass ${i} of ${iterations}.`, "error"); break; }
+                    const d = await resp.json().catch(() => ({}));
+                    if (d.skipped) { settled = true; setStatus(d.error ? `AI edit failed on pass ${i}: ${d.error}` : "AI not configured (set it up under Camera & AI).", "error"); break; }
+                    if (!d.scad) { settled = true; setStatus(`AI returned no code on pass ${i}.`, "error"); break; }
+                    if (!pushedUndo) { scadUndo.push(els.scad.value); els.scadAiUndo.disabled = false; pushedUndo = true; }
+                    const converged = d.scad.trim() === scad.trim();
+                    scad = d.scad;
+                    els.scad.value = scad;
+                    els.scadRender.disabled = !scad.trim();
+                    applied = true;
+                    const det = document.getElementById("slice-scad-details"); if (det) det.open = true;
+                    if (converged && i > 1) { didConverge = true; break; }
+                    if (i < iterations) setPhase(`Pass ${i} of ${iterations} applied — continuing to refine`);
+                }
+                if (applied) {
+                    settled = true;
+                    scheduleLivePreview();
+                    const s = Math.round((performance.now() - t0) / 1000);
+                    setStatus(`${didConverge ? `AI refined the model and converged in ${s}s` : `AI finished in ${s}s`} — rendering preview. Use Undo to revert.`, "ok");
+                }
+            } catch (err) { settled = true; setStatus("AI edit error: " + (err && err.message ? err.message : err), "error"); }
+            finally { clearInterval(timer); els.scadAiGo.disabled = false; els.scadAiGo.innerHTML = aiGoLabel; els.scadAiPrompt.disabled = false; if (els.scadAiIters) els.scadAiIters.disabled = false; }
         });
     }
     if (els.scadAiUndo) {

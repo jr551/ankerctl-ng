@@ -2,6 +2,8 @@
 
 A substantially extended AnkerMake M5C web UI & CLI — in-browser slicing, AI-assisted OpenSCAD design, AI print monitoring with safety stops, Home Assistant integration, and more. *Now with extra AI goodness! (adapted by jr)*
 
+> 🤖 Built with **DeepSeek V4 Pro** 🧠 + **GLM 5.2** ⚡ + a dash of **Claude Opus** 🎩 — and a *lot* of **jr551** direction 🧭
+
 > **This is a fork.** `ankerctl-ng` builds on
 > [`Django1982/ankerctl_go_remake`](https://github.com/Django1982/ankerctl_go_remake)
 > (a Go re-implementation), which is itself a port of the original Python
@@ -32,12 +34,18 @@ A substantially extended AnkerMake M5C web UI & CLI — in-browser slicing, AI-a
 - ⚡ **Power-saving controls**, better camera loading, and a modernized dashboard
 - 🖨️ **OrcaSlicer-first** setup flow
 
+## 🤖 AI in action — design a part from a sentence
+
+Describe a part in plain English and the model writes the OpenSCAD, renders a live 3D preview, then **reviews its own result and refines it** for up to 5 passes — with live, per-pass status so it never looks stuck:
+
+![AI iterating on an OpenSCAD model](docs/img/screenshot-ai-iterating.png)
+
 ## 📸 Highlights
 
 | | |
 |---|---|
 | **🛑 Dashboard with one-tap E-STOP**<br>![Dashboard](docs/img/screenshot-home-ng.png) | **🧩 Slice & Build — STL or OpenSCAD in the browser**<br>![Slice & Build](docs/img/screenshot-slice-build.png) |
-| **✏️ AI-assisted OpenSCAD with a live 3D preview**<br>![OpenSCAD AI](docs/img/screenshot-slice-openscad.png) | **🧠 AI print monitoring + 🐾 animal safety stop**<br>![AI monitor](docs/img/screenshot-ai-monitor.png) |
+| **✏️ AI-refined OpenSCAD result**<br>![OpenSCAD AI result](docs/img/screenshot-ai-openscad-demo.png) | **🧠 AI print monitoring + 🐾 animal safety stop**<br>![AI monitor](docs/img/screenshot-ai-monitor.png) |
 
 > *Screenshots from a live AnkerMake M5C running ankerctl-ng.*
 
