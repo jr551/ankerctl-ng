@@ -1,0 +1,72 @@
+<div class="tab-pane fade" id="slice" role="tabpanel" aria-labelledby="slice-tab">
+    <div class="container mb-4">
+        <div class="row g-3">
+            <div class="col-lg-10 offset-lg-1">
+                <div class="card">
+                    <div class="card-header fs-6">
+                        <i class="bi-box px-1"></i> Slice &amp; Print <span class="badge bg-secondary ms-1">beta</span>
+                    </div>
+                    <div class="card-body vstack gap-3">
+                        <div class="alert alert-warning py-2 px-3 mb-0 small">
+                            <i class="bi-exclamation-triangle px-1"></i> Slices in your browser with sane AnkerMake M5C
+                            PLA defaults. For a new model, <strong>Download &amp; inspect</strong> the gcode in a desktop
+                            slicer before trusting an auto-sliced print.
+                        </div>
+
+                        <div>
+                            <label class="form-label fw-semibold" for="slice-stl-file">
+                                <i class="bi-file-earmark-binary px-1"></i> STL file
+                            </label>
+                            <input type="file" class="form-control" id="slice-stl-file" accept=".stl" />
+                        </div>
+
+                        <details>
+                            <summary class="text-muted small">Or paste OpenSCAD</summary>
+                            <textarea class="form-control mt-2 font-monospace" id="slice-scad" rows="5"
+                                placeholder="// e.g.\ncube([20,20,10]);"></textarea>
+                            <div class="d-flex gap-2 mt-2">
+                                <button class="btn btn-outline-secondary btn-sm" id="slice-scad-render" type="button"
+                                    disabled>Render OpenSCAD</button>
+                                <span class="form-text mb-0" id="slice-scad-note">OpenSCAD rendering loads on first
+                                    use (~3&nbsp;MB).</span>
+                            </div>
+                        </details>
+
+                        <div class="d-flex flex-wrap gap-2 align-items-center">
+                            <button class="btn btn-primary" id="slice-run" type="button" disabled>
+                                <i class="bi-layers px-1"></i> Slice
+                            </button>
+                            <span class="badge text-bg-secondary">M5C · 220×220 · PLA 215°C/60°C · 0.2mm · 20% grid ·
+                                skirt</span>
+                        </div>
+
+                        <div id="slice-status" class="form-text"></div>
+
+                        <div class="slice-preview-wrap d-none" id="slice-preview-wrap">
+                            <canvas id="slice-canvas" width="640" height="480" class="w-100 rounded"></canvas>
+                            <div class="d-flex align-items-center gap-3 mt-2">
+                                <label class="form-label mb-0 small text-nowrap" for="slice-layer">Layer
+                                    <span id="slice-layer-label">–</span></label>
+                                <input type="range" class="form-range" id="slice-layer" min="0" max="0" value="0"
+                                    disabled aria-label="Layer" />
+                                <div class="form-check form-switch mb-0">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="slice-travel" />
+                                    <label class="form-check-label small text-nowrap" for="slice-travel">Travel</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="d-flex flex-wrap gap-2">
+                            <button class="btn btn-success" id="slice-print" type="button" disabled>
+                                <i class="bi-printer px-1"></i> Send to printer
+                            </button>
+                            <button class="btn btn-outline-secondary" id="slice-download" type="button" disabled>
+                                <i class="bi-download px-1"></i> Download .gcode
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

@@ -6,6 +6,7 @@ ankerctl-ng{{if .Printer}} - {{.Printer.Name}}{{end}}
 {{if .Configure}}
 {{template "tabs/home.html" .}}
 {{template "tabs/gcode.html" .}}
+{{template "tabs/slice.html" .}}
 {{template "tabs/history.html" .}}
 {{template "tabs/filaments.html" .}}
 {{end}}
@@ -29,6 +30,12 @@ ankerctl-ng{{if .Printer}} - {{.Printer.Name}}{{end}}
         <button class="btn btn-outline-primary nav-link"
             id="gcode-tab" data-bs-toggle="pill" data-bs-target="#gcode" type="button" role="tab">
             <i class="bi-terminal px-1"></i>GCode
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="btn btn-outline-primary nav-link"
+            id="slice-tab" data-bs-toggle="pill" data-bs-target="#slice" type="button" role="tab">
+            <i class="bi-box px-1"></i>Slice
         </button>
     </li>
     <li class="nav-item" role="presentation">

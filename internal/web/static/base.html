@@ -129,6 +129,18 @@
     <script src="/static/vendor/jmuxer.min.js"></script>
     <script src="/static/vendor/chart.umd.min.js"></script>
     <script src="/static/ankersrv.js"></script>
+    <!-- In-browser slicer (Slice tab). three/polyslice are dynamically imported
+         on first use, so this importmap only resolves when slicing is invoked. -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "/static/vendor/three/three.module.min.js",
+            "three/examples/jsm/loaders/STLLoader.js": "/static/vendor/three/STLLoader.js",
+            "@jgphilpott/polyslice": "/static/vendor/polyslice/index.browser.esm.js"
+        }
+    }
+    </script>
+    <script type="module" src="/static/ankersrv-slice.js"></script>
 </body>
 
 </html>
