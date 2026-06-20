@@ -414,3 +414,31 @@ would break the camera/video pipeline). No CSP today; if added later, needs
 "download .gcode" safety button, validate with a 20mm cube on the M5C). Phase 2
 OpenSCAD (vendor openscad.wasm ~7.4MB, worker, GPL-2.0 notice). Phase 3 printer-model
 picker + PETG + exposed controls + post-slice AI sanity check.
+
+## Slice→print pipeline VALIDATED on real hardware (2026-06-20)
+Sliced a 20×20×1mm plate in-browser (polyslice, M5C defaults) → uploaded via
+/api/files/local → the M5C printed it start→finish: heat→pre_print→printing
+9→30→49→68→88%→idle/100%. Logs confirmed all three new features fired on the same
+sliced print: "first layer detected — triggering bed-adhesion check", "print
+finished (progress reached 100%)", and history entry `55 finished … dur=49 prog=100`.
+The whole "slice & print on the machine" feature is proven end-to-end. Slice tab +
+printer-model picker (M5C/M5) deployed (latest-571c6fe).
+
+### Minor quirks observed (pre-existing-ish; cosmetic; follow-ups, NOT yet fixed)
+1. **Duplicate history rows per print** — each run leaves the correct `finished`
+   row plus 1–2 `interrupted` prog=0 rows. Root cause: multiple RecordStart calls
+   with empty taskID (handleCT1000 printing / handlePrintSchedule / ModelDLProcess
+   paths), and RecordStart orphan-closes prior `started` rows as `interrupted`.
+   Fix idea: dedupe to one entry per print (stable per-print key / guard); needs
+   careful work across the RecordStart call sites — do not blind-fix.
+2. **first_layer fired twice** on the plate print (→ 2 bed-adhesion AI checks
+   instead of 1). Implies printActive flickered mid-print (resetting
+   firstLayerNotified). Harmless but wastes one AI call; investigate the
+   pre_print→printing state transition.
+
+## Remaining queue
+- OpenSCAD paste input (Phase 2: vendor openscad-wasm ~7.4MB + worker, GPL notice)
+- Post-slice efficient AI sanity check (rendered preview → AI → warn + "Continue anyway")
+- Filament-colour CV (experimental research)
+- Project rename (awaiting user decision: branding/docs vs Go module path)
+- Cleanup: duplicate-history dedupe + double first_layer (above)
