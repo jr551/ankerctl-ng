@@ -826,3 +826,24 @@ code {
     border-radius: var(--bs-border-radius);
 }
 .scad-preview-loading.d-none { display: none; }
+
+/* ── Emergency stop button ───────────────────────────────────────────── */
+.estop-btn {
+    letter-spacing: 0.04em;
+    animation: estop-pulse 2.4s ease-out infinite;
+}
+.estop-btn:hover { filter: brightness(1.12); }
+@keyframes estop-pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.55); }
+    70%  { box-shadow: 0 0 0 0.5rem rgba(220, 53, 69, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
+}
+@media (prefers-reduced-motion: reduce) { .estop-btn { animation: none; } }
+
+/* ── History AI evidence thumbnail ───────────────────────────────────── */
+.history-ai-evidence {
+    max-height: 140px;
+    max-width: 100%;
+    cursor: zoom-in;
+    border: 1px solid var(--bs-border-color);
+}

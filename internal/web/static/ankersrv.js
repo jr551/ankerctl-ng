@@ -2310,6 +2310,26 @@ $(function () {
     $("#control-home-z").on("click", function () { sendPrinterGCode("G28 Z"); return false; });
     $("#control-home-all").on("click", function () { sendPrinterGCode("G28"); return false; });
 
+    // Emergency stop — cut printer power via the smart socket immediately.
+    $("#emergency-stop").on("click", function () {
+        if (!confirm("EMERGENCY STOP — cut power to the printer NOW? This stops the print immediately.")) return;
+        const btn = $(this);
+        btn.prop("disabled", true);
+        fetch("/api/smart-socket/control", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "off" }),
+        })
+            .then(async (r) => {
+                const d = await r.json().catch(() => ({}));
+                if (r.ok) flash_message("Emergency stop — printer power cut.", "success");
+                else flash_message("E-STOP failed: " + (d.error || r.statusText) + (r.status === 400 ? " (configure the smart socket in Camera & AI)" : ""), "danger");
+            })
+            .catch((e) => flash_message("E-STOP error: " + e.message, "danger"))
+            .finally(() => btn.prop("disabled", false));
+        return false;
+    });
+
     // ------------------------------------------------------------------
     // Bed Level Map — shared rendering utilities
     // (defined at outer scope so they work with or without the debug tab)
@@ -3383,14 +3403,18 @@ $(function () {
                         parts.push(`<strong>${item.failing ? "Fail" : "OK"}</strong>`);
                         if (item.confidence != null) parts.push(`${Math.round(item.confidence * 100)}%`);
                         if (item.reason) parts.push(escapeHtml(item.reason));
-                        if (item.evidence_url) {
-                            const safeURL = safeHttpURL(item.evidence_url);
-                            if (safeURL) {
-                                parts.push(`<a href="${escapeHtml(safeURL)}" target="_blank" rel="noopener">image</a>`);
-                            }
-                        }
                         if (item.raw_response) parts.push(`<details><summary>AI reply</summary><pre class="small mb-0">${escapeHtml(item.raw_response)}</pre></details>`);
-                        return `<div class="mb-2"><div class="small text-body-secondary">${item.at ? new Date(item.at).toLocaleString() : ""}</div>${parts.join(" · ")}</div>`;
+                        // Evidence image: the backend gives a ready-made same-origin route URL
+                        // (and only sets it while the archived frame is still on disk / unexpired).
+                        // Show it inline as a thumbnail rather than a bare text link.
+                        let imgHtml = "";
+                        const src = safeHttpURL(item.evidence_url);
+                        if (item.evidence_url && src) {
+                            imgHtml = `<div class="mt-1"><a href="${escapeHtml(src)}" target="_blank" rel="noopener"><img src="${escapeHtml(src)}" alt="AI evidence" loading="lazy" class="history-ai-evidence rounded" onerror="this.closest('a').remove()"></a></div>`;
+                        } else if (item.evidence_expires_at && new Date(item.evidence_expires_at) < new Date()) {
+                            parts.push('<span class="text-body-secondary">image expired</span>');
+                        }
+                        return `<div class="mb-2"><div class="small text-body-secondary">${item.at ? new Date(item.at).toLocaleString() : ""}</div>${parts.join(" · ")}${imgHtml}</div>`;
                     }).join("");
                     const hookDetails = (e.notification_log || []).slice().reverse().map((item) => {
                         const parts = [];
