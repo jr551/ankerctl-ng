@@ -463,3 +463,15 @@ check runs and does not false-block, print enables.
   needs the user's decision.
 - **Cleanup**: dedupe duplicate history rows per print; stop the double
   first_layer event (both noted earlier; pre-existing-ish, cosmetic).
+
+## OpenSCAD slicing (Phase 2) + branding — DONE (2026-06-20)
+- OpenSCAD paste → compile (openscad-wasm 2022.03.20, lazy-loaded, single-threaded,
+  no COOP/COEP) → STL → same slice→preview→AI-check→print flow as STL upload.
+  Browser-verified on NAS: difference(cube,cylinder) → sliced 32 layers, preview
+  shows the square-with-circular-hole correctly. Vendored with GPL-2.0 NOTICE.
+- Branding: normalized remaining "Ankerctl" UI strings → "ankerctl-ng" (README,
+  footer, title were already correct). Module path left as-is per decision (keeps
+  upstream merges clean).
+
+Remaining: filament-colour CV (experimental), the two minor quirks (duplicate
+history rows, double first_layer). Slicer is feature-complete (STL + OpenSCAD).
