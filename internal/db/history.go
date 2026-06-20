@@ -170,6 +170,34 @@ func (d *DB) RecordStart(filename, taskID, archiveRelpath string, archiveSize in
 			}
 		}
 
+		// 1b. No taskID: resume a recent open entry for the same filename. The
+		// upload path and the printer's "printing" report both call RecordStart
+		// for the same file with no taskID; resuming keeps ONE row (and its
+		// archive) instead of orphaning the first and leaving duplicate rows.
+		if taskID == "" && filename != "" {
+			var id int64
+			err := tx.QueryRow(
+				`SELECT id FROM print_history WHERE status='started' AND filename=? ORDER BY id DESC LIMIT 1`,
+				filename,
+			).Scan(&id)
+			if err == nil {
+				rowID = id
+				if archiveRelpath != "" {
+					if _, err := tx.Exec(
+						`UPDATE print_history SET archive_relpath=COALESCE(archive_relpath, ?), archive_size=COALESCE(archive_size, ?) WHERE id=?`,
+						archiveRelpath, archiveSize, id,
+					); err != nil {
+						return fmt.Errorf("update archive on filename resume: %w", err)
+					}
+				}
+				d.log.Debug("history: resuming open entry by filename", "id", id, "filename", filename)
+				return nil
+			}
+			if err != sql.ErrNoRows {
+				return fmt.Errorf("filename resume lookup: %w", err)
+			}
+		}
+
 		// 2. Close any orphaned open entries.
 		rows, err := tx.Query(
 			`SELECT id, started_at FROM print_history WHERE status='started'`,
