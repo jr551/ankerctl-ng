@@ -264,3 +264,55 @@ feature. Both built things that **collided** with newer work on this branch.
       branch — port the CSS ideas onto the working markup).
 - [ ] Publish-as-fork steps (see fork-prep plan); delete the stray `callback?code=…`
       file (live OAuth code) before any publish.
+
+---
+
+# Session 2026-06-20 (continued) — Camera presets, rewind effects, gcode viewer
+
+Built and **deployed to the NAS** (binary `feature-camera-rewind-gcode-20260620153225`)
+while the "Bean Ice Cube Tray" print ran — the restart was print-safe (printer
+prints autonomously; verified the print continued through the redeploy, no log errors).
+
+## Delivered (all on branch `ha-camera-ai-monitor`, pushed)
+- **Camera preset picker** — the External camera form now has a "Camera system"
+  dropdown (MJPEG/OctoPrint/Frigate/go2rtc/Reolink/RTSP + Advanced/Custom) with
+  per-preset fields and a live resolved-URL preview, grafted into the existing
+  HA-proxy `#camera-form`. JS `deriveCameraUrls` mirrors `model.DeriveExternalCameraURLs`;
+  server re-derives non-custom kinds on save, so saved URLs are Go-guaranteed.
+- **Rewind effects** — crossfade of the buffered frame, LIVE/REWIND pill, vignette
+  while scrubbing, green thumb + focus ring, `prefers-reduced-motion`. Buffer logic
+  and 0=Live convention unchanged; confirmed display-only (never issues a print).
+- **GCode toolpath viewer** — history rows with an archive get a "View" button
+  opening a pure-canvas 2D top-down toolpath (layer slider, travel toggle,
+  fit-to-bbox). New `GET /api/history/{id}/gcode` serves the plain-text archive.
+- **FE polish** — feed font 0.40rem→0.7rem, captcha alt, collapse aria-labels,
+  fixed an invalid nested `<a>` in the header, removed a dead ternary.
+
+## Verified
+- `go build` / `go vet` / `go test ./...` all green; 6 new `HistoryGCode` handler tests.
+- gcode parser smoke-tested offline AND against the **real 8.2 MB file being printed**
+  via the actual `parseGcode` from source: 56 layers, 231K extruding segments,
+  sensible bbox, 105 ms, not truncated.
+- On the live NAS (read-only): all new markup renders in the configured dashboard;
+  `GET /api/history/42/gcode` → HTTP 200, 8.2 MB.
+
+## Deferred — run when the printer is IDLE (needs a free printer / browser / live feed)
+- [ ] **Camera preset live feed** — save a real preset (e.g. Frigate/go2rtc) and
+      confirm the live view + `Test frame` (`/api/camera/frame`) actually shows video.
+      (Form logic + URL derivation are verified; only the live fetch is pending.)
+- [ ] **Camera save round-trip on real config** — not done in-session to avoid
+      overwriting the live HA "3d printer camera" config. Verify kind/fields persist.
+- [ ] **Rewind crossfade on a moving feed** — buffer only fills from a live stream;
+      confirm crossfade/vignette/LIVE pill and snap-back-to-live look right, and
+      re-confirm it stays display-only.
+- [ ] **GCode viewer in a browser** — open a history row's View button, scrub layers.
+      (Endpoint + parser verified; only the canvas render is unviewed.)
+- [ ] **PPPP upload hardening / power-cycle recovery** (from the earlier session) —
+      upload a test gcode, force a stale session, confirm retry→restart→power-cycle.
+      Recipe in `nas.md` (Test Upload + Power-cycle). DO NOT run during a print.
+- [ ] **Reprint-from-history** — issues a real print; idle only.
+
+## Notes
+- The aborted camera/rewind worktree branches were mined for reusable code, not merged.
+- Still pending from before: delete the stray `callback?code=…` file (live OAuth code)
+  before any public fork publish.
