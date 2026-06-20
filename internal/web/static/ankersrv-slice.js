@@ -164,6 +164,20 @@ if (fileInput) {
 
         // Pre-print sanity check: only block (warn + Continue anyway) on serious issues.
         const issues = sanityCheck(cfg.buildPlateWidth, cfg.buildPlateLength);
+        // Efficient AI vision check on the rendered preview (image only, never the
+        // gcode). Optional — if no AI is configured or it errors, we proceed.
+        setStatus(`Sliced in ${dt} ms — ${parsed.layers.length} layers, ${moves} moves. Running AI check…`);
+        try {
+            const resp = await fetch("/api/slice/check", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ image: els.canvas.toDataURL("image/jpeg", 0.6) }),
+            });
+            if (resp.ok) {
+                const d = await resp.json();
+                if (d.serious && d.issue) issues.push("AI flagged: " + d.issue);
+            }
+        } catch (e) { /* AI check is optional */ }
         if (issues.length) {
             els.warning.innerHTML = "<strong>Possible problem:</strong> " + issues.map((i) => i.replace(/</g, "&lt;")).join(" ");
             els.warning.classList.remove("d-none");

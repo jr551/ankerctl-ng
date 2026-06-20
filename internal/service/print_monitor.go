@@ -448,6 +448,68 @@ func (s *PrintMonitorService) callOpenRouter(ctx context.Context, cfg model.Prin
 	return parsed.Failing, parsed.Confidence, parsed.Reason, content, resp.StatusCode, nil
 }
 
+// SliceCheckResult is the verdict from a post-slice AI sanity check.
+type SliceCheckResult struct {
+	Serious bool   `json:"serious"`
+	Issue   string `json:"issue"`
+}
+
+// AnalyzeSliceImage sends a rendered slice-preview image (NOT the gcode) to the
+// configured vision model and asks for SERIOUS printability problems only.
+// Returns ok=false when no AI provider is configured (caller skips silently).
+func (s *PrintMonitorService) AnalyzeSliceImage(ctx context.Context, imageDataURI string) (SliceCheckResult, bool, error) {
+	s.mu.Lock()
+	cfg := s.cfg
+	s.mu.Unlock()
+	if strings.TrimSpace(cfg.OpenRouterKey) == "" || strings.TrimSpace(cfg.Model) == "" {
+		return SliceCheckResult{}, false, nil
+	}
+	const sys = "You are reviewing a 2D top-down toolpath preview of a model that was just sliced for 3D printing (green lines are extrusion paths on the bed). Reply with strict JSON only: {\"serious\": boolean, \"issue\": string}. Set serious=true ONLY for problems that would clearly ruin the print: the toolpath is empty or almost empty, it is cut off / runs off the plate, or it is grossly distorted or degenerate. Normal infill, perimeters, skirts and small gaps are FINE — do not flag them. Keep issue to one short sentence; use an empty string when serious is false."
+	payload := map[string]any{
+		"model": cfg.Model,
+		"messages": []map[string]any{
+			{"role": "system", "content": sys},
+			{"role": "user", "content": []map[string]any{
+				{"type": "image_url", "image_url": map[string]string{"url": imageDataURI}},
+			}},
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return SliceCheckResult{}, false, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, printMonitorChatCompletionsURL(cfg.OpenRouterURL), bytes.NewReader(body))
+	if err != nil {
+		return SliceCheckResult{}, false, err
+	}
+	req.Header.Set("Authorization", "Bearer "+cfg.OpenRouterKey)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return SliceCheckResult{}, false, err
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return SliceCheckResult{}, false, fmt.Errorf("AI provider returned HTTP %d", resp.StatusCode)
+	}
+	var apiResp struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(data, &apiResp); err != nil || len(apiResp.Choices) == 0 {
+		return SliceCheckResult{}, false, fmt.Errorf("AI provider returned no usable response")
+	}
+	var out SliceCheckResult
+	if err := json.Unmarshal([]byte(stripJSONCodeFence(apiResp.Choices[0].Message.Content)), &out); err != nil {
+		return SliceCheckResult{}, false, fmt.Errorf("AI provider returned non-JSON content")
+	}
+	return out, true, nil
+}
+
 func stripJSONCodeFence(content string) string {
 	content = strings.TrimSpace(content)
 	if !strings.HasPrefix(content, "```") {
