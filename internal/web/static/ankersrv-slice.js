@@ -21,7 +21,11 @@ if (fileInput) {
         continueBtn: $("slice-continue"),
         warning: $("slice-warning"),
         download: $("slice-download"),
+        scad: $("slice-scad"),
+        scadRender: $("slice-scad-render"),
+        scadNote: $("slice-scad-note"),
     };
+    let openscadFactory = null;
 
     // AnkerMake M5C PLA defaults (researched; clamps nozzle<=275, bed<=100).
     const M5C = {
@@ -62,6 +66,29 @@ if (fileInput) {
         const { STLLoader } = await import("three/examples/jsm/loaders/STLLoader.js");
         libs = { THREE, Polyslice, STLLoader };
         return libs;
+    };
+
+    // OpenSCAD-WASM is a ~7 MB download — load it only when the user renders SCAD.
+    const loadOpenscad = async () => {
+        if (openscadFactory) return openscadFactory;
+        setStatus("Loading OpenSCAD (one-time, ~7 MB)…");
+        const mod = await import("/static/vendor/openscad/openscad.js");
+        openscadFactory = mod.default;
+        return openscadFactory;
+    };
+
+    // Compile pasted OpenSCAD source to an STL (Uint8Array) in-browser. Throws
+    // with the compiler's stderr on a syntax/render error.
+    const compileScad = async (src) => {
+        const OpenSCAD = await loadOpenscad();
+        const errLines = [];
+        const inst = await OpenSCAD({ noInitialRun: true, printErr: (l) => errLines.push(l) });
+        inst.FS.writeFile("/in.scad", src);
+        const code = inst.callMain(["/in.scad", "-o", "/out.stl"]);
+        if (code !== 0) {
+            throw new Error(errLines.length ? errLines.join(" ").slice(0, 400) : ("OpenSCAD exited with code " + code));
+        }
+        return inst.FS.readFile("/out.stl"); // Uint8Array
     };
 
     // ── Minimal 2D toolpath parser/renderer (shared shape with the history
@@ -225,6 +252,31 @@ if (fileInput) {
         els.print.disabled = false;
         setStatus("Override accepted — you can send to the printer. Inspect carefully.", "ok");
     });
+
+    if (els.scad && els.scadRender) {
+        els.scadRender.disabled = !els.scad.value.trim();
+        els.scad.addEventListener("input", () => { els.scadRender.disabled = !els.scad.value.trim(); });
+        els.scadRender.addEventListener("click", async () => {
+            const src = els.scad.value.trim();
+            if (!src) { setStatus("Paste some OpenSCAD first.", "error"); return; }
+            baseName = "openscad-model";
+            els.scadRender.disabled = true;
+            try {
+                await loadLibs();
+                setStatus("Compiling OpenSCAD…");
+                const stl = await compileScad(src);
+                setStatus("Slicing…");
+                const arrayBuffer = stl.buffer.slice(stl.byteOffset, stl.byteOffset + stl.byteLength);
+                const geometry = new libs.STLLoader().parse(arrayBuffer);
+                const mesh = new libs.THREE.Mesh(geometry, new libs.THREE.MeshBasicMaterial());
+                await sliceMesh(mesh);
+            } catch (err) {
+                setStatus("OpenSCAD: " + (err && err.message ? err.message : err), "error");
+            } finally {
+                els.scadRender.disabled = !els.scad.value.trim();
+            }
+        });
+    }
 
     els.download.addEventListener("click", () => {
         if (!gcode) return;
