@@ -17,15 +17,17 @@
     <!-- Header -->
     <div class="bg-dark bg-gradient mb-3">
         <header class="container d-flex align-items-center py-2">
-            <a href="/" class="d-flex me-md-auto text-decoration-none align-items-baseline">
-                <img src="/static/img/logo.svg" class="me-2 align-self-center" alt="logo">
-                <span class="text-body-emphasis fs-4 d-flex align-items-center flex-wrap">ankerctl-<span class="text-success">ng</span><span class="badge bg-dark text-success border border-success ms-2 fs-6 fw-normal" style="font-family: Georgia, 'Comic Sans MS', cursive; letter-spacing: -0.3px;">now with extra AI goodness!<span class="text-muted ms-1" style="font-size: 0.65rem; letter-spacing: -0.2px;">adapted by jr</span></span></span>
+            <div class="d-flex me-md-auto align-items-baseline">
+                <a href="/" class="d-flex text-decoration-none align-items-baseline">
+                    <img src="/static/img/logo.svg" class="me-2 align-self-center" alt="logo">
+                    <span class="text-body-emphasis fs-4 d-flex align-items-center flex-wrap">ankerctl-<span class="text-success">ng</span><span class="badge bg-dark text-success border border-success ms-2 fs-6 fw-normal" style="font-family: Georgia, 'Comic Sans MS', cursive; letter-spacing: -0.3px;">now with extra AI goodness!<span class="text-muted ms-1" style="font-size: 0.65rem; letter-spacing: -0.2px;">adapted by jr</span></span></span>
+                </a>
                 <a id="update-badge" href="#" target="_blank" rel="noopener noreferrer nofollow"
                    class="badge bg-success text-decoration-none ms-2 align-self-center"
                    style="display:none" title="A newer version is available">
                     <i class="bi bi-arrow-up-circle-fill me-1"></i><span id="update-badge-version"></span>
                 </a>
-            </a>
+            </div>
             {{if and .PrinterList (eq (len .PrinterList) 1)}}
             {{$p0 := index .PrinterList 0}}
             <span class="text-muted small me-3">

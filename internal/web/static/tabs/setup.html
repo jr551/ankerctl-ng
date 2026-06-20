@@ -107,7 +107,7 @@
                                                 <div class="input-group">
                                                     <div class="input-group-text text-danger-emphasis">Please solve
                                                         CAPTCHA:</div>
-                                                    <img id="loginCaptchaImg" />
+                                                    <img id="loginCaptchaImg" alt="CAPTCHA challenge" />
                                                     <div class="input-group-text print-info-label">
                                                         <i class="bi-arrow-right px-1"></i>
                                                     </div>
@@ -872,15 +872,136 @@
                                                         id="camera-refresh" value="1" />
                                                 </div>
                                             </div>
-                                            <div class="camera-direct-url-field">
-                                                <label class="form-label" for="camera-stream-url">Stream URL</label>
-                                                <input class="form-control" type="url" id="camera-stream-url"
-                                                    placeholder="http://camera.local/stream" />
-                                            </div>
-                                            <div class="camera-direct-url-field">
-                                                <label class="form-label" for="camera-snapshot-url">Snapshot URL</label>
-                                                <input class="form-control" type="url" id="camera-snapshot-url"
-                                                    placeholder="http://camera.local/snapshot.jpg" />
+                                            <div id="camera-external-wrap" class="vstack gap-3 d-none">
+                                                <div>
+                                                    <label class="form-label" for="camera-kind">Camera system</label>
+                                                    <select class="form-select" id="camera-kind">
+                                                        <option value="mjpeg">MJPEG stream (IP cam / mjpg-streamer)</option>
+                                                        <option value="octoprint">OctoPrint / mjpg-streamer webcam</option>
+                                                        <option value="frigate">Frigate NVR</option>
+                                                        <option value="go2rtc">go2rtc / MediaMTX</option>
+                                                        <option value="reolink">Reolink</option>
+                                                        <option value="rtsp">Generic RTSP (needs restreamer)</option>
+                                                        <option value="custom">Advanced / Custom URLs</option>
+                                                    </select>
+                                                    <div class="form-text" id="camera-kind-help"></div>
+                                                </div>
+
+                                                <!-- Per-preset minimal fields. Only the active preset's block is shown. -->
+                                                <div class="camera-preset-fields d-none" data-kind="mjpeg">
+                                                    <label class="form-label" for="camera-mjpeg-stream">MJPEG stream URL</label>
+                                                    <input class="form-control" type="url" id="camera-mjpeg-stream"
+                                                        placeholder="http://192.168.1.50:8080/video" />
+                                                </div>
+
+                                                <div class="camera-preset-fields d-none" data-kind="octoprint">
+                                                    <label class="form-label" for="camera-octoprint-base">OctoPrint base
+                                                        URL</label>
+                                                    <input class="form-control" type="url" id="camera-octoprint-base"
+                                                        placeholder="http://octopi.local" />
+                                                    <div class="form-text">Resolves to
+                                                        <code>/webcam/?action=stream</code> and
+                                                        <code>/webcam/?action=snapshot</code>.</div>
+                                                </div>
+
+                                                <div class="camera-preset-fields d-none" data-kind="frigate">
+                                                    <div class="row g-3">
+                                                        <div class="col-md-7">
+                                                            <label class="form-label" for="camera-frigate-base">Frigate base
+                                                                URL</label>
+                                                            <input class="form-control" type="url" id="camera-frigate-base"
+                                                                placeholder="http://frigate.local:5000" />
+                                                        </div>
+                                                        <div class="col-md-5">
+                                                            <label class="form-label" for="camera-frigate-camera">Camera
+                                                                name</label>
+                                                            <input class="form-control" type="text" id="camera-frigate-camera"
+                                                                placeholder="front_door" />
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div class="camera-preset-fields d-none" data-kind="go2rtc">
+                                                    <div class="row g-3">
+                                                        <div class="col-md-7">
+                                                            <label class="form-label" for="camera-go2rtc-base">go2rtc / MediaMTX
+                                                                base URL</label>
+                                                            <input class="form-control" type="url" id="camera-go2rtc-base"
+                                                                placeholder="http://go2rtc.local:1984" />
+                                                        </div>
+                                                        <div class="col-md-5">
+                                                            <label class="form-label" for="camera-go2rtc-stream">Stream
+                                                                name</label>
+                                                            <input class="form-control" type="text" id="camera-go2rtc-stream"
+                                                                placeholder="printer" />
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div class="camera-preset-fields d-none" data-kind="reolink">
+                                                    <div class="row g-3">
+                                                        <div class="col-md-6">
+                                                            <label class="form-label" for="camera-reolink-host">Host</label>
+                                                            <input class="form-control" type="text" id="camera-reolink-host"
+                                                                placeholder="192.168.1.60" />
+                                                        </div>
+                                                        <div class="col-md-3">
+                                                            <label class="form-label" for="camera-reolink-user">Username</label>
+                                                            <input class="form-control" type="text" id="camera-reolink-user"
+                                                                placeholder="admin" autocomplete="off" />
+                                                        </div>
+                                                        <div class="col-md-3">
+                                                            <label class="form-label"
+                                                                for="camera-reolink-password">Password</label>
+                                                            <input class="form-control" type="password"
+                                                                id="camera-reolink-password" autocomplete="off" />
+                                                        </div>
+                                                        <div class="col-md-3">
+                                                            <label class="form-label"
+                                                                for="camera-reolink-channel">Channel</label>
+                                                            <input class="form-control" type="number" min="0"
+                                                                id="camera-reolink-channel" placeholder="0" />
+                                                        </div>
+                                                    </div>
+                                                    <div class="form-text">Uses the camera's FLV stream and snapshot CGI.
+                                                        Credentials are stored in plain text in the config.</div>
+                                                </div>
+
+                                                <div class="camera-preset-fields d-none" data-kind="rtsp">
+                                                    <label class="form-label" for="camera-rtsp-stream">RTSP URL</label>
+                                                    <input class="form-control" type="text" id="camera-rtsp-stream"
+                                                        placeholder="rtsp://192.168.1.70:554/live" />
+                                                    <div class="alert alert-warning mt-2 mb-0 py-2 px-3">
+                                                        <i class="bi-exclamation-triangle px-1"></i>
+                                                        Browsers cannot play RTSP directly. Snapshots work, but for a live view
+                                                        run a restreamer (go2rtc / MediaMTX) and use the
+                                                        <strong>go2rtc / MediaMTX</strong> preset with its MJPEG/HLS output
+                                                        instead.
+                                                    </div>
+                                                </div>
+
+                                                <div class="camera-preset-fields d-none" data-kind="custom">
+                                                    <div>
+                                                        <label class="form-label" for="camera-custom-stream">Stream URL</label>
+                                                        <input class="form-control" type="text" id="camera-custom-stream"
+                                                            placeholder="http://… or rtsp://…" />
+                                                        <div class="form-text">MJPEG / HLS / RTSP. Used for the live view.</div>
+                                                    </div>
+                                                    <div class="mt-3">
+                                                        <label class="form-label" for="camera-custom-snapshot">Snapshot URL
+                                                            (optional)</label>
+                                                        <input class="form-control" type="url" id="camera-custom-snapshot"
+                                                            placeholder="http://…/snapshot.jpg" />
+                                                        <div class="form-text">A single JPEG endpoint. Falls back to grabbing a
+                                                            frame from the stream if empty.</div>
+                                                    </div>
+                                                </div>
+                                                <div class="bg-body-tertiary rounded p-2 small">
+                                                    <div class="text-secondary">Resolved stream URL</div>
+                                                    <code id="camera-resolved-stream" class="text-break">—</code>
+                                                    <div class="text-secondary mt-2">Resolved snapshot URL</div>
+                                                    <code id="camera-resolved-snapshot" class="text-break">—</code>
+                                                </div>
                                             </div>
                                             <div class="form-check form-switch">
                                                 <input class="form-check-input" type="checkbox" role="switch"
@@ -888,20 +1009,22 @@
                                                 <label class="form-check-label" for="ha-camera-enabled">Use Home
                                                     Assistant camera proxy</label>
                                             </div>
-                                            <div>
-                                                <label class="form-label" for="ha-camera-base-url">Home Assistant URL</label>
-                                                <input class="form-control" type="url" id="ha-camera-base-url"
-                                                    placeholder="https://homeassistant.example.com" />
-                                            </div>
-                                            <div>
-                                                <label class="form-label" for="ha-camera-token">Home Assistant token</label>
-                                                <input class="form-control" type="password" id="ha-camera-token"
-                                                    placeholder="Saved token - leave blank to keep" autocomplete="off" />
-                                            </div>
-                                            <div>
-                                                <label class="form-label" for="ha-camera-entity">Camera entity</label>
-                                                <input class="form-control" type="text" id="ha-camera-entity"
-                                                    placeholder="camera.front_door_camera" />
+                                            <div id="camera-ha-fields" class="vstack gap-3 d-none">
+                                                <div>
+                                                    <label class="form-label" for="ha-camera-base-url">Home Assistant URL</label>
+                                                    <input class="form-control" type="url" id="ha-camera-base-url"
+                                                        placeholder="https://homeassistant.example.com" />
+                                                </div>
+                                                <div>
+                                                    <label class="form-label" for="ha-camera-token">Home Assistant token</label>
+                                                    <input class="form-control" type="password" id="ha-camera-token"
+                                                        placeholder="Saved token - leave blank to keep" autocomplete="off" />
+                                                </div>
+                                                <div>
+                                                    <label class="form-label" for="ha-camera-entity">Camera entity</label>
+                                                    <input class="form-control" type="text" id="ha-camera-entity"
+                                                        placeholder="camera.front_door_camera" />
+                                                </div>
                                             </div>
                                             <div class="d-flex gap-2 flex-wrap">
                                                 <button class="btn btn-primary" type="button" id="camera-save">Save</button>

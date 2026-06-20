@@ -1058,6 +1058,20 @@ $(function () {
     const rewindControls = document.getElementById("camera-rewind-controls");
     const rewindSlider = document.getElementById("camera-rewind-slider");
     const rewindLabel = document.getElementById("camera-rewind-label");
+    const rewindShell = rewindOverlay ? rewindOverlay.closest(".camera-frame-shell") : null;
+    const rewindStatus = rewindShell ? rewindShell.querySelector(".rewind-status") : null;
+    const rewindReduceMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    let rewindClearTimer = null;
+    // Flip the LIVE/REWIND pill + the shell's vignette. Display-only — never
+    // touches the print; rewind just scrubs the local frame buffer.
+    const setRewinding = (active) => {
+        if (rewindShell) rewindShell.classList.toggle("is-rewinding", active);
+        if (rewindStatus) {
+            rewindStatus.classList.toggle("is-live", !active);
+            const text = rewindStatus.querySelector(".rewind-status-text");
+            if (text) text.textContent = active ? "REWIND" : "LIVE";
+        }
+    };
     const cameraFrameBuffer = [];
     const cameraFrameBufferMax = 60;
     const updateVideoResolution = () => {
@@ -1093,9 +1107,24 @@ $(function () {
 
     const restoreLiveCameraView = () => {
         if (rewindOverlay) {
-            rewindOverlay.hidden = true;
-            rewindOverlay.removeAttribute("src");
+            rewindOverlay.classList.remove("is-visible");
+            if (rewindClearTimer) {
+                clearTimeout(rewindClearTimer);
+                rewindClearTimer = null;
+            }
+            const clear = () => {
+                rewindOverlay.hidden = true;
+                rewindOverlay.removeAttribute("src");
+                rewindClearTimer = null;
+            };
+            // Let the crossfade finish before hiding, unless reduced-motion.
+            if (rewindReduceMotion) {
+                clear();
+            } else {
+                rewindClearTimer = window.setTimeout(clear, 250);
+            }
         }
+        setRewinding(false);
         if (rewindSlider) {
             rewindSlider.value = 0;
         }
@@ -1158,8 +1187,15 @@ $(function () {
                 restoreLiveCameraView();
                 return;
             }
+            if (rewindClearTimer) {
+                clearTimeout(rewindClearTimer);
+                rewindClearTimer = null;
+            }
             rewindOverlay.src = frame.src;
             rewindOverlay.hidden = false;
+            void rewindOverlay.offsetWidth; // reflow so the crossfade runs from opacity 0
+            rewindOverlay.classList.add("is-visible");
+            setRewinding(true);
             rewindLabel.textContent = `-${offset}s`;
         });
         ["change", "mouseup", "touchend", "pointerup", "keyup"].forEach((eventName) => {
@@ -2535,7 +2571,7 @@ $(function () {
             '<span class="spinner-border spinner-border-sm me-2" role="status"></span>' +
             'Sending M420 V \u2014 waiting for printer response (up to 15 s)...</div>';
         if (gridEl) gridEl.style.display = "none";
-        if (readBtn) readBtn.prop ? $(readBtn).prop("disabled", true) : (readBtn.disabled = true);
+        if (readBtn) readBtn.disabled = true;
 
         try {
             const resp = await fetch("/api/printer/bed-leveling");
@@ -3317,6 +3353,9 @@ $(function () {
                 data.entries.forEach(e => {
                     const started = e.started_at ? new Date(e.started_at + "Z").toLocaleString() : "-";
                     const safeFilename = escapeHtml(e.filename);
+                    const viewBtn = e.archive_relpath
+                        ? `<button class="btn btn-sm btn-link p-0 ms-1 gcode-view-btn" data-id="${e.id}" data-filename="${safeFilename}" title="View GCode toolpath" aria-label="View GCode toolpath"><i class="bi-bounding-box"></i></button>`
+                        : "";
                     const latestAI = Array.isArray(e.ai_history) && e.ai_history.length ? e.ai_history[e.ai_history.length - 1] : null;
                     const latestHook = Array.isArray(e.notification_log) && e.notification_log.length ? e.notification_log[e.notification_log.length - 1] : null;
                     const aiSummary = latestAI
@@ -3349,7 +3388,12 @@ $(function () {
                         return `<div class="mb-2"><div class="small text-body-secondary">${item.at ? new Date(item.at).toLocaleString() : ""}</div>${parts.join(" · ")}</div>`;
                     }).join("");
                     const row = `<tr>
-                        <td class="text-truncate" style="max-width:200px;" title="${safeFilename}">${safeFilename}</td>
+                        <td style="max-width:220px;">
+                            <div class="d-flex align-items-center">
+                                <span class="text-truncate" title="${safeFilename}">${safeFilename}</span>
+                                ${viewBtn}
+                            </div>
+                        </td>
                         <td>${statusBadge(e.status)}</td>
                         <td class="small">${started}</td>
                         <td>${formatDuration(e.duration_sec)}</td>
@@ -3398,6 +3442,172 @@ $(function () {
                 loadHistory(false);
             });
     });
+
+    // ── GCode toolpath viewer ───────────────────────────────────────────
+    // Opens a history row's archived GCode and draws a cheap 2D top-down
+    // toolpath on a <canvas> (zero external deps). The layer slider scrubs
+    // depth; "Travel" overlays non-extruding moves. Read-only.
+    (function () {
+        const modalEl = document.getElementById("gcode-viewer-modal");
+        const canvas = document.getElementById("gcode-canvas");
+        if (!modalEl || !canvas || typeof bootstrap === "undefined") return;
+        const slider = document.getElementById("gcode-layer-slider");
+        const layerLabel = document.getElementById("gcode-layer-label");
+        const travelToggle = document.getElementById("gcode-show-travel");
+        const statusEl = document.getElementById("gcode-viewer-status");
+        const titleEl = document.getElementById("gcode-viewer-title");
+        const modal = new bootstrap.Modal(modalEl);
+        let parsed = null;
+        let reqId = 0;
+
+        const setStatus = (msg) => {
+            if (!statusEl) return;
+            if (msg) { statusEl.textContent = msg; statusEl.hidden = false; }
+            else { statusEl.hidden = true; }
+        };
+
+        // Single-pass parse → layers of [x0,y0,x1,y1,extruding] segments.
+        // Honours G90/G91 (absolute/relative) and M82/M83 (extruder mode);
+        // starts a new layer whenever Z rises. Capped for very large files.
+        const parseGcode = (text) => {
+            const MAX_LINES = 2000000;
+            const lines = text.split("\n");
+            const count = Math.min(lines.length, MAX_LINES);
+            const layers = [];
+            let cur = null;
+            const startLayer = (zVal) => { cur = []; layers.push({ z: zVal, segs: cur }); };
+            startLayer(0);
+            let absolute = true, absExtrude = true;
+            let x = 0, y = 0, z = 0, e = 0;
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (let i = 0; i < count; i++) {
+                let line = lines[i];
+                const semi = line.indexOf(";");
+                if (semi >= 0) line = line.slice(0, semi);
+                line = line.trim();
+                if (!line) continue;
+                const parts = line.split(/\s+/);
+                const cmd = parts[0].toUpperCase();
+                if (cmd === "G90") { absolute = true; continue; }
+                if (cmd === "G91") { absolute = false; continue; }
+                if (cmd === "M82") { absExtrude = true; continue; }
+                if (cmd === "M83") { absExtrude = false; continue; }
+                if (cmd === "G92") {
+                    for (let p = 1; p < parts.length; p++) {
+                        const v = parseFloat(parts[p].slice(1));
+                        if (isNaN(v)) continue;
+                        const c = parts[p][0].toUpperCase();
+                        if (c === "X") x = v; else if (c === "Y") y = v; else if (c === "Z") z = v; else if (c === "E") e = v;
+                    }
+                    continue;
+                }
+                if (cmd !== "G0" && cmd !== "G1") continue;
+                let nx = x, ny = y, nz = z, ne = e, hasE = false;
+                for (let p = 1; p < parts.length; p++) {
+                    const c = parts[p][0].toUpperCase();
+                    const v = parseFloat(parts[p].slice(1));
+                    if (isNaN(v)) continue;
+                    if (c === "X") nx = absolute ? v : x + v;
+                    else if (c === "Y") ny = absolute ? v : y + v;
+                    else if (c === "Z") nz = absolute ? v : z + v;
+                    else if (c === "E") { hasE = true; ne = absExtrude ? v : e + v; }
+                }
+                if (nz > z + 0.0001) startLayer(nz);
+                const extruding = hasE && (ne - e) > 0.0001 && (nx !== x || ny !== y);
+                if (nx !== x || ny !== y) {
+                    cur.push([x, y, nx, ny, extruding ? 1 : 0]);
+                    if (extruding) {
+                        if (x < minX) minX = x; if (x > maxX) maxX = x;
+                        if (y < minY) minY = y; if (y > maxY) maxY = y;
+                        if (nx < minX) minX = nx; if (nx > maxX) maxX = nx;
+                        if (ny < minY) minY = ny; if (ny > maxY) maxY = ny;
+                    }
+                }
+                x = nx; y = ny; z = nz; if (hasE) e = ne;
+            }
+            if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 200; maxY = 200; }
+            return { layers, bbox: { minX, minY, maxX, maxY }, truncated: lines.length > MAX_LINES };
+        };
+
+        const draw = () => {
+            if (!parsed) return;
+            const ctx = canvas.getContext("2d");
+            const W = canvas.width, H = canvas.height;
+            ctx.fillStyle = "#0d1117";
+            ctx.fillRect(0, 0, W, H);
+            const b = parsed.bbox;
+            const bw = Math.max(1, b.maxX - b.minX), bh = Math.max(1, b.maxY - b.minY);
+            const pad = 14;
+            const scale = Math.min((W - 2 * pad) / bw, (H - 2 * pad) / bh);
+            const ox = (W - bw * scale) / 2, oy = (H - bh * scale) / 2;
+            const tx = (px) => ox + (px - b.minX) * scale;
+            const ty = (py) => H - (oy + (py - b.minY) * scale); // flip Y so it reads like the bed
+            const top = parseInt(slider.value, 10) || 0;
+            const showTravel = travelToggle.checked;
+            for (let li = 0; li <= top && li < parsed.layers.length; li++) {
+                const isTop = li === top;
+                const segs = parsed.layers[li].segs;
+                if (showTravel) {
+                    ctx.strokeStyle = "rgba(120,160,255,0.22)";
+                    ctx.lineWidth = 0.5;
+                    ctx.beginPath();
+                    for (const s of segs) { if (!s[4]) { ctx.moveTo(tx(s[0]), ty(s[1])); ctx.lineTo(tx(s[2]), ty(s[3])); } }
+                    ctx.stroke();
+                }
+                ctx.strokeStyle = isTop ? "#88f387" : "rgba(136,243,135,0.32)";
+                ctx.lineWidth = isTop ? 1.3 : 0.7;
+                ctx.beginPath();
+                for (const s of segs) { if (s[4]) { ctx.moveTo(tx(s[0]), ty(s[1])); ctx.lineTo(tx(s[2]), ty(s[3])); } }
+                ctx.stroke();
+            }
+        };
+
+        slider.addEventListener("input", () => {
+            if (parsed) layerLabel.textContent = `${(parseInt(slider.value, 10) || 0) + 1} / ${parsed.layers.length}`;
+            draw();
+        });
+        travelToggle.addEventListener("change", draw);
+
+        window.openGcodeViewer = async (id, filename) => {
+            const my = ++reqId;
+            parsed = null;
+            titleEl.textContent = filename || "GCode preview";
+            slider.disabled = true; slider.value = 0; slider.max = 0;
+            layerLabel.textContent = "–";
+            const ctx = canvas.getContext("2d");
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            setStatus("Loading…");
+            modal.show();
+            try {
+                const resp = await fetch(`/api/history/${id}/gcode`);
+                if (my !== reqId) return;
+                if (!resp.ok) {
+                    setStatus(resp.status === 404 ? "No archived GCode for this print." : `Failed to load (HTTP ${resp.status}).`);
+                    return;
+                }
+                const text = await resp.text();
+                if (my !== reqId) return;
+                parsed = parseGcode(text);
+                if (!parsed.layers.some((l) => l.segs.length)) {
+                    parsed = null;
+                    setStatus("No toolpath moves found.");
+                    return;
+                }
+                slider.max = parsed.layers.length - 1;
+                slider.value = parsed.layers.length - 1;
+                slider.disabled = false;
+                layerLabel.textContent = `${parsed.layers.length} / ${parsed.layers.length}`;
+                draw();
+                setStatus(parsed.truncated ? "Large file — preview truncated." : "");
+            } catch (err) {
+                if (my === reqId) setStatus(`Error: ${err.message}`);
+            }
+        };
+
+        $("#history-tbody").on("click", ".gcode-view-btn", function () {
+            window.openGcodeViewer($(this).data("id"), $(this).data("filename"));
+        });
+    })();
 
     /**
      * Timelapse — list + player layout
@@ -3515,27 +3725,151 @@ $(function () {
     if (cameraForm.length) {
         const cameraFields = {
             source: $("#camera-source"),
+            kind: $("#camera-kind"),
+            externalWrap: $("#camera-external-wrap"),
+            presetFields: $(".camera-preset-fields"),
+            kindHelp: $("#camera-kind-help"),
+            resolvedStream: $("#camera-resolved-stream"),
+            resolvedSnapshot: $("#camera-resolved-snapshot"),
             name: $("#camera-name"),
             refresh: $("#camera-refresh"),
-            stream: $("#camera-stream-url"),
-            snapshot: $("#camera-snapshot-url"),
-            directURLFields: $(".camera-direct-url-field"),
             haEnabled: $("#ha-camera-enabled"),
+            haFields: $("#camera-ha-fields"),
             haBaseURL: $("#ha-camera-base-url"),
             haToken: $("#ha-camera-token"),
             haEntity: $("#ha-camera-entity"),
             detail: $("#camera-detail"),
         };
 
-        const updateCameraSourceFields = () => {
-            const usingHA = cameraFields.haEnabled.is(":checked");
-            cameraFields.directURLFields.toggleClass("d-none", usingHA);
-            if (usingHA) {
-                const refresh = parseInt(cameraFields.refresh.val(), 10);
-                if (!Number.isFinite(refresh) || refresh < 1 || refresh > 30) {
-                    cameraFields.refresh.val(1);
+        const camKindHelp = {
+            mjpeg: "A single MJPEG stream URL that a browser <img> can display directly.",
+            octoprint: "Just the base URL of your OctoPrint / mjpg-streamer host.",
+            frigate: "Frigate base URL and the camera name as defined in your Frigate config.",
+            go2rtc: "go2rtc / MediaMTX base URL and the stream name. Serves a browser-friendly MJPEG feed.",
+            reolink: "Reolink host plus credentials. Uses the camera's FLV stream and snapshot CGI.",
+            rtsp: "Raw RTSP — usable for snapshots only. For live view, restream via go2rtc/MediaMTX.",
+            custom: "Enter the stream and snapshot URLs by hand.",
+        };
+
+        const trimSlash = (s) => (s || "").trim().replace(/\/+$/, "");
+
+        // Mirror of model.DeriveExternalCameraURLs (internal/model/defaults.go).
+        // Keep the two in sync: the server re-derives non-custom kinds on save.
+        const deriveCameraUrls = (kind, f) => {
+            switch (kind) {
+                case "mjpeg":
+                    return { stream: (f.stream_url || "").trim(), snapshot: "" };
+                case "rtsp":
+                    return { stream: (f.stream_url || "").trim(), snapshot: "" };
+                case "octoprint": {
+                    const base = trimSlash(f.base_url);
+                    if (!base) return { stream: "", snapshot: "" };
+                    return { stream: base + "/webcam/?action=stream", snapshot: base + "/webcam/?action=snapshot" };
                 }
+                case "frigate": {
+                    const base = trimSlash(f.base_url);
+                    const cam = (f.camera || "").trim();
+                    if (!base || !cam) return { stream: "", snapshot: "" };
+                    return { stream: base + "/api/" + cam, snapshot: base + "/api/" + cam + "/latest.jpg" };
+                }
+                case "go2rtc": {
+                    const base = trimSlash(f.base_url);
+                    const stream = (f.stream || "").trim();
+                    if (!base || !stream) return { stream: "", snapshot: "" };
+                    return { stream: base + "/api/stream.mjpeg?src=" + stream, snapshot: base + "/api/frame.jpeg?src=" + stream };
+                }
+                case "reolink": {
+                    let host = trimSlash(f.host);
+                    if (!host) return { stream: "", snapshot: "" };
+                    if (!host.includes("://")) host = "http://" + host;
+                    const channel = (f.channel || "").trim() || "0";
+                    const user = (f.user || "").trim();
+                    const pass = (f.password || "");
+                    const cred = user ? "&user=" + user + "&password=" + pass : "";
+                    return {
+                        stream: host + "/flv?port=1935&app=bcs&stream=channel" + channel + "_main.bcs" + cred,
+                        snapshot: host + "/cgi-bin/api.cgi?cmd=Snap&channel=" + channel + "&rs=ankerctl" + cred,
+                    };
+                }
+                default: // custom
+                    return { stream: "", snapshot: "" };
             }
+        };
+
+        const collectCameraFields = (kind) => {
+            switch (kind) {
+                case "mjpeg": return { stream_url: $("#camera-mjpeg-stream").val() };
+                case "rtsp": return { stream_url: $("#camera-rtsp-stream").val() };
+                case "octoprint": return { base_url: $("#camera-octoprint-base").val() };
+                case "frigate": return { base_url: $("#camera-frigate-base").val(), camera: $("#camera-frigate-camera").val() };
+                case "go2rtc": return { base_url: $("#camera-go2rtc-base").val(), stream: $("#camera-go2rtc-stream").val() };
+                case "reolink": return {
+                    host: $("#camera-reolink-host").val(),
+                    user: $("#camera-reolink-user").val(),
+                    password: $("#camera-reolink-password").val(),
+                    channel: $("#camera-reolink-channel").val(),
+                };
+                default: return {}; // custom uses the direct URL fields
+            }
+        };
+
+        // Toggle the preset block vs the Home Assistant proxy fields, and refresh
+        // the resolved-URL preview. Presets are only relevant for an external feed
+        // that is not proxied through Home Assistant.
+        const refreshCameraUi = () => {
+            const isExternal = cameraFields.source.val() === "external";
+            const usingHA = cameraFields.haEnabled.is(":checked");
+            cameraFields.externalWrap.toggleClass("d-none", !(isExternal && !usingHA));
+            cameraFields.haFields.toggleClass("d-none", !usingHA);
+            if (!isExternal || usingHA) return;
+            const kind = cameraFields.kind.val();
+            cameraFields.kindHelp.text(camKindHelp[kind] || "");
+            cameraFields.presetFields.each(function () {
+                $(this).toggleClass("d-none", $(this).data("kind") !== kind);
+            });
+            let stream = "", snapshot = "";
+            if (kind === "custom") {
+                stream = ($("#camera-custom-stream").val() || "").trim();
+                snapshot = ($("#camera-custom-snapshot").val() || "").trim();
+            } else {
+                const d = deriveCameraUrls(kind, collectCameraFields(kind));
+                stream = d.stream;
+                snapshot = d.snapshot;
+            }
+            cameraFields.resolvedStream.text(stream || "—");
+            cameraFields.resolvedSnapshot.text(snapshot || "—");
+        };
+
+        const applyCameraSettings = (cfg) => {
+            const ext = cfg.external || {};
+            const ha = ext.home_assistant || {};
+            cameraFields.source.val(cfg.configured_source || cfg.source || "printer");
+            cameraFields.name.val(ext.name || "");
+            cameraFields.refresh.val(ext.refresh_sec || 1);
+
+            const kind = ext.kind || (ext.stream_url || ext.snapshot_url ? "custom" : "mjpeg");
+            cameraFields.kind.val(kind);
+            const f = ext.fields || {};
+            $("#camera-mjpeg-stream").val(f.stream_url || (kind === "mjpeg" ? ext.stream_url : "") || "");
+            $("#camera-rtsp-stream").val(f.stream_url || (kind === "rtsp" ? ext.stream_url : "") || "");
+            $("#camera-octoprint-base").val(f.base_url || "");
+            $("#camera-frigate-base").val(f.base_url || "");
+            $("#camera-frigate-camera").val(f.camera || "");
+            $("#camera-go2rtc-base").val(f.base_url || "");
+            $("#camera-go2rtc-stream").val(f.stream || "");
+            $("#camera-reolink-host").val(f.host || "");
+            $("#camera-reolink-user").val(f.user || "");
+            $("#camera-reolink-password").val(f.password || "");
+            $("#camera-reolink-channel").val(f.channel || "");
+            $("#camera-custom-stream").val(kind === "custom" ? (ext.stream_url || "") : "");
+            $("#camera-custom-snapshot").val(kind === "custom" ? (ext.snapshot_url || "") : "");
+
+            cameraFields.haEnabled.prop("checked", Boolean(ha.enabled));
+            cameraFields.haBaseURL.val(ha.base_url || "");
+            markSavedSecret(cameraFields.haToken, Boolean(ha.token_configured || ha.token), "token");
+            cameraFields.haEntity.val(ha.camera_entity_id || "");
+            cameraFields.detail.text(cfg.detail || "");
+            refreshCameraUi();
         };
 
         const loadCameraSettings = async () => {
@@ -3543,20 +3877,7 @@ $(function () {
                 const resp = await fetch("/api/settings/camera");
                 if (!resp.ok) return;
                 const data = await resp.json();
-                const cfg = data.camera || {};
-                const ext = cfg.external || {};
-                const ha = ext.home_assistant || {};
-                cameraFields.source.val(cfg.configured_source || cfg.source || "printer");
-                cameraFields.name.val(ext.name || "");
-                cameraFields.refresh.val(ext.refresh_sec || 1);
-                cameraFields.stream.val(ext.stream_url || "");
-                cameraFields.snapshot.val(ext.snapshot_url || "");
-                cameraFields.haEnabled.prop("checked", Boolean(ha.enabled));
-                cameraFields.haBaseURL.val(ha.base_url || "");
-                markSavedSecret(cameraFields.haToken, Boolean(ha.token_configured || ha.token), "token");
-                cameraFields.haEntity.val(ha.camera_entity_id || "");
-                cameraFields.detail.text(cfg.detail || "");
-                updateCameraSourceFields();
+                applyCameraSettings(data.camera || {});
             } catch (err) {
                 console.error("Failed to load camera settings:", err);
             }
@@ -3565,8 +3886,10 @@ $(function () {
         $("#camera-save").on("click", async function () {
             const btn = $(this);
             btn.prop("disabled", true);
+            const source = cameraFields.source.val() === "external" ? "external" : "printer";
+            const haEnabled = cameraFields.haEnabled.is(":checked");
             const haSettings = {
-                enabled: cameraFields.haEnabled.is(":checked"),
+                enabled: haEnabled,
                 base_url: cameraFields.haBaseURL.val().trim(),
                 camera_entity_id: cameraFields.haEntity.val().trim(),
             };
@@ -3576,16 +3899,22 @@ $(function () {
                 refresh_sec: parseInt(cameraFields.refresh.val(), 10) || 1,
                 home_assistant: haSettings,
             };
-            if (!haSettings.enabled) {
-                external.stream_url = cameraFields.stream.val().trim();
-                external.snapshot_url = cameraFields.snapshot.val().trim();
+            if (source === "external" && !haEnabled) {
+                const kind = cameraFields.kind.val();
+                external.kind = kind;
+                if (kind === "custom") {
+                    external.stream_url = ($("#camera-custom-stream").val() || "").trim();
+                    external.snapshot_url = ($("#camera-custom-snapshot").val() || "").trim();
+                    external.fields = {};
+                } else {
+                    const fields = collectCameraFields(kind);
+                    external.fields = fields;
+                    const d = deriveCameraUrls(kind, fields);
+                    external.stream_url = d.stream;
+                    external.snapshot_url = d.snapshot;
+                }
             }
-            const payload = {
-                camera: {
-                    source: cameraFields.source.val(),
-                    external,
-                },
-            };
+            const payload = { camera: { source, external } };
             try {
                 const resp = await fetch("/api/settings/camera", {
                     method: "POST",
@@ -3606,7 +3935,7 @@ $(function () {
             }
         });
 
-        cameraFields.haEnabled.on("change", updateCameraSourceFields);
+        cameraForm.on("change input", "select, input", refreshCameraUi);
         loadCameraSettings();
     }
 

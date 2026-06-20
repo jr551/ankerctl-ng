@@ -11,6 +11,8 @@
                         src="/api/camera/frame" data-frame-src="/api/camera/frame"
                         data-refresh-sec="{{.CameraRefreshSec}}" alt="Camera feed" />
                     <img class="camera-rewind-image" id="camera-rewind-image" alt="Buffered camera frame" hidden />
+                    <div class="rewind-vignette" aria-hidden="true"></div>
+                    <div class="rewind-status is-live" aria-hidden="true"><span class="rewind-dot"></span><span class="rewind-status-text">LIVE</span></div>
                     <div class="camera-frame-overlay" aria-hidden="true">
                         <div class="spinner-border text-light" role="status">
                             <span class="visually-hidden">Loading camera</span>
@@ -23,6 +25,8 @@
                         poster="/static/img/load-screen.svg">
                     </video>
                     <img class="camera-rewind-image" id="camera-rewind-image" alt="Buffered camera frame" hidden />
+                    <div class="rewind-vignette" aria-hidden="true"></div>
+                    <div class="rewind-status is-live" aria-hidden="true"><span class="rewind-dot"></span><span class="rewind-status-text">LIVE</span></div>
                 </div>
                 <div id="video-toggle-container" class="text-center mb-3">
                     <button class="btn btn-primary" id="video-toggle">
@@ -208,6 +212,7 @@
                     <div class="card-header d-flex align-items-center justify-content-between">
                         <span class="fs-6">Upload Progress</span>
                         <button class="btn btn-sm btn-outline-secondary collapse-toggle" type="button"
+                            aria-label="Toggle upload progress"
                             data-bs-toggle="collapse" data-bs-target="#upload-progress-section" aria-expanded="true"
                             aria-controls="upload-progress-section">
                             <i class="bi-chevron-down"></i>
@@ -267,6 +272,7 @@
                     <div class="card-header d-flex align-items-center justify-content-between">
                         <span class="fs-6">Video Controls</span>
                         <button class="btn btn-sm btn-outline-secondary collapse-toggle" type="button"
+                            aria-label="Toggle video controls"
                             data-bs-toggle="collapse" data-bs-target="#video-controls-section" aria-expanded="true"
                             aria-controls="video-controls-section">
                             <i class="bi-chevron-down"></i>

@@ -374,6 +374,53 @@ func (h *Handler) HistoryThumbnail(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(thumbBytes)
 }
 
+// HistoryGCode serves the raw archived GCode text for a history entry so the
+// browser can render a toolpath preview.
+//
+// GET /api/history/{id}/gcode
+//
+// Returns 200 text/plain when the entry has an archived GCode file. Returns 404
+// when the entry does not exist, has no archive, or the archive file was pruned.
+// The archived bytes are plain ASCII GCode: the PPPP "curse" cipher is applied
+// on the wire only and never touches the stored file.
+func (h *Handler) HistoryGCode(w http.ResponseWriter, r *http.Request) {
+	idRaw := chi.URLParam(r, "id")
+	entryID, err := strconv.ParseInt(idRaw, 10, 64)
+	if err != nil || entryID <= 0 {
+		h.writeError(w, http.StatusBadRequest, "invalid history entry id")
+		return
+	}
+
+	if h.db == nil || h.gcodeArchiver == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	entry, err := h.db.GetEntry(entryID)
+	if err != nil {
+		h.log.Error("gcode: GetEntry failed", "id", entryID, "err", err)
+		h.writeError(w, http.StatusInternalServerError, "failed to load history entry")
+		return
+	}
+	if entry == nil || entry.ArchiveRelpath == nil || !h.gcodeArchiver.Exists(*entry.ArchiveRelpath) {
+		http.NotFound(w, r)
+		return
+	}
+
+	archiveBytes, err := h.gcodeArchiver.ReadArchive(*entry.ArchiveRelpath)
+	if err != nil {
+		h.log.Error("gcode: ReadArchive failed", "relpath", *entry.ArchiveRelpath, "err", err)
+		h.writeError(w, http.StatusInternalServerError, "failed to read archived GCode")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Length", strconv.Itoa(len(archiveBytes)))
+	w.Header().Set("Cache-Control", "max-age=86400")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(archiveBytes)
+}
+
 // HistoryDeleteSelected deletes specific print history entries by ID.
 //
 // POST /api/history/delete

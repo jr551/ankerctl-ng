@@ -491,7 +491,7 @@ code {
     display: flex;
     flex-direction: column;
     font-family: var(--bs-font-monospace);
-    font-size: 0.40rem;
+    font-size: 0.7rem;
     gap: 0.1rem;
     height: 10rem;
     line-height: 1.15;
@@ -507,7 +507,7 @@ code {
     display: flex;
     flex-direction: column;
     font-family: var(--bs-font-monospace);
-    font-size: 0.40rem;
+    font-size: 0.7rem;
     gap: 0.1rem;
     height: 6rem;
     line-height: 1.15;
@@ -629,4 +629,157 @@ code {
 #apprise-effective-url {
     color: var(--agreen3);
     background-color: rgba(0, 0, 0, 0.25);
+}
+
+/* ── Live preview rewind: crossfade + status pill + vignette ─────────── */
+.camera-rewind-image {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+}
+
+.camera-rewind-image.is-visible {
+    opacity: 1;
+}
+
+.rewind-vignette {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    box-shadow: inset 0 0 80px 20px rgba(0, 0, 0, 0.55);
+    background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 55%, rgba(0, 0, 0, 0.35) 100%);
+}
+
+.camera-frame-shell.is-rewinding .rewind-vignette {
+    opacity: 1;
+}
+
+.rewind-status {
+    position: absolute;
+    top: 0.5rem;
+    left: 0.5rem;
+    z-index: 5;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.15rem 0.55rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.55);
+    border-radius: 999px;
+    pointer-events: none;
+    backdrop-filter: blur(2px);
+    transition: color 0.25s ease;
+}
+
+.rewind-dot {
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 50%;
+    background: var(--agreen2);
+    box-shadow: 0 0 0 0 rgba(136, 243, 135, 0.7);
+}
+
+.rewind-status.is-live .rewind-dot {
+    animation: rewind-pulse 1.8s ease-out infinite;
+}
+
+.rewind-status:not(.is-live) {
+    color: #ffd479;
+}
+
+.rewind-status:not(.is-live) .rewind-dot {
+    background: #ffb020;
+    box-shadow: none;
+}
+
+@keyframes rewind-pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(136, 243, 135, 0.7); }
+    70%  { box-shadow: 0 0 0 0.5rem rgba(136, 243, 135, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(136, 243, 135, 0); }
+}
+
+#camera-rewind-label {
+    font-variant-numeric: tabular-nums;
+}
+
+#camera-rewind-slider {
+    height: 1.5rem;
+    cursor: pointer;
+}
+
+#camera-rewind-slider:focus-visible {
+    outline: 2px solid var(--agreen2);
+    outline-offset: 2px;
+    border-radius: 0.5rem;
+}
+
+#camera-rewind-slider::-webkit-slider-thumb {
+    background-color: var(--agreen2);
+    border: 2px solid var(--agreen1);
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+#camera-rewind-slider:hover::-webkit-slider-thumb,
+#camera-rewind-slider:active::-webkit-slider-thumb {
+    transform: scale(1.15);
+    box-shadow: 0 0 0 0.25rem rgba(136, 243, 135, 0.25);
+}
+
+#camera-rewind-slider::-moz-range-thumb {
+    background-color: var(--agreen2);
+    border: 2px solid var(--agreen1);
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+#camera-rewind-slider:hover::-moz-range-thumb,
+#camera-rewind-slider:active::-moz-range-thumb {
+    transform: scale(1.15);
+    box-shadow: 0 0 0 0.25rem rgba(136, 243, 135, 0.25);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .camera-rewind-image,
+    .rewind-vignette,
+    .rewind-status,
+    #camera-rewind-slider::-webkit-slider-thumb,
+    #camera-rewind-slider::-moz-range-thumb {
+        transition: none;
+    }
+    .rewind-status.is-live .rewind-dot {
+        animation: none;
+    }
+}
+
+/* ── GCode toolpath viewer ───────────────────────────────────────────── */
+.gcode-viewer-stage {
+    position: relative;
+}
+
+#gcode-canvas {
+    display: block;
+    aspect-ratio: 4 / 3;
+    background: #0d1117;
+}
+
+.gcode-viewer-status {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    text-align: center;
+    color: var(--bs-secondary-color);
+    background: rgba(13, 17, 23, 0.6);
+    pointer-events: none;
+}
+
+.gcode-viewer-status[hidden] {
+    display: none;
 }
