@@ -475,3 +475,24 @@ check runs and does not false-block, print enables.
 
 Remaining: filament-colour CV (experimental), the two minor quirks (duplicate
 history rows, double first_layer). Slicer is feature-complete (STL + OpenSCAD).
+
+## Home UI + filament-colour CV — DONE (2026-06-20)
+- Home: replaced the bulky 4-button jog step selector with a green snap slider
+  (1/10/20/50 mm) + live badge; rounded jog buttons with hover/press feedback;
+  compacted the temperature graph. getStepDist reads the slider (radio fallback).
+- Filaments: "Detect from camera" button → captures a camera frame → vision model
+  (POST /api/filament/detect-color → DetectFilamentColor) estimates the dominant
+  filament hex → fills the colour picker + suggests the closest library profile
+  (RGB distance). No-ops gracefully without AI. Validated end-to-end on the NAS.
+
+## Session feature tally (all committed → PR #1 → deployed to NAS)
+completion fix · finished-photo email · bed-adhesion AI check · Slice & Build tab
+(STL + OpenSCAD, bed render + drag-to-position + settings) · printer-model picker ·
+post-slice deterministic + AI-vision check · history-row gcode viewer · camera
+presets · rewind effects · home-UI modernization · filament-colour CV · branding ·
+history-dedup fix. Slicer hardware-validated (printed an auto-sliced plate).
+
+## Remaining (1 item, explicitly "do last", LARGE — 3 sub-features)
+OpenSCAD live editing (task): (a) live 3D preview as you type (needs a three.js
+WebGLRenderer + OrbitControls vendored), (b) AI prompt to edit the SCAD with undo
+history (new AI text endpoint), (c) attach reference images to guide the AI edit.
