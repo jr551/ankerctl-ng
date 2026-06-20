@@ -43,6 +43,8 @@ ankerctl.log
 .env
 .env.local
 .env.*.local
+# Local deployment/host docs (contain private IPs, paths, creds)
+nas.md
 
 # Temporary files
 tmp/
