@@ -56,14 +56,21 @@ would block forever waiting for ACKs from the dead session.
 - `extractProgress` now only runs for ct=1001 (`MqttCmdPrintSchedule`), preventing stray "progress" fields from other MQTT commands from overwriting the live value
 
 #### `internal/web/static/ankersrv.js`
-- **isSpuriousLow guard**: ignores transient 1-2% progress values when last displayed is >7% ahead
-- Upload card hidden by default (CSS `#upload-card-wrapper.is-visible`)
-- Glass overlay effects during upload phase (CSS `.upload-glass-overlay`)
+- **Monotonic progress guard**: `_maxSeenProgress` tracks the ceiling; any value more than 2% below the max during printing is discarded. Replaces the earlier `isSpuriousZero`/`isSpuriousLow` guards which only caught 0–2% drops
+- **Upload card visibility**: `#upload-card-wrapper` gains `.is-visible` only during active uploads; hidden on idle/done/error
+- **`_maxSeenProgress`** resets on print idle, new-file load, and MQTT websocket close
 
 #### `internal/web/static/ankersrv.css`
-- Dark green card styling when printing (`body.print-active-glow .card`)
 - Upload glass overlay with spinner animation
-- Upload card visibility toggle
+- Dark green card styling when printing (`body.print-active-glow .card`)
+- Upload card `#upload-card-wrapper` visibility toggle
+- Debug feed and command feed font halved from `0.72rem` to `0.40rem`
+
+#### `internal/web/static/base.html`
+- Header subtitle next to "ng": "now with extra AI goodness! adapted by jr" in a comic-style font
+
+#### `internal/web/static/tabs/home.html`
+- Upload progress card wrapped in `id="upload-card-wrapper"` for show/hide toggle
 
 #### `cmd/ankerctl/main.go`
 - Wires `pppp.WithPowerController(service.PrinterPowerControllerFromConfig(cfgMgr))`
@@ -72,7 +79,10 @@ would block forever waiting for ACKs from the dead session.
 - PPPP websocket stays passive when `ppppservice` is registered, preventing UDP 32108 port conflicts
 
 ## Deployed Binary
-`ankerctl-ng progress-fix-ui-20260620140656` running on NAS, service active.
+`ankerctl-ng ai-goodness-20260620141836` running on NAS, service active.
+
+## Pending Deploy (queued, waiting for print completion)
+Commit `d22f187` contains monotonic progress guard, upload card visibility, and font halving — not yet deployed to NAS. Will deploy when current print finishes.
 
 ## Known Remaining Issues
 - Printer Wi-Fi power saving still causes intermittent L2 reachability loss (NAS can't ping printer while RouterOS can). Static neighbor entry helps but doesn't fully solve. RouterOS proxy or printer wired connection would eliminate this.
