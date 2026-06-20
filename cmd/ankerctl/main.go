@@ -155,6 +155,7 @@ func runWebserver() error {
 	// Background services monitor the printer specified by printerIdx.
 	// All services are skipped when the active device is unsupported.
 	pppp := service.NewPPPPServiceWithDB(cfgMgr, printerIdx, database)
+	pppp.WithPowerController(service.PrinterPowerControllerFromConfig(cfgMgr))
 	sm.Register(pppp)
 
 	video := service.NewVideoQueue(pppp, pppp)

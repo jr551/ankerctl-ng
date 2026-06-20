@@ -43,7 +43,17 @@ func (h *Handler) PPPPState(w http.ResponseWriter, r *http.Request) {
 
 	out := make(chan any, eventBufferSize)
 
-	// Register this client; kick off an immediate probe if we are the first.
+	hasRegisteredPPPPService := func() bool {
+		if h.services == nil {
+			return false
+		}
+		_, ok := h.services.Get("ppppservice")
+		return ok
+	}
+
+	// Register this client; kick off an immediate probe if we are the first
+	// and there is no registered PPPP service. When ppppservice exists, status
+	// must stay passive: active probes bind UDP 32108 and can race real uploads.
 	h.ppppProbe.mu.Lock()
 	h.ppppProbe.clientCount++
 	isFirst := h.ppppProbe.clientCount == 1
@@ -88,7 +98,7 @@ func (h *Handler) PPPPState(w http.ResponseWriter, r *http.Request) {
 		}()
 	}
 
-	if isFirst {
+	if isFirst && !hasRegisteredPPPPService() {
 		startProbe()
 	}
 
@@ -166,15 +176,16 @@ func (h *Handler) PPPPState(w http.ResponseWriter, r *http.Request) {
 				nextInterval = ppppProbeInterval
 			}
 
-			probeSucceeded := probeResult != nil && *probeResult
-			probeFailed := probeResult != nil && !*probeResult
+			probeSucceeded := !ppppSvcAvailable && probeResult != nil && *probeResult
+			probeFailed := !ppppSvcAvailable && probeResult != nil && !*probeResult
 
 			// Also probe when PPPP was recently connected but the service
 			// stopped (e.g. last video client disconnected) so the badge
 			// refreshes promptly (upstream PR #19).
 			ppppWentDormant := wasConnected && probeResult == nil
 
-			shouldProbe = !h.ppppProbe.running &&
+			shouldProbe = !ppppSvcAvailable &&
+				!h.ppppProbe.running &&
 				(lastProbeTime.IsZero() ||
 					((mqttStale || mqttRecovered || probeFailed || ppppWentDormant) &&
 						now.Sub(lastProbeTime) > nextInterval))

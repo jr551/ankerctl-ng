@@ -381,8 +381,10 @@ func (q *MqttQueue) handlePayload(obj map[string]any) {
 	}
 
 	normalized := cloneMap(obj)
-	if progress, ok := extractProgress(obj); ok {
-		normalized["progress"] = normalizeProgress(progress)
+	if ct == int(protocol.MqttCmdPrintSchedule) {
+		if progress, ok := extractProgress(obj); ok {
+			normalized["progress"] = normalizeProgress(progress)
+		}
 	}
 
 	// Capture bed leveling grid if present.

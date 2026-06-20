@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -22,6 +23,17 @@ const (
 )
 
 var lanSearchRetryInterval = time.Second
+
+// ppppKeepaliveInterval is how often a connected client sends ALIVE (PingReq)
+// to keep the printer's session from being silently dropped by Wi-Fi power
+// saving. 5 s is well under the printer's idle timeout and light enough to
+// avoid log noise.
+const ppppKeepaliveInterval = 5 * time.Second
+
+// ppppStaleThreshold is how long without a PingResp the session may be
+// considered dead. 3× the keepalive interval tolerates a single lost pong
+// without false-positives.
+const ppppStaleThreshold = 3 * ppppKeepaliveInterval
 
 // State represents PPPP connection lifecycle state.
 type State int
@@ -46,8 +58,20 @@ type Client struct {
 	duid protocol.Duid
 	addr *net.UDPAddr
 
-	mu    sync.RWMutex
-	state State
+	mu                   sync.RWMutex
+	state                State
+	lanSearchAddrs       []*net.UDPAddr
+	lanSearchRetryNumber int
+
+	// lastPong is updated (unix nano) whenever a PingResp is received from
+	// the printer. Used by Healthy() to detect silent session death — the
+	// printer's Wi-Fi power saving can drop a session without sending Close,
+	// leaving State()==StateConnected while no traffic flows. Tracked as an
+	// atomic so Healthy() can be read from any goroutine without the mutex.
+	lastPong atomic.Int64
+	// connectedAt is the time StateConnected was entered (unix nano). Used by
+	// Healthy() to give a grace window before the first keepalive pong lands.
+	connectedAt atomic.Int64
 
 	chans [8]*protocol.Channel
 
@@ -113,6 +137,38 @@ func OpenBroadcastLANTo(duid protocol.Duid, broadcastIP net.IP) (*Client, error)
 		return openBroadcastLANAddr(duid, ip)
 	}
 	return openBroadcastLANAddr(duid, net.IPv4bcast)
+}
+
+// OpenBroadcastLANToMany opens a broadcast-capable client that rotates LAN
+// search packets across multiple target addresses while connecting. This helps
+// multi-homed hosts and VLANs where neither 255.255.255.255 nor the interface
+// mask's directed broadcast reaches the printer reliably.
+func OpenBroadcastLANToMany(duid protocol.Duid, ips []net.IP) (*Client, error) {
+	addrs := make([]*net.UDPAddr, 0, len(ips))
+	seen := make(map[string]bool, len(ips))
+	for _, raw := range ips {
+		ip := raw.To4()
+		if ip == nil {
+			continue
+		}
+		key := ip.String()
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		addrs = append(addrs, &net.UDPAddr{IP: ip, Port: PPPPLANPort})
+	}
+	if len(addrs) == 0 {
+		return openBroadcastLANAddr(duid, net.IPv4bcast)
+	}
+	c, err := openBroadcastLANAddr(duid, addrs[0].IP)
+	if err != nil {
+		return nil, err
+	}
+	c.mu.Lock()
+	c.lanSearchAddrs = addrs
+	c.mu.Unlock()
+	return c, nil
 }
 
 func openBroadcastLANAddr(duid protocol.Duid, broadcastIP net.IP) (*Client, error) {
@@ -186,10 +242,6 @@ func OpenBroadcast() (*Client, error) {
 		return nil, fmt.Errorf("pppp: set SO_BROADCAST: %w", setSockOptErr)
 	}
 
-	if err := conn.SetWriteBuffer(1 << 20); err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("pppp: set write buffer: %w", err)
-	}
 	addr := &net.UDPAddr{IP: net.IPv4(192, 168, 69, 33), Port: PPPPLANPort}
 	c := NewClient(conn, protocol.Duid{}, addr)
 	c.state = StateConnected
@@ -200,6 +252,11 @@ func OpenBroadcast() (*Client, error) {
 // A localPort of 0 lets the OS pick an ephemeral port. EADDRINUSE is wrapped
 // with an actionable hint, since the most common cause is a second ankerctl
 // instance still holding the PPPP ports.
+//
+// Socket buffers are enlarged to 1 MiB: the printer floods P2pRdy (~20/s)
+// after the handshake, and DRW ACKs arrive in bursts during file uploads.
+// The Linux default rmem_default (~208 KiB) drops datagrams silently under
+// this load, which surfaces as "context canceled" upload hangs.
 func listenUDPLocal(localPort int) (*net.UDPConn, error) {
 	var laddr *net.UDPAddr
 	if localPort > 0 {
@@ -212,7 +269,34 @@ func listenUDPLocal(localPort int) (*net.UDPConn, error) {
 		}
 		return nil, fmt.Errorf("pppp: listen udp: %w", err)
 	}
+	if err := setUDPSocketBuffers(conn); err != nil {
+		conn.Close()
+		return nil, err
+	}
 	return conn, nil
+}
+
+// udpSocketBufferSize is the SO_RCVBUF/SO_SNDBUF size applied to every PPPP
+// UDP socket. 1 MiB comfortably absorbs the P2pRdy flood and DRW ACK bursts.
+const udpSocketBufferSize = 1 << 20
+
+// setUDPSocketBuffers enlarges read and write buffers on a UDPConn. Failures
+// are logged-only on platforms where the call is unsupported; the socket
+// remains usable with default buffers. Returns an error only when both calls
+// fail, since partial success still improves behaviour.
+func setUDPSocketBuffers(conn *net.UDPConn) error {
+	rErr := conn.SetReadBuffer(udpSocketBufferSize)
+	wErr := conn.SetWriteBuffer(udpSocketBufferSize)
+	if rErr != nil && wErr != nil {
+		return fmt.Errorf("pppp: set udp buffers (read=%v, write=%v): %w", rErr, wErr, errors.Join(rErr, wErr))
+	}
+	if rErr != nil {
+		slog.Warn("pppp: failed to enlarge UDP read buffer (continuing with default)", "err", rErr)
+	}
+	if wErr != nil {
+		slog.Warn("pppp: failed to enlarge UDP write buffer (continuing with default)", "err", wErr)
+	}
+	return nil
 }
 
 // Close stops the run loop and closes socket.
@@ -222,6 +306,12 @@ func (c *Client) Close() error {
 	c.state = StateDisconnected
 	c.mu.Unlock()
 	c.wg.Wait()
+	// Mark all channels as closed so any blocked WriteContext calls
+	// (e.g. pending uploads) return ErrChannelClosed immediately instead
+	// of hanging forever waiting for ACKs from a dead session.
+	for _, ch := range c.chans {
+		ch.Close()
+	}
 	return c.conn.Close()
 }
 
@@ -236,6 +326,22 @@ func (c *Client) setState(s State) {
 	c.mu.Lock()
 	c.state = s
 	c.mu.Unlock()
+}
+
+// Healthy reports whether the PPPP session is actually alive, not just
+// nominally Connected. Returns false when no PingResp has been received
+// within ppppStaleThreshold — the printer's Wi-Fi power saving can drop a
+// session without sending Close, leaving State()==StateConnected while no
+// traffic flows. Callers should force a reconnect when Healthy() is false.
+func (c *Client) Healthy() bool {
+	if c.State() != StateConnected {
+		return false
+	}
+	pong := c.lastPong.Load()
+	if pong == 0 {
+		return false
+	}
+	return time.Since(time.Unix(0, pong)) < ppppStaleThreshold
 }
 
 func (c *Client) remoteAddr() *net.UDPAddr {
@@ -263,10 +369,54 @@ func (c *Client) setRemoteAddr(addr *net.UDPAddr) {
 	c.mu.Unlock()
 }
 
+func (c *Client) hostForRemote() protocol.Host {
+	host := protocol.Host{AFamily: 2, Port: uint16(PPPPLANPort), Addr: net.IPv4zero}
+	remote := c.remoteAddr()
+	if remote == nil || remote.IP == nil {
+		return host
+	}
+	conn, err := net.DialUDP("udp4", nil, remote)
+	if err != nil {
+		return host
+	}
+	defer conn.Close()
+	if local, ok := conn.LocalAddr().(*net.UDPAddr); ok {
+		if ip := local.IP.To4(); ip != nil {
+			host.Addr = ip
+		}
+	}
+	return host
+}
+
 // ConnectLANSearch starts handshake by broadcasting LAN_SEARCH.
 func (c *Client) ConnectLANSearch() error {
 	c.setState(StateConnecting)
-	return c.SendPacket(protocol.LanSearch{}, nil)
+	return c.sendLANSearch()
+}
+
+func (c *Client) nextLANSearchAddr() *net.UDPAddr {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.lanSearchAddrs) == 0 {
+		if c.addr == nil {
+			return nil
+		}
+		cp := *c.addr
+		return &cp
+	}
+	idx := c.lanSearchRetryNumber % len(c.lanSearchAddrs)
+	c.lanSearchRetryNumber++
+	cp := *c.lanSearchAddrs[idx]
+	return &cp
+}
+
+func (c *Client) sendLANSearch() error {
+	addr := c.nextLANSearchAddr()
+	if addr == nil {
+		return errors.New("pppp: missing lan search address")
+	}
+	slog.Info("pppp: sending LanSearch", "target", addr.String())
+	return c.SendPacket(protocol.LanSearch{}, addr)
 }
 
 // Run starts the recv/process/retransmit loop.
@@ -297,6 +447,7 @@ func (c *Client) Run(ctx context.Context) error {
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
 	nextLANSearchRetry := time.Now().Add(lanSearchRetryInterval)
+	nextKeepalive := time.Now().Add(ppppKeepaliveInterval)
 
 	for {
 		select {
@@ -310,16 +461,10 @@ func (c *Client) Run(ctx context.Context) error {
 				return ErrConnectionReset
 			}
 			if state == StateConnecting && !now.Before(nextLANSearchRetry) {
-				if err := c.SendPacket(protocol.LanSearch{}, nil); err != nil {
+				if err := c.sendLANSearch(); err != nil {
 					slog.Warn("pppp: retry lan search failed", "err", err)
 				}
 				nextLANSearchRetry = now.Add(lanSearchRetryInterval)
-			}
-
-			for _, ch := range c.chans {
-				for _, pkt := range ch.Poll(now) {
-					_ = c.SendPacket(pkt, nil)
-				}
 			}
 
 			// Drain as many inbound UDP packets as available in this cycle.
@@ -345,6 +490,29 @@ func (c *Client) Run(ctx context.Context) error {
 				slog.Warn("pppp: recv/decode error", "err", err)
 				break
 			}
+
+			if c.State() != StateConnected {
+				continue
+			}
+
+			for _, ch := range c.chans {
+				for _, pkt := range ch.Poll(now) {
+					_ = c.SendPacket(pkt, nil)
+				}
+			}
+
+			// Send a PPPP keepalive (ALIVE/PingReq) periodically while
+			// connected. Without this, the printer's Wi-Fi power-saving
+			// cycle silently drops idle sessions: State() stays Connected
+			// but no traffic flows, so the next upload hangs waiting for
+			// AABB ACKs that never arrive. The printer responds with
+			// PingResp, refreshing lastPong for Healthy().
+			if now.After(nextKeepalive) {
+				if err := c.SendPacket(protocol.PingReq{}, nil); err != nil {
+					slog.Warn("pppp: keepalive send failed", "err", err)
+				}
+				nextKeepalive = now.Add(ppppKeepaliveInterval)
+			}
 		}
 	}
 }
@@ -355,6 +523,7 @@ var ErrConnectionReset = errors.New("pppp: connection reset by remote")
 func (c *Client) process(msg any) {
 	switch m := msg.(type) {
 	case protocol.PunchPkt:
+		slog.Info("pppp: received PunchPkt", "addr", c.remoteAddr())
 		// LAN handshake step 2: printer responds to LanSearch with PunchPkt.
 		// While connecting, send Close then P2pRdy to advance the handshake.
 		// Python reference: ppppapi.py process() PUNCH_PKT handler.
@@ -377,17 +546,35 @@ func (c *Client) process(msg any) {
 		}
 	case protocol.P2pRdy:
 		// LAN handshake step 4: printer confirms with P2pRdy.
-		// Send P2pRdyAck and transition to Connected.
+		//
+		// The printer floods P2pRdy (~20/s) after the handshake and expects
+		// a P2pRdyAck for each one. If we stop responding, the printer's
+		// retransmission timer fires and it sends Close, killing the session.
+		// So we always send P2pRdyAck, but only transition Connecting→Connected
+		// on the first one to avoid state thrashing.
+		if c.State() == StateConnecting {
+			slog.Info("pppp: received P2pRdy", "addr", c.remoteAddr())
+			now := time.Now().UnixNano()
+			c.connectedAt.Store(now)
+			c.lastPong.Store(now)
+			c.setState(StateConnected)
+		}
 		host := protocol.Host{AFamily: 2, Port: uint16(PPPPLANPort), Addr: net.IPv4zero}
 		_ = c.SendPacket(protocol.P2pRdyAck{DUID: c.duid, Host: host}, nil)
-		c.setState(StateConnected)
 	case protocol.Hello:
+		// Printer-initiated HELLO also proves session liveness.
+		c.lastPong.Store(time.Now().UnixNano())
 		host := protocol.Host{AFamily: 2, Port: uint16(PPPPLANPort), Addr: net.IPv4zero}
 		_ = c.SendPacket(protocol.HelloAck{Host: host}, nil)
 	case protocol.PingReq:
+		// Printer-initiated ALIVE: respond with ALIVE_ACK and refresh
+		// lastPong — receiving any traffic from the printer proves the
+		// session is alive, not just our own PingReq round-trips.
+		c.lastPong.Store(time.Now().UnixNano())
 		_ = c.SendPacket(protocol.PingResp{}, nil)
 	case protocol.PingResp:
-		// ALIVE_ACK — no action needed, matches Python.
+		// ALIVE_ACK — record pong time for keepalive health tracking.
+		c.lastPong.Store(time.Now().UnixNano())
 	case protocol.Drw:
 		_ = c.SendPacket(protocol.DrwAck{Chan: m.Chan, Acks: []uint16{m.Index}}, nil)
 		if int(m.Chan) < len(c.chans) {

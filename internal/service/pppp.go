@@ -28,6 +28,7 @@ type ppppConn interface {
 	Run(ctx context.Context) error
 	Close() error
 	State() ppppclient.State
+	Healthy() bool
 	Channel(index int) (*protocol.Channel, error)
 	RemoteIP() net.IP
 }
@@ -43,6 +44,11 @@ type PPPPService struct {
 	clientMu     sync.Mutex
 	clientFactor ppppClientFactory
 	pollInterval time.Duration
+
+	// powerController, if set, allows Upload to power-cycle the printer
+	// when the PPPP session is persistently stuck (printer accepts
+	// handshake but immediately drops the session).
+	powerController PrinterPowerController
 
 	// cfgMgr, database, and printerIndex are used to persist the discovered
 	// printer IP back to default.json and the DB cache on every successful
@@ -61,6 +67,13 @@ type PPPPService struct {
 // NewPPPPService creates a PPPP service.
 func NewPPPPService(cfg *config.Manager, printerIndex int) *PPPPService {
 	return NewPPPPServiceWithDB(cfg, printerIndex, nil)
+}
+
+// WithPowerController injects a power controller so Upload can power-cycle
+// the printer to recover from stuck PPPP sessions. Call before Start().
+func (s *PPPPService) WithPowerController(pc PrinterPowerController) *PPPPService {
+	s.powerController = pc
+	return s
 }
 
 // NewPPPPServiceWithDB creates a PPPP service that consults a DB cache for
@@ -131,14 +144,40 @@ func defaultPPPPClientFactory(cfgMgr *config.Manager, printerIndex int, database
 }
 
 func openHandshakePPPPClient(duid protocol.Duid, knownIP string) (*ppppclient.Client, error) {
-	if ip, ok := handshakeTargetForKnownIP(knownIP); ok {
-		if directed, ok := directedBroadcastForTarget(ip); ok {
-			slog.Info("ppppservice: using directed broadcast for handshake", "target", directed.String(), "printer_ip", ip.String())
-			return ppppclient.OpenBroadcastLANTo(duid, directed)
+	if targets := handshakeAddressesForKnownIP(knownIP); len(targets) > 0 {
+		targetStrings := make([]string, 0, len(targets))
+		for _, target := range targets {
+			targetStrings = append(targetStrings, target.String())
 		}
-		slog.Warn("ppppservice: no directed broadcast match, falling back to global broadcast", "printer_ip", ip.String())
+		slog.Info("ppppservice: using known printer IP handshake targets", "targets", strings.Join(targetStrings, ","))
+		return ppppclient.OpenBroadcastLANToMany(duid, targets)
 	}
 	return ppppclient.OpenBroadcastLAN(duid)
+}
+
+func handshakeAddressForKnownIP(knownIP string) (net.IP, bool) {
+	targets := handshakeAddressesForKnownIP(knownIP)
+	if len(targets) == 0 {
+		return nil, false
+	}
+	return targets[0], true
+}
+
+func handshakeAddressesForKnownIP(knownIP string) []net.IP {
+	ip, ok := handshakeTargetForKnownIP(knownIP)
+	if !ok {
+		return nil
+	}
+
+	targets := []net.IP{ip}
+	if broadcast := classCBroadcastForTarget(ip); broadcast != nil {
+		targets = append(targets, broadcast)
+	}
+	if directed, ok := directedBroadcastForTarget(ip); ok {
+		targets = append(targets, directed)
+	}
+	targets = append(targets, net.IPv4bcast)
+	return uniqueIPv4s(targets)
 }
 
 func handshakeTargetForKnownIP(knownIP string) (net.IP, bool) {
@@ -147,6 +186,32 @@ func handshakeTargetForKnownIP(knownIP string) (net.IP, bool) {
 		return nil, false
 	}
 	return ip.To4(), true
+}
+
+func classCBroadcastForTarget(target net.IP) net.IP {
+	ip := target.To4()
+	if ip == nil {
+		return nil
+	}
+	return net.IPv4(ip[0], ip[1], ip[2], 255)
+}
+
+func uniqueIPv4s(ips []net.IP) []net.IP {
+	seen := make(map[string]bool, len(ips))
+	out := make([]net.IP, 0, len(ips))
+	for _, raw := range ips {
+		ip := raw.To4()
+		if ip == nil {
+			continue
+		}
+		key := ip.String()
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, ip)
+	}
+	return out
 }
 
 func directedBroadcastForTarget(target net.IP) (net.IP, bool) {
@@ -288,17 +353,30 @@ func (s *PPPPService) SetLight(ctx context.Context, on bool) error {
 	return s.P2PCommand(ctx, protocol.P2PSubCmdLightStateSwitch, map[string]any{"open": on})
 }
 
-// waitConnected blocks until the PPPP client reaches StateConnected or the
-// context / a 10-second deadline expires. This mirrors Python's pppp_open()
-// which polls until api.state == PPPPState.Connected before uploading.
+// waitConnected blocks until the PPPP client reaches StateConnected AND is
+// Healthy (recent PingResp within ppppStaleThreshold) or the context / a
+// 10-second deadline expires. This mirrors Python's pppp_open() which polls
+// until api.state == PPPPState.Connected before uploading.
+//
+// The Healthy() guard is critical: the printer's Wi-Fi power saving can drop
+// a session without sending Close, leaving State()==StateConnected while no
+// traffic flows. Without this check, Upload() would send AABB BEGIN and hang
+// for the full aabbReplyTimeout on every chunk before failing.
 func (s *PPPPService) waitConnected(ctx context.Context) (ppppConn, error) {
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		cli := s.currentClient()
-		if cli != nil && cli.State() == ppppclient.StateConnected {
+		if cli != nil && cli.State() == ppppclient.StateConnected && cli.Healthy() {
 			return cli, nil
 		}
 		if time.Now().After(deadline) {
+			// If the client reports Connected but is not Healthy, the session
+			// is stale — force a restart so the next attempt gets a fresh
+			// handshake instead of reusing the dead socket.
+			if cli != nil && cli.State() == ppppclient.StateConnected && !cli.Healthy() {
+				s.log.Warn("ppppservice: session stale (no keepalive pong), forcing restart")
+				return nil, errStaleSession
+			}
 			return nil, errors.New("ppppservice: connection timeout waiting for handshake")
 		}
 		select {
@@ -309,12 +387,168 @@ func (s *PPPPService) waitConnected(ctx context.Context) (ppppConn, error) {
 	}
 }
 
+// errStaleSession signals that the PPPP session was Connected but not Healthy
+// (no recent PingResp). WorkerRun treats this as a restart signal so the next
+// Borrow gets a fresh handshake rather than reusing the dead socket.
+var errStaleSession = errors.New("ppppservice: stale session (no keepalive pong)")
+
 var aabbReplyTimeout = 15 * time.Second
 
 // Upload implements PPPPFileUploader interface.
+// uploadMaxRetries is how many times uploadOnce retries after a connection
+// drop before escalating to a power-cycle.
+const uploadMaxRetries = 3
+
+// uploadMaxPowerCycles is the maximum number of printer power-cycles
+// attempted during a single Upload call. Each power-cycle is followed by
+// a 60-second boot window.
+const uploadMaxPowerCycles = 3
+
+// uploadTotalTimeout is the hard ceiling for a single Upload call,
+// including all retries and power-cycles. The HTTP handler blocks for
+// this entire duration, so it must be reasonable for a user waiting on
+// a slicer response.
+const uploadTotalTimeout = 5 * time.Minute
+
+// uploadRecoveryBootWait is how long we wait after turning the socket
+// back on before polling for the printer's PPPP port.
+const uploadRecoveryBootWait = 30 * time.Second
+
+// Upload implements PPPPFileUploader interface.
+//
+// The upload is held in memory (payload bytes) and retried persistently:
+//   - Round 1: try uploadOnce with uploadMaxRetries connection-drop retries.
+//   - If all fail with connection-level errors, power-cycle the printer.
+//   - Wait for the printer to boot and its PPPP daemon to start.
+//   - Repeat until the upload succeeds or uploadTotalTimeout expires.
+//
+// This ensures the file is delivered even when the printer's PPPP stack
+// is stuck — the power-cycle clears the stuck state and the fresh boot
+// allows a clean session.
 func (s *PPPPService) Upload(ctx context.Context, info UploadInfo, payload []byte, progress func(sent, total int64)) error {
+	totalDeadline := time.Now().Add(uploadTotalTimeout)
+	var lastErr error
+	powerCycles := 0
+
+	for {
+		err := s.uploadWithRetries(ctx, info, payload, progress)
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+
+		if !isRetryableUploadErr(err) {
+			return err
+		}
+
+		if time.Now().After(totalDeadline) {
+			return fmt.Errorf("ppppservice: upload timed out after %v: %w", uploadTotalTimeout, lastErr)
+		}
+
+		if s.powerController == nil {
+			return fmt.Errorf("ppppservice: upload failed (no power controller for recovery): %w", lastErr)
+		}
+
+		if powerCycles >= uploadMaxPowerCycles {
+			return fmt.Errorf("ppppservice: upload failed after %d power-cycles: %w", powerCycles, lastErr)
+		}
+
+		powerCycles++
+		s.log.Warn("ppppservice: printer stuck, power-cycling to recover",
+			"cycle", powerCycles, "max", uploadMaxPowerCycles, "err", lastErr)
+
+		pcCtx, pcCancel := context.WithTimeout(context.Background(), 60*time.Second)
+		if pcErr := s.powerController.PowerCycle(pcCtx); pcErr != nil {
+			s.log.Warn("ppppservice: power-cycle failed", "err", pcErr)
+			pcCancel()
+			if powerCycles >= uploadMaxPowerCycles {
+				return fmt.Errorf("ppppservice: power-cycle failed and no retries left: %w (power-cycle err: %v)", lastErr, pcErr)
+			}
+			continue
+		}
+		pcCancel()
+
+		s.log.Info("ppppservice: waiting for printer to boot after power-cycle",
+			"boot_wait", uploadRecoveryBootWait)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(uploadRecoveryBootWait):
+		}
+
+		printerIP := ResolvePrinterIP(s.cfgMgr, s.printerIndex)
+		if printerIP == "" {
+			s.log.Warn("ppppservice: no printer IP, skipping recovery ping")
+			continue
+		}
+
+		if err := waitForPrinterRecovery(ctx, printerIP, totalDeadline); err != nil {
+			s.log.Warn("ppppservice: printer did not become reachable after power-cycle", "err", err)
+		}
+
+		// Force a PPPP service restart so the next uploadWithRetries
+		// starts a fresh handshake against the freshly-booted printer.
+		s.Restart()
+		s.log.Info("ppppservice: printer recovered, retrying upload")
+	}
+}
+
+// uploadWithRetries calls uploadOnce up to uploadMaxRetries times,
+// with a short delay between attempts for the PPPP service to reconnect.
+func (s *PPPPService) uploadWithRetries(ctx context.Context, info UploadInfo, payload []byte, progress func(sent, total int64)) error {
+	var lastErr error
+	for attempt := 0; attempt <= uploadMaxRetries; attempt++ {
+		if attempt > 0 {
+			s.log.Warn("ppppservice: retrying upload after connection drop",
+				"attempt", attempt, "max", uploadMaxRetries, "prev_err", lastErr.Error())
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(2 * time.Second):
+			}
+		}
+
+		err := s.uploadOnce(ctx, info, payload, progress)
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+
+		if !isRetryableUploadErr(err) {
+			return err
+		}
+	}
+	return lastErr
+}
+
+// isRetryableUploadErr reports whether an upload error is worth retrying
+// (connection dropped, channel closed, stale session, handshake timeout).
+func isRetryableUploadErr(err error) bool {
+	if errors.Is(err, protocol.ErrChannelClosed) {
+		return true
+	}
+	if errors.Is(err, errStaleSession) {
+		return true
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "connection reset") ||
+		strings.Contains(msg, "channel closed") ||
+		strings.Contains(msg, "connection timeout") ||
+		strings.Contains(msg, "no client") {
+		return true
+	}
+	return false
+}
+
+func (s *PPPPService) uploadOnce(ctx context.Context, info UploadInfo, payload []byte, progress func(sent, total int64)) error {
 	cli, err := s.waitConnected(ctx)
 	if err != nil {
+		// Stale sessions must trigger a restart so the next attempt gets a
+		// fresh handshake rather than reusing the dead socket.
+		if errors.Is(err, errStaleSession) {
+			s.log.Warn("ppppservice: restarting due to stale session before upload")
+			s.Restart()
+		}
 		return err
 	}
 	ch, err := cli.Channel(1)
@@ -585,6 +819,7 @@ func (s *PPPPService) WorkerRun(ctx context.Context) error {
 
 	connectDeadline := time.Now().Add(connectTimeout)
 	ipPersisted := false // persist discovered IP once per connection
+	connected := false
 
 	for {
 		select {
@@ -600,6 +835,10 @@ func (s *PPPPService) WorkerRun(ctx context.Context) error {
 			return ErrServiceRestartSignal
 		case <-ticker.C:
 			if cli.State() != ppppclient.StateConnected {
+				if connected {
+					s.log.Warn("ppppservice: connection lost, restarting")
+					return ErrServiceRestartSignal
+				}
 				// Not yet connected — wait for PunchPkt handshake to complete.
 				// Python waits up to 10 s for StateConnected; we do the same.
 				now := time.Now()
@@ -609,8 +848,17 @@ func (s *PPPPService) WorkerRun(ctx context.Context) error {
 				}
 				continue
 			}
-			// Once connected, reset deadline (not used further, but clean).
-			connectDeadline = time.Time{}
+			connected = true
+			// Proactive staleness check: if the session is Connected but
+			// Healthy() is false (no PingResp within ppppStaleThreshold),
+			// the printer's Wi-Fi power saving has silently dropped the
+			// session. Restart immediately rather than waiting for an upload
+			// to time out. This keeps the service self-healing between
+			// user-initiated operations.
+			if !cli.Healthy() {
+				s.log.Warn("ppppservice: session stale (no keepalive pong), restarting")
+				return ErrServiceRestartSignal
+			}
 			// Persist discovered printer IP on first successful connection.
 			// Guard: only persist valid unicast IPs — never broadcast/loopback/unspecified.
 			if !ipPersisted {

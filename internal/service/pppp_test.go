@@ -26,6 +26,10 @@ type fakePPPPConn struct {
 	runDelay time.Duration
 	// channelErr, if set, is returned from Channel() for all indices.
 	channelErr error
+	// healthyOverride, if non-nil, overrides the default Healthy() result
+	// (which returns true when state == StateConnected). Used to simulate
+	// stale sessions in tests.
+	healthyOverride *bool
 }
 
 func newFakePPPPConn() *fakePPPPConn {
@@ -76,6 +80,16 @@ func (f *fakePPPPConn) Channel(index int) (*protocol.Channel, error) {
 		return nil, errors.New("index out of range")
 	}
 	return f.chans[index], nil
+}
+func (f *fakePPPPConn) Healthy() bool {
+	// Test fake is always healthy when connected; tests that need to
+	// simulate staleness can override healthyOverride.
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.healthyOverride != nil {
+		return *f.healthyOverride
+	}
+	return f.state == ppppclient.StateConnected
 }
 
 func TestPPPPService_ConnectionResetTriggersRestart(t *testing.T) {
@@ -309,6 +323,63 @@ func TestHandshakeTargetForKnownIP(t *testing.T) {
 				t.Fatalf("ip=%v, want %v", gotIP, tt.wantIP)
 			}
 		})
+	}
+}
+
+func TestHandshakeAddressForKnownIPPrefersUnicast(t *testing.T) {
+	tests := []struct {
+		name    string
+		knownIP string
+		wantIP  net.IP
+		wantOK  bool
+	}{
+		{
+			name:    "nas vlan printer",
+			knownIP: "192.168.69.33",
+			wantIP:  net.IPv4(192, 168, 69, 33),
+			wantOK:  true,
+		},
+		{
+			name:    "missing ip uses broadcast fallback",
+			knownIP: "",
+			wantOK:  false,
+		},
+		{
+			name:    "invalid ip uses broadcast fallback",
+			knownIP: "255.255.255.255",
+			wantOK:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotIP, gotOK := handshakeAddressForKnownIP(tt.knownIP)
+			if gotOK != tt.wantOK {
+				t.Fatalf("ok=%v, want %v", gotOK, tt.wantOK)
+			}
+			if tt.wantOK && !gotIP.Equal(tt.wantIP) {
+				t.Fatalf("ip=%v, want %v", gotIP, tt.wantIP)
+			}
+		})
+	}
+}
+
+func TestHandshakeAddressesForKnownIPIncludesFallbacks(t *testing.T) {
+	got := handshakeAddressesForKnownIP("192.168.69.33")
+	if len(got) < 3 {
+		t.Fatalf("targets len = %d, want at least 3: %v", len(got), got)
+	}
+	wantPrefix := []net.IP{
+		net.IPv4(192, 168, 69, 33),
+		net.IPv4(192, 168, 69, 255),
+	}
+	for i, want := range wantPrefix {
+		if !got[i].Equal(want) {
+			t.Fatalf("target[%d] = %v, want %v (all targets %v)", i, got[i], want, got)
+		}
+	}
+	if !got[len(got)-1].Equal(net.IPv4bcast) {
+		t.Fatalf("last target = %v, want %v (all targets %v)", got[len(got)-1], net.IPv4bcast, got)
 	}
 }
 
