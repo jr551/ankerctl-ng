@@ -33,11 +33,17 @@
                         </details>
 
                         <div class="d-flex flex-wrap gap-2 align-items-center">
+                            <div class="input-group" style="max-width: 340px;">
+                                <label class="input-group-text" for="slice-printer-model">Printer</label>
+                                <select class="form-select" id="slice-printer-model">
+                                    <option value="m5c" selected>AnkerMake M5C (220×220×250)</option>
+                                    <option value="m5">AnkerMake M5 (235×235×250)</option>
+                            </select>
+                            </div>
                             <button class="btn btn-primary" id="slice-run" type="button" disabled>
                                 <i class="bi-layers px-1"></i> Slice
                             </button>
-                            <span class="badge text-bg-secondary">M5C · 220×220 · PLA 215°C/60°C · 0.2mm · 20% grid ·
-                                skirt</span>
+                            <span class="badge text-bg-secondary">PLA 215°C/60°C · 0.2mm · 20% grid · skirt</span>
                         </div>
 
                         <div id="slice-status" class="form-text"></div>

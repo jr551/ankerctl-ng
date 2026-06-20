@@ -35,6 +35,12 @@ if (fileInput) {
     };
     const ANKER_PREAMBLE = "M4899 T3 ; ankerctl-ng: enable v3 jerk + S-curve acceleration\n";
 
+    // Per-model bed sizes (selected in the UI). Merged over the M5C defaults.
+    const MODELS = {
+        m5c: { buildPlateWidth: 220, buildPlateLength: 220 },
+        m5: { buildPlateWidth: 235, buildPlateLength: 235 },
+    };
+
     let libs = null;
     let gcode = "";
     let parsed = null;
@@ -126,7 +132,9 @@ if (fileInput) {
 
     const sliceMesh = async (mesh) => {
         const { Polyslice } = libs;
-        const slicer = new Polyslice(M5C);
+        const modelSel = $("slice-printer-model");
+        const model = (modelSel && MODELS[modelSel.value]) || {};
+        const slicer = new Polyslice({ ...M5C, ...model });
         const t0 = performance.now();
         let g = slicer.slice(mesh);
         if (g && typeof g.then === "function") g = await g;
