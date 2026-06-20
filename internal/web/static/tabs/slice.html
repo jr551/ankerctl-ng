@@ -19,15 +19,29 @@
                             </label>
                             <input type="file" class="form-control" id="slice-stl-file" accept=".stl" />
                         </div>
-                        <details>
-                            <summary class="text-muted small">Or paste OpenSCAD</summary>
-                            <textarea class="form-control mt-2 font-monospace" id="slice-scad" rows="5"
-                                placeholder="// e.g.\ncube([20,20,10]);"></textarea>
-                            <div class="d-flex gap-2 mt-2">
-                                <button class="btn btn-outline-secondary btn-sm" id="slice-scad-render" type="button"
-                                    disabled>Render OpenSCAD</button>
-                                <span class="form-text mb-0" id="slice-scad-note">OpenSCAD loads on first use
-                                    (~7&nbsp;MB).</span>
+                        <details id="slice-scad-details">
+                            <summary class="text-muted small">Or build with OpenSCAD</summary>
+                            <div class="row g-2 mt-1">
+                                <div class="col-md-7">
+                                    <textarea class="form-control font-monospace" id="slice-scad" rows="8"
+                                        placeholder="// e.g.\ncube([20,20,10]);"></textarea>
+                                    <div class="d-flex gap-2 mt-2 align-items-center flex-wrap">
+                                        <button class="btn btn-outline-primary btn-sm" id="slice-scad-render"
+                                            type="button" disabled>Slice this</button>
+                                        <div class="form-check form-switch mb-0">
+                                            <input class="form-check-input" type="checkbox" role="switch"
+                                                id="slice-scad-live" checked />
+                                            <label class="form-check-label small" for="slice-scad-live">Live
+                                                preview</label>
+                                        </div>
+                                        <span class="form-text mb-0" id="slice-scad-note">Loads on first use
+                                            (~7&nbsp;MB).</span>
+                                    </div>
+                                </div>
+                                <div class="col-md-5">
+                                    <canvas id="scad-preview-canvas" class="w-100 rounded slice-bed-canvas"
+                                        style="aspect-ratio: 1 / 1;"></canvas>
+                                </div>
                             </div>
                         </details>
 

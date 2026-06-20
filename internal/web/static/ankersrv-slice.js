@@ -16,6 +16,7 @@ if (fileInput) {
         print: $("slice-print"), continueBtn: $("slice-continue"), warning: $("slice-warning"),
         download: $("slice-download"),
         scad: $("slice-scad"), scadRender: $("slice-scad-render"),
+        scadLive: $("slice-scad-live"), scadPreviewCanvas: $("scad-preview-canvas"),
         model: $("slice-printer-model"), layerHeight: $("slice-layer-height"),
         infill: $("slice-infill"), infillLabel: $("slice-infill-label"), pattern: $("slice-pattern"),
         supports: $("slice-supports"), adhesion: $("slice-adhesion"),
@@ -55,7 +56,8 @@ if (fileInput) {
         window.THREE = THREE;
         const Polyslice = (await import("@jgphilpott/polyslice")).default;
         const { STLLoader } = await import("three/examples/jsm/loaders/STLLoader.js");
-        libs = { THREE, Polyslice, STLLoader };
+        const { OrbitControls } = await import("three/examples/jsm/controls/OrbitControls.js");
+        libs = { THREE, Polyslice, STLLoader, OrbitControls };
         return libs;
     };
     const loadOpenscad = async () => {
@@ -299,10 +301,57 @@ if (fileInput) {
         uploadGcode(finalGcode(), baseName + ".gcode", els.print);
     });
 
-    // OpenSCAD
+    // ── OpenSCAD: live 3D preview + slice ────────────────────────────────
+    let preview = null, scadTimer = null;
+    const initScadPreview = () => {
+        if (preview || !els.scadPreviewCanvas) return;
+        const THREE = libs.THREE, cv = els.scadPreviewCanvas, size = cv.clientWidth || 300;
+        const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true });
+        renderer.setPixelRatio(window.devicePixelRatio || 1);
+        renderer.setSize(size, size, false);
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(45, 1, 0.5, 8000);
+        camera.up.set(0, 0, 1); // STL / OpenSCAD is Z-up
+        scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+        const dir = new THREE.DirectionalLight(0xffffff, 0.85); dir.position.set(1, -1, 1.5); scene.add(dir);
+        const controls = new libs.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        preview = { renderer, scene, camera, controls, mesh: null };
+        const loop = () => { if (!preview) return; controls.update(); renderer.render(scene, camera); requestAnimationFrame(loop); };
+        loop();
+    };
+    const setScadPreviewGeometry = (geo) => {
+        const THREE = libs.THREE;
+        initScadPreview();
+        if (!preview) return;
+        if (preview.mesh) { preview.scene.remove(preview.mesh); preview.mesh.geometry.dispose(); }
+        geo.computeVertexNormals(); geo.center(); geo.computeBoundingSphere();
+        const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x88f387, metalness: 0.1, roughness: 0.65, flatShading: true }));
+        preview.scene.add(mesh); preview.mesh = mesh;
+        const r = (geo.boundingSphere && geo.boundingSphere.radius) || 50, d = r * 2.6;
+        preview.camera.position.set(d, -d, d * 0.7);
+        preview.camera.near = Math.max(0.1, r / 50); preview.camera.far = d * 12; preview.camera.updateProjectionMatrix();
+        preview.controls.target.set(0, 0, 0); preview.controls.update();
+    };
+    const scheduleLivePreview = () => {
+        if (!els.scadLive || !els.scadLive.checked || !els.scad.value.trim()) return;
+        clearTimeout(scadTimer);
+        scadTimer = setTimeout(async () => {
+            const src = els.scad.value.trim();
+            if (!src) return;
+            try {
+                await loadLibs();
+                setStatus("Rendering preview…");
+                const stl = await compileScad(src);
+                setScadPreviewGeometry(new libs.STLLoader().parse(stl.buffer.slice(stl.byteOffset, stl.byteOffset + stl.byteLength)));
+                setStatus("Live preview updated — click ‘Slice this’ to slice for printing.", "ok");
+            } catch (err) { setStatus("OpenSCAD: " + (err && err.message ? err.message : err), "error"); }
+        }, 900);
+    };
     if (els.scad && els.scadRender) {
         els.scadRender.disabled = !els.scad.value.trim();
-        els.scad.addEventListener("input", () => { els.scadRender.disabled = !els.scad.value.trim(); });
+        els.scad.addEventListener("input", () => { els.scadRender.disabled = !els.scad.value.trim(); scheduleLivePreview(); });
+        if (els.scadLive) els.scadLive.addEventListener("change", scheduleLivePreview);
         els.scadRender.addEventListener("click", async () => {
             const src = els.scad.value.trim();
             if (!src) { setStatus("Paste some OpenSCAD first.", "error"); return; }
