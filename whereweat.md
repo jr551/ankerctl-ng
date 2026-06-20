@@ -316,3 +316,26 @@ prints autonomously; verified the print continued through the redeploy, no log e
 - The aborted camera/rewind worktree branches were mined for reusable code, not merged.
 - Still pending from before: delete the stray `callback?code=…` file (live OAuth code)
   before any public fork publish.
+
+## Idle-printer test results (2026-06-20, after the Bean Ice Cube Tray print)
+Run on the deployed NAS binary once the print finished (it stops at 100% and never
+returns to idle, so ankerctl's state stays `printing` — uploads still work fine).
+
+- ✅ **PPPP upload (normal path)** — `POST /api/files/local` print=false, 3.5 KB test
+  gcode: HTTP 200 in **0.46 s**. Logs show a clean LanSearch→PunchPkt→P2pRdy handshake
+  to 192.168.69.33 (with broadcast fallbacks) and `file transfer completed`. No errors,
+  no stale-session. (Left a tiny `ankerctl-pppp-test.gcode` on printer storage.)
+- ✅ **Camera frame** — `/api/camera/frame` → HTTP 200, image/jpeg, 20 KB (HA proxy serving).
+- ✅ **Camera config GET on new binary** — `source=external`, HA proxy on,
+  `kind=(none)` → confirms the new preset model loads legacy configs backward-compatibly.
+
+### Still needs a human / explicit go-ahead
+- **Power-cycle recovery** — not run: it physically reboots the printer via the HA
+  smart socket and needs forced PPPP failures to trigger the escalation ladder. Run
+  with supervision (recipe in `nas.md`).
+- **Camera preset save round-trip** — not run to avoid overwriting the live HA camera
+  (`camera.front_door_camera`). Pick a preset in the UI when you want it; logic is
+  unit-tested and the form renders.
+- **Rewind crossfade / gcode viewer canvas** — browser-visual; open the Home rewind
+  scrubber and a history row's "View" button to eyeball. Endpoint + parser already
+  verified against the real 8.2 MB print file.
