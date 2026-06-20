@@ -44,7 +44,7 @@ Describe a part in plain English and the model writes the OpenSCAD, renders a li
 
 | | |
 |---|---|
-| **🛑 Dashboard with one-tap E-STOP**<br>![Dashboard](docs/img/screenshot-home-ng.png) | **🧩 Slice & Build — STL or OpenSCAD in the browser**<br>![Slice & Build](docs/img/screenshot-slice-build.png) |
+| **🧾 Print history with AI evidence frames**<br>![History with AI evidence](docs/img/screenshot-history-ai.png) | **🧩 Slice & Build — STL or OpenSCAD in the browser**<br>![Slice & Build](docs/img/screenshot-slice-build.png) |
 | **✏️ AI-refined OpenSCAD result**<br>![OpenSCAD AI result](docs/img/screenshot-ai-openscad-demo.png) | **🧠 AI print monitoring + 🐾 animal safety stop**<br>![AI monitor](docs/img/screenshot-ai-monitor.png) |
 
 > *Screenshots from a live AnkerMake M5C running ankerctl-ng.*
