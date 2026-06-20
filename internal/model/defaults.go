@@ -378,19 +378,24 @@ type PrintMonitorConfig struct {
 	OpenRouterKey       string  `json:"openrouter_key,omitempty"`
 	Model               string  `json:"model"`
 	Prompt              string  `json:"prompt"`
+	// EmergencyStopOnAnimal cuts mains power to the printer immediately when the
+	// AI monitor spots a non-human animal in the camera frame (a safety stop, so
+	// it fires regardless of the smart socket's AutoOffOnFail setting).
+	EmergencyStopOnAnimal bool `json:"emergency_stop_on_animal"`
 }
 
 // DefaultPrintMonitorConfig returns the default vision-model print monitor config.
 func DefaultPrintMonitorConfig() PrintMonitorConfig {
 	return PrintMonitorConfig{
-		Enabled:             false,
-		IntervalSec:         300,
-		FrameCount:          5,
-		FrameSpacingSec:     1,
-		ConfidenceThreshold: 0.7,
-		OpenRouterURL:       "https://api.kilo.ai/api/gateway",
-		Model:               "kilo-auto/balanced",
-		Prompt:              "You are monitoring a 3D printer. The first image is a contact sheet of sequential camera frames taken one second apart. A second image may be a slicer/G-code preview reference for the expected part. Reply with strict JSON only: {\"failing\": boolean, \"confidence\": number, \"reason\": string}. Set failing true only when the print appears to be failing, detached, spaghetti, blobbed, severely shifted, or otherwise visibly going wrong. Pay special attention to the FIRST LAYER and bed adhesion: if the first layer is not sticking to the bed — corners lifting or curling, the part dragging or detaching, or filament not being laid down onto the bed — treat that as a failure. Also inspect any visible filament path into the toolhead: if the filament looks missing, snapped, kinked, badly misrouted, or obviously not feeding correctly, treat that as a failure signal when the image supports it.",
+		Enabled:               false,
+		IntervalSec:           300,
+		FrameCount:            5,
+		FrameSpacingSec:       1,
+		ConfidenceThreshold:   0.7,
+		OpenRouterURL:         "https://api.kilo.ai/api/gateway",
+		Model:                 "kilo-auto/balanced",
+		EmergencyStopOnAnimal: true,
+		Prompt:                "You are monitoring a 3D printer. The first image is a contact sheet of sequential camera frames taken one second apart. A second image may be a slicer/G-code preview reference for the expected part. Reply with strict JSON only: {\"failing\": boolean, \"confidence\": number, \"reason\": string}. Set failing true only when the print appears to be failing, detached, spaghetti, blobbed, severely shifted, or otherwise visibly going wrong. Pay special attention to the FIRST LAYER and bed adhesion: if the first layer is not sticking to the bed — corners lifting or curling, the part dragging or detaching, or filament not being laid down onto the bed — treat that as a failure. Also inspect any visible filament path into the toolhead: if the filament looks missing, snapped, kinked, badly misrouted, or obviously not feeding correctly, treat that as a failure signal when the image supports it.",
 	}
 }
 

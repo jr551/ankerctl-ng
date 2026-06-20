@@ -290,6 +290,26 @@ func (s *NotificationService) send(ctx context.Context, event string, payload ma
 	}
 }
 
+// sendWithAttachments delivers a notification with explicit attachments,
+// bypassing the "include image" gate the periodic snapshot path uses.
+func (s *NotificationService) sendWithAttachments(ctx context.Context, event string, payload map[string]any, attachments []string) {
+	if client := s.currentClient(); client != nil {
+		result := client.SendEventDetailed(ctx, event, payload, attachments)
+		s.recordDelivery(extractFilename(payload), event, result)
+	}
+	if announcement := s.currentAnnouncement(); announcement != nil && announcement.Enabled {
+		result := SendHomeAnnouncement(ctx, *announcement, event, payload)
+		s.recordDelivery(extractFilename(payload), event, result)
+	}
+}
+
+// NotifyAnimalEmergencyStop sends a safety alert (with the camera frame attached)
+// when the AI monitor's animal-detection emergency stop fires. It is delivered as
+// a print-failed event so it rides existing notification routing/opt-in.
+func (s *NotificationService) NotifyAnimalEmergencyStop(ctx context.Context, payload map[string]any, attachments []string) {
+	s.sendWithAttachments(ctx, EventPrintFailed, payload, attachments)
+}
+
 func (s *NotificationService) currentClient() *Client {
 	if s.cfg == nil {
 		return nil

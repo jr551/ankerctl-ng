@@ -204,6 +204,8 @@ func runWebserver() error {
 
 	notif := notifications.NewNotificationService(cfgMgr, mqtt, video).WithHistory(database)
 	sm.Register(notif)
+	// Let the AI monitor alert the user when its animal-detection emergency stop fires.
+	printMonitor.WithNotifier(notif)
 
 	ft := service.NewFileTransferService(pppp, mqtt)
 	sm.Register(ft)

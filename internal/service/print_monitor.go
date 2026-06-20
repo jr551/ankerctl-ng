@@ -42,6 +42,8 @@ type PrintMonitorResult struct {
 	Confidence          float64        `json:"confidence,omitempty"`
 	ConfidenceThreshold float64        `json:"confidence_threshold,omitempty"`
 	Reason              string         `json:"reason,omitempty"`
+	AnimalDetected      bool           `json:"animal_detected,omitempty"`
+	Animal              string         `json:"animal,omitempty"`
 	Error               string         `json:"error,omitempty"`
 	Manual              bool           `json:"manual,omitempty"`
 	EvidenceRelpath     string         `json:"evidence_relpath,omitempty"`
@@ -82,8 +84,17 @@ type PrintMonitorService struct {
 	lastCheck     *time.Time
 	nextCheck     *time.Time
 	lastResult    *PrintMonitorResult
+	notifier      AnimalStopNotifier
 
 	cmdCh chan any
+}
+
+// AnimalStopNotifier sends a user-facing safety alert (with an optional camera
+// frame) when the animal-detection emergency stop fires. It is satisfied by the
+// notifications service; kept as an interface here so the service package does
+// not import notifications (which would be an import cycle).
+type AnimalStopNotifier interface {
+	NotifyAnimalEmergencyStop(ctx context.Context, payload map[string]any, attachments []string)
 }
 
 func NewPrintMonitorService(cfgMgr *config.Manager, cfg model.PrintMonitorConfig, snapshotter SnapshotOnly) *PrintMonitorService {
@@ -103,6 +114,13 @@ func NewPrintMonitorService(cfgMgr *config.Manager, cfg model.PrintMonitorConfig
 func (s *PrintMonitorService) WithReferenceArchive(history *db.DB, archiver *GCodeArchiver) *PrintMonitorService {
 	s.history = history
 	s.archiver = archiver
+	return s
+}
+
+// WithNotifier wires an optional notifier used to alert the user when the
+// animal-detection emergency stop cuts printer power.
+func (s *PrintMonitorService) WithNotifier(n AnimalStopNotifier) *PrintMonitorService {
+	s.notifier = n
 	return s
 }
 
@@ -341,18 +359,32 @@ func (s *PrintMonitorService) runCheck(ctx context.Context, cfg model.PrintMonit
 	result.Metadata = s.printMonitorMetadata(ctx, cfg, filename)
 	referenceImage := s.referenceThumbnail(filename)
 	result.ReferenceImage = len(referenceImage) > 0
-	failing, confidence, reason, rawResponse, status, err := s.callOpenRouter(ctx, cfg, sheet, referenceImage, result.Metadata)
-	result.RawResponse = rawResponse
-	result.HTTPStatus = status
+	verdict, err := s.callOpenRouter(ctx, cfg, sheet, referenceImage, result.Metadata)
+	result.RawResponse = verdict.Raw
+	result.HTTPStatus = verdict.HTTPStatus
 	if err != nil {
 		result.Error = err.Error()
 		return result
 	}
-	result.ModelFailing = failing
-	result.Confidence = confidence
-	result.ThresholdPassed = confidence >= cfg.ConfidenceThreshold
-	result.Failing = failing && result.ThresholdPassed
-	result.Reason = reason
+	result.ModelFailing = verdict.Failing
+	result.Confidence = verdict.Confidence
+	result.ThresholdPassed = verdict.Confidence >= cfg.ConfidenceThreshold
+	result.Failing = verdict.Failing && result.ThresholdPassed
+	result.Reason = verdict.Reason
+	result.AnimalDetected = cfg.EmergencyStopOnAnimal && verdict.AnimalDetected
+	result.Animal = verdict.Animal
+	if result.AnimalDetected {
+		note := "⚠ Non-human animal detected near the printer"
+		if result.Animal != "" {
+			note += " (" + result.Animal + ")"
+		}
+		note += " — emergency stop: cutting printer power."
+		if result.Reason != "" {
+			result.Reason = note + " " + result.Reason
+		} else {
+			result.Reason = note
+		}
+	}
 	return result
 }
 
@@ -371,16 +403,90 @@ func (s *PrintMonitorService) finishCheck(ctx context.Context, cfg model.PrintMo
 	s.mu.Unlock()
 	s.Notify(map[string]any{"type": "print_monitor.result", "result": result})
 	s.recordHistoryResult(result)
-	if result.Failing {
+	if result.AnimalDetected && cfg.EmergencyStopOnAnimal {
+		s.emergencyStopForAnimal(ctx, result)
+	} else if result.Failing {
 		s.maybeAutoOff(ctx)
 	}
 }
 
-func (s *PrintMonitorService) callOpenRouter(ctx context.Context, cfg model.PrintMonitorConfig, imageJPEG []byte, referencePNG []byte, metadata map[string]any) (bool, float64, string, string, int, error) {
+// emergencyStopForAnimal cuts mains power to the printer immediately when a
+// non-human animal is detected in frame. Unlike maybeAutoOff (print-quality
+// failures, gated by AutoOffOnFail), this is a safety stop: it fires whenever
+// the smart socket is configured, regardless of AutoOffOnFail, and alerts the
+// user with the camera frame.
+func (s *PrintMonitorService) emergencyStopForAnimal(ctx context.Context, result PrintMonitorResult) {
+	if s.log != nil {
+		s.log.Warn("EMERGENCY STOP: non-human animal detected near printer — cutting power",
+			"animal", result.Animal, "filename", result.Filename)
+	}
+	powerCut := false
+	if s.cfgMgr != nil {
+		if cfg, err := s.cfgMgr.Load(); err == nil && cfg != nil {
+			if cfg.SmartSocket.Enabled && strings.TrimSpace(cfg.SmartSocket.SwitchEntity) != "" {
+				client := NewHomeAssistantClient(cfg.SmartSocket.BaseURL, cfg.SmartSocket.Token)
+				if err := client.CallService(ctx, "switch", "turn_off", cfg.SmartSocket.SwitchEntity); err != nil {
+					if s.log != nil {
+						s.log.Error("failed to cut printer power after animal detection", "err", err)
+					}
+				} else {
+					powerCut = true
+				}
+			} else if s.log != nil {
+				s.log.Warn("animal-detected emergency stop requested but smart socket is not configured; cannot cut power")
+			}
+		}
+	}
+	s.notifyAnimalStop(ctx, result, powerCut)
+}
+
+// notifyAnimalStop sends a best-effort user alert (with the camera contact
+// sheet attached) describing the animal-detection emergency stop.
+func (s *PrintMonitorService) notifyAnimalStop(ctx context.Context, result PrintMonitorResult, powerCut bool) {
+	if s.notifier == nil {
+		return
+	}
+	animal := strings.TrimSpace(result.Animal)
+	if animal == "" {
+		animal = "an animal"
+	}
+	reason := "🐾 Non-human animal detected near the printer (" + animal + "). "
+	if powerCut {
+		reason += "Emergency stop triggered: printer power has been cut."
+	} else {
+		reason += "Emergency stop requested but the smart socket is not configured, so power could not be cut."
+	}
+	payload := map[string]any{
+		"filename": result.Filename,
+		"reason":   reason,
+	}
+	var attachments []string
+	if result.ContactSheet != "" {
+		attachments = []string{result.ContactSheet}
+	}
+	s.notifier.NotifyAnimalEmergencyStop(ctx, payload, attachments)
+}
+
+// aiVerdict is the parsed result of a print-monitor AI check.
+type aiVerdict struct {
+	Failing        bool
+	Confidence     float64
+	Reason         string
+	AnimalDetected bool
+	Animal         string
+	Raw            string
+	HTTPStatus     int
+}
+
+func (s *PrintMonitorService) callOpenRouter(ctx context.Context, cfg model.PrintMonitorConfig, imageJPEG []byte, referencePNG []byte, metadata map[string]any) (aiVerdict, error) {
 	imageURL := "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(imageJPEG)
 	metaJSON, _ := json.MarshalIndent(metadata, "", "  ")
+	instruction := "Inspect the live camera contact sheet and metadata. If a reference slicer thumbnail is present, use it as the expected shape/layout. Also inspect any visible filament path into the toolhead and treat a missing, snapped, kinked, misrouted, or obviously non-feeding filament path as a failure signal when supported by the image. Reply with strict JSON only: {\"failing\": boolean, \"confidence\": number, \"reason\": string}."
+	if cfg.EmergencyStopOnAnimal {
+		instruction = "Inspect the live camera contact sheet and metadata. If a reference slicer thumbnail is present, use it as the expected shape/layout. Also inspect any visible filament path into the toolhead and treat a missing, snapped, kinked, misrouted, or obviously non-feeding filament path as a failure signal when supported by the image.\n\nSAFETY CHECK: also look for any real, live non-human animal physically present in the scene (e.g. a pet such as a cat, dog, bird, or rodent). If one is clearly visible, set \"animal_detected\" true and name it in \"animal\". Be conservative: do NOT count 3D-printed models, figurines, toys, photos, or pictures of animals — only a real living animal actually in the room. When unsure, set animal_detected false.\n\nReply with strict JSON only: {\"failing\": boolean, \"confidence\": number, \"reason\": string, \"animal_detected\": boolean, \"animal\": string}."
+	}
 	userContent := []map[string]any{
-		{"type": "text", "text": "Inspect the live camera contact sheet and metadata. If a reference slicer thumbnail is present, use it as the expected shape/layout. Also inspect any visible filament path into the toolhead and treat a missing, snapped, kinked, misrouted, or obviously non-feeding filament path as a failure signal when supported by the image. Reply with strict JSON only.\n\nMetadata:\n" + string(metaJSON)},
+		{"type": "text", "text": instruction + "\n\nMetadata:\n" + string(metaJSON)},
 		{"type": "image_url", "image_url": map[string]string{"url": imageURL}},
 	}
 	if len(referencePNG) > 0 {
@@ -403,11 +509,11 @@ func (s *PrintMonitorService) callOpenRouter(ctx context.Context, cfg model.Prin
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return false, 0, "", "", 0, err
+		return aiVerdict{}, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, printMonitorChatCompletionsURL(cfg.OpenRouterURL), bytes.NewReader(body))
 	if err != nil {
-		return false, 0, "", "", 0, err
+		return aiVerdict{}, err
 	}
 	req.Header.Set("Authorization", "Bearer "+cfg.OpenRouterKey)
 	req.Header.Set("Content-Type", "application/json")
@@ -415,13 +521,13 @@ func (s *PrintMonitorService) callOpenRouter(ctx context.Context, cfg model.Prin
 	req.Header.Set("X-Title", "ankerctl")
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return false, 0, "", "", 0, err
+		return aiVerdict{}, err
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
 	rawBody := strings.TrimSpace(string(data))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return false, 0, "", rawBody, resp.StatusCode, fmt.Errorf("AI provider returned HTTP %d: %s", resp.StatusCode, rawBody)
+		return aiVerdict{Raw: rawBody, HTTPStatus: resp.StatusCode}, fmt.Errorf("AI provider returned HTTP %d: %s", resp.StatusCode, rawBody)
 	}
 	var apiResp struct {
 		Choices []struct {
@@ -431,21 +537,31 @@ func (s *PrintMonitorService) callOpenRouter(ctx context.Context, cfg model.Prin
 		} `json:"choices"`
 	}
 	if err := json.Unmarshal(data, &apiResp); err != nil {
-		return false, 0, "", rawBody, resp.StatusCode, err
+		return aiVerdict{Raw: rawBody, HTTPStatus: resp.StatusCode}, err
 	}
 	if len(apiResp.Choices) == 0 {
-		return false, 0, "", rawBody, resp.StatusCode, fmt.Errorf("AI provider returned no choices")
+		return aiVerdict{Raw: rawBody, HTTPStatus: resp.StatusCode}, fmt.Errorf("AI provider returned no choices")
 	}
 	var parsed struct {
-		Failing    bool    `json:"failing"`
-		Confidence float64 `json:"confidence"`
-		Reason     string  `json:"reason"`
+		Failing        bool    `json:"failing"`
+		Confidence     float64 `json:"confidence"`
+		Reason         string  `json:"reason"`
+		AnimalDetected bool    `json:"animal_detected"`
+		Animal         string  `json:"animal"`
 	}
 	content := stripJSONCodeFence(apiResp.Choices[0].Message.Content)
 	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
-		return false, 0, "", content, resp.StatusCode, fmt.Errorf("AI provider returned non-JSON content: %w", err)
+		return aiVerdict{Raw: content, HTTPStatus: resp.StatusCode}, fmt.Errorf("AI provider returned non-JSON content: %w", err)
 	}
-	return parsed.Failing, parsed.Confidence, parsed.Reason, content, resp.StatusCode, nil
+	return aiVerdict{
+		Failing:        parsed.Failing,
+		Confidence:     parsed.Confidence,
+		Reason:         parsed.Reason,
+		AnimalDetected: parsed.AnimalDetected,
+		Animal:         strings.TrimSpace(parsed.Animal),
+		Raw:            content,
+		HTTPStatus:     resp.StatusCode,
+	}, nil
 }
 
 // SliceCheckResult is the verdict from a post-slice AI sanity check.
@@ -850,6 +966,8 @@ func (s *PrintMonitorService) recordHistoryResult(result PrintMonitorResult) {
 		Confidence:          result.Confidence,
 		ConfidenceThreshold: result.ConfidenceThreshold,
 		Reason:              result.Reason,
+		AnimalDetected:      result.AnimalDetected,
+		Animal:              result.Animal,
 		Error:               result.Error,
 		HTTPStatus:          result.HTTPStatus,
 		RawResponse:         result.RawResponse,

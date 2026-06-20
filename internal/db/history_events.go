@@ -22,6 +22,8 @@ type HistoryAIResult struct {
 	Confidence          float64        `json:"confidence,omitempty"`
 	ConfidenceThreshold float64        `json:"confidence_threshold,omitempty"`
 	Reason              string         `json:"reason,omitempty"`
+	AnimalDetected      bool           `json:"animal_detected,omitempty"`
+	Animal              string         `json:"animal,omitempty"`
 	Error               string         `json:"error,omitempty"`
 	HTTPStatus          int            `json:"http_status,omitempty"`
 	RawResponse         string         `json:"raw_response,omitempty"`

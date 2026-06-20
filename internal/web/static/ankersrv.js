@@ -3401,6 +3401,10 @@ $(function () {
                     const aiDetails = (e.ai_history || []).slice().reverse().map((item) => {
                         const parts = [];
                         parts.push(`<strong>${item.failing ? "Fail" : "OK"}</strong>`);
+                        if (item.animal_detected) {
+                            const animal = item.animal ? ` ${escapeHtml(item.animal)}` : "";
+                            parts.push(`<span class="badge bg-danger"><i class="bi-exclamation-octagon-fill"></i> Animal — E-STOP${animal}</span>`);
+                        }
                         if (item.confidence != null) parts.push(`${Math.round(item.confidence * 100)}%`);
                         if (item.reason) parts.push(escapeHtml(item.reason));
                         if (item.raw_response) parts.push(`<details><summary>AI reply</summary><pre class="small mb-0">${escapeHtml(item.raw_response)}</pre></details>`);
@@ -3985,6 +3989,7 @@ $(function () {
         };
         const pmFields = {
             enabled: $("#print-monitor-enabled"),
+            animalStop: $("#print-monitor-animal-stop"),
             interval: $("#print-monitor-interval"),
             frameCount: $("#print-monitor-frame-count"),
             spacing: $("#print-monitor-spacing"),
@@ -4024,6 +4029,7 @@ $(function () {
         const applyPrintMonitorConfig = (cfg) => {
             const settings = cfg || {};
             pmFields.enabled.prop("checked", Boolean(settings.enabled));
+            pmFields.animalStop.prop("checked", Boolean(settings.emergency_stop_on_animal));
             pmFields.interval.val(printMonitorMinutes(settings.interval_sec || 300));
             pmFields.frameCount.val(settings.frame_count || 5);
             pmFields.spacing.val(settings.frame_spacing_sec || 1);
@@ -4039,6 +4045,7 @@ $(function () {
             const minutes = parseInt(pmFields.interval.val(), 10);
             const cfg = {
                 enabled: pmFields.enabled.is(":checked"),
+                emergency_stop_on_animal: pmFields.animalStop.is(":checked"),
                 interval_sec: (Number.isFinite(minutes) && minutes > 0 ? minutes : 5) * 60,
                 frame_count: parseInt(pmFields.frameCount.val(), 10) || 5,
                 frame_spacing_sec: parseInt(pmFields.spacing.val(), 10) || 1,
