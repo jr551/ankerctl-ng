@@ -380,10 +380,22 @@ $(function () {
     const uploadBar = $("#upload-progressbar");
     const uploadLabel = $("#upload-progress");
     const uploadMeta = $("#upload-progress-meta");
+    const uploadCardWrapper = $("#upload-card-wrapper");
     let uploadName = "";
     let uploadSize = 0;
     let uploadResetTimer = null;
     let uploadActive = false;
+
+    function setUploadCardVisible(visible) {
+        if (!uploadCardWrapper.length) {
+            return;
+        }
+        if (visible) {
+            uploadCardWrapper.addClass("is-visible");
+        } else {
+            uploadCardWrapper.removeClass("is-visible");
+        }
+    }
 
     function setUploadActive(active) {
         uploadActive = !!active;
@@ -412,6 +424,7 @@ $(function () {
         uploadMeta.text(message || "Idle");
         uploadName = "";
         uploadSize = 0;
+        setUploadCardVisible(false);
     }
 
     const stateFields = {
@@ -823,6 +836,8 @@ $(function () {
                 _updatePrintControlButtons(data.value);
                 updateDashboardPrintStateFromMqtt(data.value);
                 if (data.value === PRINT_STATE.IDLE) {
+                    _maxSeenProgress = 0;
+                    _lastDisplayedProgress = 0;
                     if (_preparing) {
                         $("#progressbar").removeClass("progress-bar-striped progress-bar-animated");
                         setPrintPreparing(false);
@@ -840,23 +855,20 @@ $(function () {
                 }
                 if (data.progress !== undefined) {
                     const progress = Math.min(100, getPercentage(data.progress));
-                    // Ignore transient progress=0 packets the printer may send during
-                    // pause/resume state transitions — they cause the bar to jump to 0%
-                    // and back. Only allow 0 when the printer is truly idle (ct=1000 value=0).
-                    const isSpuriousZero = progress === 0 && _lastDisplayedProgress > 2 &&
-                        _currentPrintState !== PRINT_STATE.IDLE;
-                    // The printer's 0-10000 progress scale sends values like 1
-                    // (0.01%) that normalize to 1 (1%); ignore these transients
-                    // the same way we ignore spurious zeroes.
-                    const isSpuriousLow = progress >= 1 && progress <= 2 &&
-                        _lastDisplayedProgress > progress + 5 &&
-                        _currentPrintState !== PRINT_STATE.IDLE;
-                    if (!isSpuriousZero && !isSpuriousLow) {
+                    // Progress must be monotonic during printing: a value more
+                    // than 2% below the max seen so far is a transient MQTT packet
+                    // (printer occasionally sends wrong progress during state changes).
+                    const isBackward = _currentPrintState === PRINT_STATE.PRINTING &&
+                        _maxSeenProgress > 10 && progress < _maxSeenProgress - 2;
+                    if (!isBackward) {
                         if (_preparing) {
                             $("#progressbar").removeClass("progress-bar-striped progress-bar-animated");
                             setPrintPreparing(false);
                         }
                         _lastDisplayedProgress = progress;
+                        if (progress > _maxSeenProgress) {
+                            _maxSeenProgress = progress;
+                        }
                         $("#progressbar").attr("aria-valuenow", progress);
                         $("#progressbar").attr("style", `width: ${progress}%`);
                         $("#progress").text(`${progress}%`);
@@ -936,6 +948,7 @@ $(function () {
                 const filePath = data.filePath || "";
                 const baseName = filePath.split("/").pop().split("\\").pop();
                 if (baseName) { $("#print-name").text(baseName); }
+                _maxSeenProgress = 0;
                 _lastDisplayedProgress = 0;
                 setPrintPreparing(true);
                 $("#progressbar")
@@ -962,6 +975,7 @@ $(function () {
         },
 
         close: function () {
+            _maxSeenProgress = 0;
             _lastDisplayedProgress = 0;
             setPrintPreparing(false);
             $("#progressbar").removeClass("progress-bar-striped progress-bar-animated");
@@ -1514,6 +1528,7 @@ $(function () {
                 uploadSize = data.size;
             }
             if (data.status === "start") {
+                setUploadCardVisible(true);
                 setUploadActive(true);
                 if (uploadResetTimer) {
                     clearTimeout(uploadResetTimer);
@@ -1535,6 +1550,7 @@ $(function () {
                 uploadMeta.text(`${metaName}${metaSize}`);
                 progressDashboardUpload(percent, sent, total);
             } else if (data.status === "done") {
+                setUploadCardVisible(false);
                 setUploadActive(false);
                 uploadBar.removeClass("bg-danger");
                 setUploadProgress(100);
@@ -1545,6 +1561,7 @@ $(function () {
                 completeDashboardUpload(uploadName, total, currentPrint);
                 uploadResetTimer = setTimeout(() => resetUploadProgress(currentPrint ? `Printing: ${currentPrint}` : "Idle"), 3500);
             } else if (data.status === "error") {
+                setUploadCardVisible(false);
                 setUploadActive(false);
                 uploadBar.addClass("bg-danger");
                 setUploadProgress(0);
@@ -2118,6 +2135,7 @@ $(function () {
 
     let _currentPrintState = PRINT_STATE.IDLE;
     let _lastDisplayedProgress = 0;
+    let _maxSeenProgress = 0; // monotonic ceiling; resets when print goes idle
     let _preparing = false; // true between ct=1044 and first real ct=1001 progress
 
     function setPrintPreparing(preparing) {
