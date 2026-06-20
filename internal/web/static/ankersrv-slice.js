@@ -51,6 +51,39 @@ if (fileInput) {
     };
     const clampInt = (v, lo, hi, d) => { v = parseInt(v, 10); return Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d; };
 
+    // ── Upload verification + complexity thresholds ──────────────────────
+    const TRI_WARN = 400000;          // triangles: slicing gets slow beyond this
+    const MOVE_WARN = 1000000;        // gcode moves: long print + large upload
+    const STL_SIZE_WARN = 60 * 1048576;
+    const GCODE_SIZE_WARN = 80 * 1048576;
+    let modelWarnings = [];           // complexity heads-ups, merged into the slice verdict
+
+    // Verify a file really is an STL by structure, not just its extension:
+    // binary STL is exactly 84 + 50*N bytes; ASCII STL starts with "solid" + has facets.
+    const inspectSTL = (buf, size) => {
+        if (size < 15) return { ok: false, error: "the file is too small to be an STL" };
+        if (size >= 84) {
+            const n = new DataView(buf).getUint32(80, true);
+            if (84 + n * 50 === size) return { ok: true, kind: "binary" };
+        }
+        const head = new TextDecoder().decode(new Uint8Array(buf, 0, Math.min(size, 2048))).trim().toLowerCase();
+        if (head.startsWith("solid") && (head.includes("facet") || head.includes("vertex"))) return { ok: true, kind: "ascii" };
+        if (head.startsWith("solid") && size > 200) return { ok: true, kind: "ascii" }; // facets past the 2KB head
+        return { ok: false, error: "this does not look like a valid STL (binary or ASCII)" };
+    };
+
+    // Sanity-check that an uploaded file is text gcode, not binary or some other format.
+    const looksLikeGcode = (text) => {
+        const sample = text.slice(0, 8192);
+        if (sample.indexOf("\u0000") >= 0) return false; // binary
+        return /(^|\n)\s*(;|G0\b|G1\b|G28|G90|G91|G92|M10[49]|M140|M8\d|T\d)/i.test(sample);
+    };
+
+    const triangleCount = (geometry) => {
+        const pos = geometry && geometry.getAttribute && geometry.getAttribute("position");
+        return pos ? Math.round(pos.count / 3) : 0;
+    };
+
     const loadLibs = async () => {
         if (libs) return libs;
         setStatus("Loading slicer (one-time)…");
@@ -268,6 +301,10 @@ if (fileInput) {
             showPreview();
             els.download.disabled = false;
             const issues = offBedIssues();
+            if (modelWarnings.length) issues.push(...modelWarnings);
+            const tris = triangleCount(currentGeometry);
+            if (tris > TRI_WARN) issues.push(`Very complex model (~${tris.toLocaleString()} triangles) — slicing is slow and the print may take a long time.`);
+            if (moves > MOVE_WARN) issues.push(`Very large toolpath (${moves.toLocaleString()} moves) — long print and a big upload; inspect carefully first.`);
             setStatus(`Sliced in ${dt} ms — ${parsed.layers.length} layers, ${moves} moves. Running AI check…`);
             try {
                 const r = await fetch("/api/slice/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: els.canvas.toDataURL("image/jpeg", 0.6) }) });
@@ -330,11 +367,15 @@ if (fileInput) {
     fileInput.addEventListener("change", async () => {
         const file = fileInput.files && fileInput.files[0];
         if (!file) return;
+        if (!/\.stl$/i.test(file.name)) { setStatus("Please choose a .stl file.", "error"); fileInput.value = ""; return; }
         baseName = file.name.replace(/\.(stl|scad)$/i, "") || "model";
         els.run.disabled = true;
         try {
             await loadLibs();
             const buf = await file.arrayBuffer();
+            const v = inspectSTL(buf, file.size);
+            if (!v.ok) { setStatus("Invalid STL — " + v.error + ". The file may be corrupt or not really an STL.", "error"); currentGeometry = null; fileInput.value = ""; return; }
+            modelWarnings = file.size > STL_SIZE_WARN ? [`Large file (${(file.size / 1048576).toFixed(0)} MB) — slicing may be slow.`] : [];
             currentGeometry = new libs.STLLoader().parse(buf);
             await sliceCurrent();
         } catch (err) { setStatus("Could not read STL: " + (err && err.message ? err.message : err), "error"); }
@@ -469,10 +510,20 @@ if (fileInput) {
         });
     }
     if (els.scadAiGo) {
+        const aiGoLabel = els.scadAiGo.innerHTML;
         els.scadAiGo.addEventListener("click", async () => {
             const prompt = (els.scadAiPrompt.value || "").trim();
             if (!prompt) { setStatus("Describe the change for the AI first.", "error"); els.scadAiPrompt.focus(); return; }
+            // Loading indicator: spinner on the button + a live elapsed counter, because
+            // the model can take 20-60s and otherwise the button just looks frozen.
             els.scadAiGo.disabled = true;
+            els.scadAiPrompt.disabled = true;
+            els.scadAiGo.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+            const t0 = performance.now();
+            const timer = setInterval(() => {
+                const s = Math.round((performance.now() - t0) / 1000);
+                setStatus(`Asking the AI to edit the model… ${s}s (this can take up to a minute)`);
+            }, 500);
             setStatus("Asking the AI to edit the model…");
             try {
                 const resp = await fetch("/api/openscad/edit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scad: els.scad.value, prompt, images: scadRefImages }) });
@@ -487,7 +538,7 @@ if (fileInput) {
                 scheduleLivePreview();
                 setStatus("AI updated the model — rendering preview. Use Undo to revert.", "ok");
             } catch (err) { setStatus("AI edit error: " + (err && err.message ? err.message : err), "error"); }
-            finally { els.scadAiGo.disabled = false; }
+            finally { clearInterval(timer); els.scadAiGo.disabled = false; els.scadAiGo.innerHTML = aiGoLabel; els.scadAiPrompt.disabled = false; }
         });
     }
     if (els.scadAiUndo) {
@@ -506,8 +557,12 @@ if (fileInput) {
         els.gcodeSend.addEventListener("click", async () => {
             const file = els.gcodeFile.files && els.gcodeFile.files[0];
             if (!file) { setStatus("Choose a .gcode file first.", "error"); return; }
-            if (!confirm("Upload and print " + file.name + "?")) return;
-            uploadGcode(await file.text(), file.name, els.gcodeSend);
+            if (!/\.(gcode|gco|g)$/i.test(file.name)) { setStatus("Please choose a .gcode file.", "error"); return; }
+            const text = await file.text();
+            if (!looksLikeGcode(text)) { setStatus("That file does not look like gcode — it has no recognisable G/M commands. Not sending it to the printer.", "error"); return; }
+            const warn = file.size > GCODE_SIZE_WARN ? `\n\nNote: this is a large file (${(file.size / 1048576).toFixed(0)} MB) and may take a while to upload.` : "";
+            if (!confirm("Upload and print " + file.name + "?" + warn)) return;
+            uploadGcode(text, file.name, els.gcodeSend);
         });
     }
 }

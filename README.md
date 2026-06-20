@@ -1,6 +1,6 @@
 # ankerctl-ng
 
-Experimental AnkerMake web UI and CLI build — *now with extra AI goodness! (adapted by jr)*.
+A substantially extended AnkerMake M5C web UI & CLI — in-browser slicing, AI-assisted OpenSCAD design, AI print monitoring with safety stops, Home Assistant integration, and more. *Now with extra AI goodness! (adapted by jr)*
 
 > **This is a fork.** `ankerctl-ng` builds on
 > [`Django1982/ankerctl_go_remake`](https://github.com/Django1982/ankerctl_go_remake)
