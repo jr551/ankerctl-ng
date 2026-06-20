@@ -84,6 +84,7 @@ func (s *Server) registerRoutes() {
 	r.Post("/api/files/local", h.SlicerUpload)
 	r.Post("/api/slice/check", h.SliceCheck)
 	r.Post("/api/filament/detect-color", h.FilamentDetectColor)
+	r.Post("/api/openscad/edit", h.OpenscadEdit)
 	r.Get("/api/files/printer", h.PrinterFilesList)
 	r.Get("/api/files/printer/thumbnail", h.PrinterFileThumbnail)
 	r.Post("/api/files/printer/print", h.PrinterFilePrint)

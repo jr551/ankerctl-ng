@@ -810,3 +810,19 @@ code {
 /* Compact temperature graph */
 #temp-chart { max-height: 170px; }
 #temp-graph-section .card-body { padding: 0.6rem 0.9rem; }
+
+/* ── OpenSCAD live preview loading overlay ───────────────────────────── */
+.scad-preview-stage { position: relative; }
+#scad-preview-canvas { background: #0d1117; touch-action: none; cursor: grab; }
+#scad-preview-canvas:active { cursor: grabbing; }
+.scad-preview-loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(13, 17, 23, 0.72);
+    border-radius: var(--bs-border-radius);
+}
+.scad-preview-loading.d-none { display: none; }

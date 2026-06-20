@@ -568,6 +568,68 @@ func (s *PrintMonitorService) DetectFilamentColor(ctx context.Context, imageData
 	return strings.TrimSpace(out.Hex), true, nil
 }
 
+// EditOpenSCAD asks the AI model to (re)write OpenSCAD source for a
+// natural-language request, with optional reference images. Returns the complete
+// updated code. ok=false when no AI provider is configured.
+func (s *PrintMonitorService) EditOpenSCAD(ctx context.Context, currentSCAD, prompt string, images []string) (string, bool, error) {
+	s.mu.Lock()
+	cfg := s.cfg
+	s.mu.Unlock()
+	if strings.TrimSpace(cfg.OpenRouterKey) == "" || strings.TrimSpace(cfg.Model) == "" {
+		return "", false, nil
+	}
+	const sys = "You are an expert in OpenSCAD. You are given the current OpenSCAD source (possibly empty) and a requested change, plus optional reference images. Reply with ONLY the complete, valid, updated OpenSCAD source — no markdown fences, no commentary, no explanation. Make the requested change while keeping sensible existing structure. Prefer parametric, well-formed OpenSCAD."
+	userContent := []map[string]any{
+		{"type": "text", "text": "Current OpenSCAD code:\n" + currentSCAD + "\n\nRequested change: " + prompt},
+	}
+	for _, img := range images {
+		if strings.HasPrefix(img, "data:") {
+			userContent = append(userContent, map[string]any{"type": "image_url", "image_url": map[string]string{"url": img}})
+		}
+	}
+	payload := map[string]any{
+		"model": cfg.Model,
+		"messages": []map[string]any{
+			{"role": "system", "content": sys},
+			{"role": "user", "content": userContent},
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", false, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, printMonitorChatCompletionsURL(cfg.OpenRouterURL), bytes.NewReader(body))
+	if err != nil {
+		return "", false, err
+	}
+	req.Header.Set("Authorization", "Bearer "+cfg.OpenRouterKey)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return "", false, err
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", false, fmt.Errorf("AI provider returned HTTP %d", resp.StatusCode)
+	}
+	var apiResp struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(data, &apiResp); err != nil || len(apiResp.Choices) == 0 {
+		return "", false, fmt.Errorf("AI provider returned no usable response")
+	}
+	code := strings.TrimSpace(stripJSONCodeFence(apiResp.Choices[0].Message.Content))
+	if code == "" {
+		return "", false, fmt.Errorf("AI returned empty code")
+	}
+	return code, true, nil
+}
+
 func stripJSONCodeFence(content string) string {
 	content = strings.TrimSpace(content)
 	if !strings.HasPrefix(content, "```") {

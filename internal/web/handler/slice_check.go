@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -73,4 +74,38 @@ func (h *Handler) FilamentDetectColor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]any{"hex": hex})
+}
+
+// OpenscadEdit rewrites OpenSCAD source for a natural-language prompt, with
+// optional reference images, via the vision/text model.
+//
+// POST /api/openscad/edit  body: {"scad":"...","prompt":"...","images":["data:..."]}
+// Returns {"scad":"<updated code>"} or {"skipped":true}.
+func (h *Handler) OpenscadEdit(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Scad   string   `json:"scad"`
+		Prompt string   `json:"prompt"`
+		Images []string `json:"images"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 24<<20)).Decode(&body); err != nil || strings.TrimSpace(body.Prompt) == "" {
+		h.writeError(w, http.StatusBadRequest, "missing prompt")
+		return
+	}
+	pm, ok := h.printMonitor()
+	if !ok {
+		h.writeJSON(w, http.StatusOK, map[string]any{"skipped": true})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+	code, ran, err := pm.EditOpenSCAD(ctx, body.Scad, body.Prompt, body.Images)
+	if err != nil || !ran {
+		resp := map[string]any{"skipped": true}
+		if err != nil {
+			resp["error"] = err.Error()
+		}
+		h.writeJSON(w, http.StatusOK, resp)
+		return
+	}
+	h.writeJSON(w, http.StatusOK, map[string]any{"scad": code})
 }
