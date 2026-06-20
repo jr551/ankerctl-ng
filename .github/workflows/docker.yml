@@ -4,6 +4,11 @@ on:
   push:
     branches: [main, ha-camera-ai-monitor]
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Optional extra image tag to publish (e.g. 1.1.0). Use to cut a versioned image when tag-triggered runs are unavailable."
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -39,6 +44,7 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
             type=sha
 
       - uses: docker/build-push-action@v7
