@@ -378,3 +378,39 @@ Risks before trusting it: (a) bundle size — three.js is large, lazy-load the t
 M5C profile (220×220 bed, temps, start/end gcode) and validate real output on the
 printer (like the cube test) before trusting an auto-sliced print. Estimate: a
 few focused hours + hardware validation.
+
+## Polyslice in-browser slicer — research + spike DONE (2026-06-20)
+Goal: a "Slice" tab — upload STL (and paste OpenSCAD) → slice in-browser → preview
+in the gcode viewer → send to printer via the existing /api/files/local.
+
+**Feasibility PROVEN** via a headless-Chrome spike (scratchpad/browser/spike):
+`slice(mesh)` returned a 204 KB Marlin gcode string in 34 ms (proper Marlin flavor).
+Biggest risk (does the M5C accept plain Marlin over PPPP?) is ALREADY answered yes —
+the completion-fix cube test printed hand-rolled plain Marlin over PPPP successfully.
+
+**Vendored** (internal/web/static/vendor/, embedded + served at /static/vendor/):
+- three/three.module.min.js + three.core.min.js (0.184 splits core into a sibling
+  chunk — three.module imports `./three.core.min.js` relatively, so BOTH are needed)
+  + STLLoader.js (imports bare "three") + LICENSE
+- polyslice/index.browser.esm.js (26.4.0, MIT) + LICENSE
+
+**Proven browser API** (the must-knows):
+- importmap: "three"→/static/vendor/three/three.module.min.js,
+  "@jgphilpott/polyslice"→/static/vendor/polyslice/index.browser.esm.js
+- `import * as THREE from "three"; window.THREE = THREE;`  ← REQUIRED, polyslice reads window.THREE at runtime
+- `import Polyslice from "@jgphilpott/polyslice"` (DEFAULT export only; `Printer/Filament/Loader/Exporter` are properties of it)
+- `const s = new Polyslice({buildPlateWidth:220, buildPlateLength:220, nozzleTemperature:215, bedTemperature:60, layerHeight:0.2, infillPattern:'grid', infillDensity:20, perimeterSpeed:50, infillSpeed:60, travelSpeed:120, retractionDistance:1.0, retractionSpeed:40, adhesionEnabled:true, adhesionType:'skirt', fanSpeed:100})`
+- `const gcode = s.slice(mesh)` → Marlin gcode STRING (single mesh only). Prepend `M4899 T3\n` for Anker v3 jerk.
+- STL: `new STLLoader().parse(arrayBuffer)` → geometry → `new THREE.Mesh(geo, new THREE.MeshBasicMaterial())`.
+
+**M5C defaults** (PLA): bed 220×220×250, nozzle 0.4, 215°C/60°C, 0.2mm layer, speeds
+50/60/120, retraction 1.0@40, infill 20% grid, skirt, fan 100. Clamp nozzle≤275, bed≤100.
+
+**No infra blockers**: openscad-wasm is single-threaded → NO COOP/COEP needed (those
+would break the camera/video pipeline). No CSP today; if added later, needs
+`script-src 'wasm-unsafe-eval'` and patch openscad.js to drop its data:-URL import.
+
+**Build plan**: Phase 1 STL MVP (Slice tab, reuse upload + gcode viewer, add a
+"download .gcode" safety button, validate with a 20mm cube on the M5C). Phase 2
+OpenSCAD (vendor openscad.wasm ~7.4MB, worker, GPL-2.0 notice). Phase 3 printer-model
+picker + PETG + exposed controls + post-slice AI sanity check.
