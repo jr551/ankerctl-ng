@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const ghReleasesAPI = "https://api.github.com/repos/jr551/ankerctl_go_remake/releases/latest"
+const ghReleasesAPI = "https://api.github.com/repos/jr551/ankerctl-ng/releases/latest"
 
 // releaseCache fetches the latest GitHub release tag once in the background.
 type releaseCache struct {

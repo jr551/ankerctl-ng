@@ -2,6 +2,8 @@
 
 A substantially extended AnkerMake M5C web UI & CLI — in-browser slicing, AI-assisted OpenSCAD design, AI print monitoring with safety stops, Home Assistant integration, and more. *Now with extra AI goodness! (adapted by jr)*
 
+> 🤖 Built with **DeepSeek V4 Pro** 🧠 + **GLM 5.2** ⚡ + a dash of **Claude Opus** 🎩 — and a *lot* of **jr551** direction 🧭
+
 > **This is a fork.** `ankerctl-ng` builds on
 > [`Django1982/ankerctl_go_remake`](https://github.com/Django1982/ankerctl_go_remake)
 > (a Go re-implementation), which is itself a port of the original Python
@@ -9,27 +11,43 @@ A substantially extended AnkerMake M5C web UI & CLI — in-browser slicing, AI-a
 > `libflagship` protocol library. All upstream work remains under the
 > [GNU GPLv3](LICENSE). See [Credits & attribution](#credits--attribution).
 
-[![Release](https://img.shields.io/badge/release-v1.0.0-success)](https://github.com/jr551/ankerctl_go_remake/releases/tag/v1.0.0)
+[![Release](https://img.shields.io/badge/release-v1.1.0-success)](https://github.com/jr551/ankerctl-ng/releases/tag/v1.1.0)
 [![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)](https://go.dev/)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-[![CI](https://github.com/jr551/ankerctl_go_remake/actions/workflows/ci.yml/badge.svg)](https://github.com/jr551/ankerctl_go_remake/actions/workflows/ci.yml)
+[![CI](https://github.com/jr551/ankerctl-ng/actions/workflows/ci.yml/badge.svg)](https://github.com/jr551/ankerctl-ng/actions/workflows/ci.yml)
 [![Docker](https://img.shields.io/badge/ghcr.io-ankerctl--ng-blue?logo=docker)](https://ghcr.io/jr551/ankerctl-ng)
 
-![ankerctl-ng dashboard](docs/img/screenshot-dashboard-ng.png)
+![ankerctl-ng dashboard](docs/img/screenshot-home-ng.png)
 
-## What this fork adds
+## ✨ What this fork adds
 
-- AI print-failure monitoring with saved replies and short-lived evidence images
-- AI safety stop: cuts printer power via the smart socket the moment a non-human animal is spotted in frame
-- Slice & Build tab: in-browser slicing (polyslice) of STL **and** OpenSCAD, with AI-assisted OpenSCAD editing, a live 3D preview, and a post-slice AI sanity check
-- One-tap on-screen E-STOP that cuts printer power
-- PPPP upload hardening / self-healing: keepalives, health checks, channel-close abort, and power-cycle recovery
-- Smart-socket power-cycle recovery for stuck uploads
-- Home Assistant camera support and smart-socket controls
-- Notifications via SMTP, raw webhook, and Apprise; notification history; HA speech hooks
-- Timelapse / camera capture
-- Power-saving controls, better camera loading, and UI cleanup for day-to-day printer use
-- OrcaSlicer-first setup flow
+- 🧠 **AI print-failure monitoring** — periodic vision-model checks with saved replies and short-lived evidence images
+- 🐾 **AI safety stop** — cuts printer power via the smart socket the instant a real, live non-human animal (a curious pet!) is spotted in frame
+- 🧩 **Slice & Build** — in-browser slicing ([polyslice](https://github.com/jgphilpott/polyslice)) of STL **and** OpenSCAD, with AI-assisted OpenSCAD editing, a live 3D preview, and a post-slice AI sanity check — all off the main thread so the UI never freezes
+- 🛑 **One-tap E-STOP** on the dashboard that cuts printer power immediately
+- 🎨 **Filament colour match** — detect the loaded filament colour from the camera and match it to your library
+- 📡 **PPPP upload hardening / self-healing** — keepalives, health checks, channel-close abort, and power-cycle recovery
+- 🔌 **Smart-socket power-cycle recovery** for stuck uploads
+- 🏠 **Home Assistant** camera support and smart-socket controls
+- 🔔 **Notifications** via SMTP, raw webhook, and Apprise; notification history; HA speech hooks
+- 🎞️ **Timelapse / camera capture**
+- ⚡ **Power-saving controls**, better camera loading, and a modernized dashboard
+- 🖨️ **OrcaSlicer-first** setup flow
+
+## 🤖 AI in action — design a part from a sentence
+
+Describe a part in plain English and the model writes the OpenSCAD, renders a live 3D preview, then **reviews its own result and refines it** for up to 5 passes — with live, per-pass status so it never looks stuck:
+
+![AI iterating on an OpenSCAD model](docs/img/screenshot-ai-iterating.png)
+
+## 📸 Highlights
+
+| | |
+|---|---|
+| **🛑 Dashboard with one-tap E-STOP**<br>![Dashboard](docs/img/screenshot-home-ng.png) | **🧩 Slice & Build — STL or OpenSCAD in the browser**<br>![Slice & Build](docs/img/screenshot-slice-build.png) |
+| **✏️ AI-refined OpenSCAD result**<br>![OpenSCAD AI result](docs/img/screenshot-ai-openscad-demo.png) | **🧠 AI print monitoring + 🐾 animal safety stop**<br>![AI monitor](docs/img/screenshot-ai-monitor.png) |
+
+> *Screenshots from a live AnkerMake M5C running ankerctl-ng.*
 
 ## Status
 
@@ -40,8 +58,8 @@ This is an **experimental build**. It is aimed at people who want the extra feat
 ### Source install
 
 ```sh
-git clone https://github.com/jr551/ankerctl_go_remake.git
-cd ankerctl_go_remake
+git clone https://github.com/jr551/ankerctl-ng.git
+cd ankerctl-ng
 ./install.sh install
 ```
 

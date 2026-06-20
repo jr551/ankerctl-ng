@@ -43,6 +43,11 @@
                                             placeholder="Describe a change… e.g. add a 5mm hole in the centre" />
                                         <button class="btn btn-outline-primary" id="scad-ai-go" type="button">AI
                                             edit</button>
+                                        <span class="input-group-text" title="Refinement passes — the AI reviews its own result and improves it, up to this many times">&times;</span>
+                                        <input type="number" class="form-control flex-grow-0" id="scad-ai-iters"
+                                            style="max-width: 3.5rem;" min="1" max="5" value="1"
+                                            title="Refinement passes — the AI reviews its own result and improves it, up to this many times"
+                                            aria-label="AI refinement passes" />
                                         <button class="btn btn-outline-secondary" id="scad-ai-undo" type="button"
                                             disabled title="Undo last AI edit"><i
                                                 class="bi-arrow-counterclockwise"></i></button>

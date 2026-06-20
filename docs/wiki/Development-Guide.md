@@ -9,8 +9,8 @@
 ## Getting Started
 
 ```sh
-git clone https://github.com/jr551/ankerctl_go_remake.git
-cd ankerctl_go_remake
+git clone https://github.com/jr551/ankerctl-ng.git
+cd ankerctl-ng
 
 # Install pre-commit hooks (blocks direct commits to main)
 sh scripts/install-hooks.sh
@@ -192,7 +192,7 @@ docker build --build-arg VERSION=v1.0.0 -t ankerctl:v1.0.0 .
 
 ## Migration Plan
 
-See [docs/MIGRATION_PLAN.md](https://github.com/jr551/ankerctl_go_remake/blob/main/docs/MIGRATION_PLAN.md) for the historical 17-phase migration roadmap from Python to Go (completed in v1.0.0, 2026-05-01).
+See [docs/MIGRATION_PLAN.md](https://github.com/jr551/ankerctl-ng/blob/main/docs/MIGRATION_PLAN.md) for the historical 17-phase migration roadmap from Python to Go (completed in v1.0.0, 2026-05-01).
 
 ## Python Source Reference
 

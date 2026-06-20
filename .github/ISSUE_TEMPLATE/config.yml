@@ -7,5 +7,5 @@ contact_links:
     url: https://github.com/Ankermgmt/ankerctl
     about: The original Python ankerctl / protocol project this descends from.
   - name: Security vulnerability
-    url: https://github.com/jr551/ankerctl_go_remake/blob/main/SECURITY.md
+    url: https://github.com/jr551/ankerctl-ng/blob/main/SECURITY.md
     about: Please report security issues privately per SECURITY.md, not as a public issue.

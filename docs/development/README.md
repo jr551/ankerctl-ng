@@ -11,8 +11,8 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/jr551/ankerctl_go_remake.git
-cd ankerctl_go_remake
+git clone https://github.com/jr551/ankerctl-ng.git
+cd ankerctl-ng
 
 # Build
 go build -o ankerctl ./cmd/ankerctl/

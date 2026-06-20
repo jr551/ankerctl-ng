@@ -190,7 +190,7 @@ Log files can be viewed in the Debug tab (when dev mode is enabled) or directly 
 
 ## Getting Help
 
-1. Check the [GitHub Issues](https://github.com/jr551/ankerctl_go_remake/issues) for known problems
+1. Check the [GitHub Issues](https://github.com/jr551/ankerctl-ng/issues) for known problems
 2. Open a new issue with:
    - ankerctl version (`./ankerctl version`)
    - Printer model and firmware version

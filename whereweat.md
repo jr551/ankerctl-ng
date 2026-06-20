@@ -230,7 +230,7 @@ fields and **round-trips properly**.
   `gofmt`/`go vet` and is reliability-critical + un-live-testable this session, so
   it was deliberately left alone rather than risk regressions.
 
-## Fork-publish prep (for `jr551/ankerctl_go_remake`, fork of `Django1982/...`)
+## Fork-publish prep (for `jr551/ankerctl-ng`, fork of `Django1982/...`)
 - `README.md` — fork banner + Credits & attribution + License (GPLv3) sections.
 - `NOTICE`, `CONTRIBUTING.md`, `.github/ISSUE_TEMPLATE/` added.
 - `.gitignore` hardened: firmware blobs, OAuth callback captures, `config.json`,

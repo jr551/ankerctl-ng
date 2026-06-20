@@ -30,5 +30,5 @@ everything here is closed.
 - Reconstructing the historical context of a bug or audit finding.
 - Onboarding contributors who want to understand the project's evolution.
 
-For active work, use [GitHub Issues](https://github.com/jr551/ankerctl_go_remake/issues)
+For active work, use [GitHub Issues](https://github.com/jr551/ankerctl-ng/issues)
 and the live documentation under `docs/`.

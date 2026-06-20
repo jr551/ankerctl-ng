@@ -25,7 +25,7 @@ Welcome to the ankerctl wiki. ankerctl is a Go reimplementation of [ankermake-m5
 
 ### Option 1: Download the Binary (fastest)
 
-Download the latest release from [Releases](https://github.com/jr551/ankerctl_go_remake/releases) (v1.0.0+), make it executable, and run:
+Download the latest release from [Releases](https://github.com/jr551/ankerctl-ng/releases) (v1.0.0+), make it executable, and run:
 
 ```sh
 chmod +x ankerctl-linux-amd64
@@ -46,8 +46,8 @@ docker run -d \
 ### Option 3: Build from Source
 
 ```sh
-git clone https://github.com/jr551/ankerctl_go_remake.git
-cd ankerctl_go_remake
+git clone https://github.com/jr551/ankerctl-ng.git
+cd ankerctl-ng
 
 # Download vendor assets (Bootstrap, Chart.js etc.) — required before building!
 # Linux/macOS:
@@ -65,7 +65,7 @@ Navigate to [http://localhost:4470](http://localhost:4470) and log in with your 
 
 ## Quick Links
 
-- [GitHub Repository](https://github.com/jr551/ankerctl_go_remake)
-- [Releases](https://github.com/jr551/ankerctl_go_remake/releases)
+- [GitHub Repository](https://github.com/jr551/ankerctl-ng)
+- [Releases](https://github.com/jr551/ankerctl-ng/releases)
 - [Docker Image](https://github.com/jr551?tab=packages&package_type=container)
-- [Issue Tracker](https://github.com/jr551/ankerctl_go_remake/issues)
+- [Issue Tracker](https://github.com/jr551/ankerctl-ng/issues)
