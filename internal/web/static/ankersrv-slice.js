@@ -88,6 +88,56 @@ if (fileInput) {
         scadPending.set(id, { resolve, reject });
         getScadWorker().postMessage({ id, scad: src });
     });
+
+    // Polyslice runs in its own Web Worker so slicing a complex model never
+    // freezes the UI. Falls back to main-thread slicing if the worker can't start.
+    let sliceWorker = null, sliceReqId = 0;
+    const slicePending = new Map();
+    const getSliceWorker = () => {
+        if (sliceWorker) return sliceWorker;
+        sliceWorker = new Worker("/static/slice-worker.js", { type: "module" });
+        sliceWorker.onmessage = (e) => {
+            const { id, gcode, error } = e.data || {};
+            const p = slicePending.get(id);
+            if (!p) return;
+            slicePending.delete(id);
+            if (error) p.reject(new Error(error)); else p.resolve(gcode);
+        };
+        sliceWorker.onerror = (e) => {
+            slicePending.forEach((p) => p.reject(new Error(e.message || "slice worker error")));
+            slicePending.clear();
+            sliceWorker = null;
+        };
+        return sliceWorker;
+    };
+    // Slice a geometry off the main thread; copies the typed arrays so the
+    // source geometry (used for re-slicing and the 3D preview) stays intact.
+    const sliceInWorker = (geometry, cfg) => new Promise((resolve, reject) => {
+        const pos = geometry.getAttribute("position");
+        if (!pos) { reject(new Error("geometry has no vertices")); return; }
+        const positions = pos.array.slice();
+        const normAttr = geometry.getAttribute("normal");
+        const normals = normAttr ? normAttr.array.slice() : null;
+        const idxAttr = geometry.getIndex();
+        const index = idxAttr ? idxAttr.array.slice() : null;
+        const id = ++sliceReqId;
+        slicePending.set(id, { resolve, reject });
+        const transfer = [positions.buffer];
+        if (normals) transfer.push(normals.buffer);
+        if (index) transfer.push(index.buffer);
+        getSliceWorker().postMessage({ id, positions, normals, index, cfg }, transfer);
+    });
+    // Worker first; on any worker failure fall back to slicing on the main thread
+    // so a stricter browser still works (just less smooth).
+    const sliceGeometry = async (geometry, cfg) => {
+        try {
+            return await sliceInWorker(geometry, cfg);
+        } catch (err) {
+            let g = new libs.Polyslice(cfg).slice(new libs.THREE.Mesh(geometry.clone(), new libs.THREE.MeshBasicMaterial()));
+            if (g && typeof g.then === "function") g = await g;
+            return g;
+        }
+    };
     const showScadLoading = (on) => {
         const l = document.getElementById("scad-preview-loading");
         if (l) l.classList.toggle("d-none", !on);
@@ -201,14 +251,15 @@ if (fileInput) {
     const sliceCurrent = async () => {
         if (!currentGeometry) { setStatus("Load an STL or render OpenSCAD first.", "error"); return; }
         const cfg = readConfig();
+        const runLabel = els.run.innerHTML;
         els.run.disabled = true; els.print.disabled = true; els.download.disabled = true;
-        setStatus("Slicing…");
+        els.run.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Slicing…';
+        setStatus("Slicing in the background — the UI stays responsive…");
         try {
             await loadLibs();
-            const mesh = new libs.THREE.Mesh(currentGeometry.clone(), new libs.THREE.MeshBasicMaterial());
             const t0 = performance.now();
-            let g = new libs.Polyslice(cfg).slice(mesh);
-            if (g && typeof g.then === "function") g = await g;
+            // Runs in a Web Worker (with a main-thread fallback) so the page never freezes.
+            const g = await sliceGeometry(currentGeometry, cfg);
             const dt = Math.round(performance.now() - t0);
             if (typeof g !== "string" || g.length < 50) throw new Error("slicer returned no gcode");
             baseGcode = ANKER_PREAMBLE + g;
@@ -225,7 +276,7 @@ if (fileInput) {
             applyVerdict(issues);
             setStatus(`Sliced in ${dt} ms — ${parsed.layers.length} layers, ${moves} moves.` + (issues.length ? " A check flagged an issue (below)." : " Download & inspect before printing a new model."), issues.length ? "error" : "ok");
         } catch (err) { setStatus("Slice failed: " + (err && err.message ? err.message : err), "error"); }
-        finally { els.run.disabled = false; }
+        finally { els.run.disabled = false; els.run.innerHTML = runLabel; }
     };
 
     // Apply the drag offset to every move for the final output gcode.
