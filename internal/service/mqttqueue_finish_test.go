@@ -91,6 +91,59 @@ func TestMqttQueueFinishesAtFullProgress(t *testing.T) {
 	}
 }
 
+// TestMqttQueueEmitsFirstLayerEventOnce verifies a single first_layer event is
+// emitted when material starts going down (progress enters 1..80%), so the print
+// monitor can run an early bed-adhesion check.
+func TestMqttQueueEmitsFirstLayerEventOnce(t *testing.T) {
+	historyDB, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open history db: %v", err)
+	}
+	defer historyDB.Close()
+
+	client := &fakeMQTTClient{
+		queue: [][]mqttclient.DecodedMessage{
+			{{Objects: []map[string]any{{"commandType": int(protocol.MqttCmdEventNotify), "value": mqttStatePrinting}}}},
+			{{Objects: []map[string]any{{"commandType": int(protocol.MqttCmdPrintSchedule), "name": "cube.gcode", "progress": 5}}}},
+			{{Objects: []map[string]any{{"commandType": int(protocol.MqttCmdPrintSchedule), "progress": 20}}}},
+		},
+	}
+
+	ha := &captureSink{}
+	q := &MqttQueue{
+		BaseWorker:         NewBaseWorker("mqttqueue"),
+		history:            historyDB,
+		clientFactory:      func(context.Context) (mqttClient, error) { return client, nil },
+		queryInterval:      time.Hour,
+		pollInterval:       5 * time.Millisecond,
+		currentPrinterStat: -1,
+		log:                slog.Default(),
+		homeAssistant:      ha,
+		timelapse:          &captureSink{},
+	}
+	q.BindHooks(q)
+	if err := q.WorkerStart(); err != nil {
+		t.Fatalf("WorkerStart: %v", err)
+	}
+	defer q.WorkerStop()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	if err := q.WorkerRun(ctx); err != nil {
+		t.Fatalf("WorkerRun: %v", err)
+	}
+
+	firstLayerEvents := 0
+	for _, evt := range ha.got {
+		if m, ok := evt.(map[string]any); ok && m["event"] == "first_layer" {
+			firstLayerEvents++
+		}
+	}
+	if firstLayerEvents != 1 {
+		t.Fatalf("first_layer events = %d, want exactly 1", firstLayerEvents)
+	}
+}
+
 // TestMqttQueueDoesNotFinishBelowFullProgress guards against a premature finish:
 // a mid-print progress update must not mark the print complete.
 func TestMqttQueueDoesNotFinishBelowFullProgress(t *testing.T) {

@@ -173,6 +173,21 @@ func (s *PrintMonitorService) Notify(data any) {
 		s.mu.Unlock()
 	}
 
+	// First layer down → bring an AI check forward to catch bed-adhesion
+	// failures early (corners lifting, not sticking, dragging).
+	if payload["event"] == "first_layer" {
+		s.mu.Lock()
+		if s.cfg.Enabled && s.active {
+			now := time.Now()
+			s.nextCheck = &now
+		}
+		if fn, _ := payload["filename"].(string); fn != "" {
+			s.filename = fn
+		}
+		s.mu.Unlock()
+		return
+	}
+
 	if payload["event"] != "print_state" {
 		return
 	}

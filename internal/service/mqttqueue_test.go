@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"testing"
 	"time"
@@ -89,6 +90,7 @@ func TestMqttQueue_StateMachineDeferredHistoryStart(t *testing.T) {
 		queryInterval:      time.Hour,
 		pollInterval:       5 * time.Millisecond,
 		currentPrinterStat: -1,
+		log:                slog.Default(),
 		homeAssistant:      ha,
 		timelapse:          timelapse,
 	}
@@ -304,6 +306,7 @@ func TestMqttQueuePrintScheduleCompletesDeferredHistoryStart(t *testing.T) {
 		BaseWorker:         NewBaseWorker("mqttqueue"),
 		history:            historyDB,
 		currentPrinterStat: -1,
+		log:                slog.Default(),
 	}
 	q.BindHooks(q)
 
@@ -336,6 +339,7 @@ func TestMqttQueueFilamentRunoutHandlers(t *testing.T) {
 	q := &MqttQueue{
 		BaseWorker:         NewBaseWorker("mqttqueue"),
 		currentPrinterStat: -1,
+		log:                slog.Default(),
 	}
 	q.BindHooks(q)
 

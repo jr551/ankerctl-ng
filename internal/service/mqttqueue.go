@@ -80,6 +80,7 @@ type MqttQueue struct {
 	lastFilename           string
 	currentPrinterStat     int
 	finishedAtFull         bool
+	firstLayerNotified     bool
 	lastMessageTime        time.Time
 	stopRequested          bool
 	gcodeLayerCount        int
@@ -199,6 +200,7 @@ func (q *MqttQueue) resetPrintStateLocked() {
 	q.stopRequested = false
 	q.currentPrinterStat = -1
 	q.finishedAtFull = false
+	q.firstLayerNotified = false
 	q.lastMessageTime = time.Time{}
 	q.gcodeLayerCount = 0
 	q.lastStatePayload = nil
@@ -230,6 +232,7 @@ func (q *MqttQueue) markPrintFinishedLocked() {
 	q.stopRequested = false
 	q.currentPrinterStat = mqttStateIdle
 	q.finishedAtFull = true
+	q.firstLayerNotified = false
 	q.gcodeLayerCount = 0
 	q.printProgress = nil
 	q.printSpeed = nil
@@ -512,6 +515,7 @@ func (q *MqttQueue) handleCT1000(payload map[string]any) {
 	case mqttStatePrinting:
 		if !q.printActive {
 			q.printActive = true
+			q.firstLayerNotified = false
 			q.pendingStoredFilePath = ""
 			if q.lastFilename != "" {
 				shouldRecord = true
@@ -572,13 +576,17 @@ func (q *MqttQueue) handlePrintSchedule(payload map[string]any) {
 		shouldRecord   bool
 		finished       bool
 		finishFilename string
+		firstLayer     bool
+		firstLayerName string
 	)
 
 	q.mu.Lock()
 	progressComplete := false
+	progressVal := -1
 	if progress, ok := firstInt(msg.Progress, msg.PrintProgress); ok {
 		v := normalizeProgress(progress)
 		q.printProgress = &v
+		progressVal = v
 		progressComplete = v >= 100
 		if v < 100 {
 			// A fresh (or resumed) print clears the completion latch so the next
@@ -605,6 +613,15 @@ func (q *MqttQueue) handlePrintSchedule(payload map[string]any) {
 		v := remaining
 		q.timeRemaining = &v
 	}
+	// First detectable progress (material going down) → fire a one-time
+	// first-layer event so the print monitor can run an early bed-adhesion
+	// AI check. The 1..80 window skips the stale high-progress value the printer
+	// briefly re-sends from the previous print at startup.
+	if q.printActive && !q.firstLayerNotified && progressVal >= 1 && progressVal < 80 {
+		q.firstLayerNotified = true
+		firstLayer = true
+		firstLayerName = q.lastFilename
+	}
 	// The M5C reports 100% but stays in the "printing" state and never returns to
 	// idle, so infer completion from progress and force the idle transition once.
 	if progressComplete && q.printActive {
@@ -613,6 +630,13 @@ func (q *MqttQueue) handlePrintSchedule(payload map[string]any) {
 		q.markPrintFinishedLocked()
 	}
 	q.mu.Unlock()
+
+	if firstLayer {
+		evt := map[string]any{"event": "first_layer", "filename": firstLayerName}
+		q.Notify(evt)
+		q.forward(evt)
+		q.log.Info("first layer detected — triggering bed-adhesion check", "filename", firstLayerName)
+	}
 
 	if shouldRecord && q.history != nil {
 		if _, err := q.history.RecordStart(filename, "", "", 0); err != nil {
