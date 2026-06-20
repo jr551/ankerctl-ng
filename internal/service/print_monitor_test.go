@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/django1982/ankerctl/internal/model"
@@ -114,6 +115,83 @@ func TestPrintMonitorCallOpenRouterParsesAnimal(t *testing.T) {
 	}
 	if verdict.Failing {
 		t.Fatal("failing = true, want false")
+	}
+}
+
+func TestExtractJSON(t *testing.T) {
+	cases := []struct{ name, in, want string }{
+		{"plain", `{"a":1}`, `{"a":1}`},
+		{"fenced", "```json\n{\"a\":1}\n```", `{"a":1}`},
+		{"prose-wrapped", `Here is the result: {"a":1} hope that helps`, `{"a":1}`},
+		{"nested", `{"a":{"b":2},"c":3}`, `{"a":{"b":2},"c":3}`},
+		{"brace-in-string", `{"reason":"it has a } brace"}`, `{"reason":"it has a } brace"}`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := extractJSON(c.in); got != c.want {
+				t.Fatalf("extractJSON(%q) = %q, want %q", c.in, got, c.want)
+			}
+		})
+	}
+}
+
+func TestNormalizeHexColor(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"#1a2b3c", "#1A2B3C"},
+		{"1a2b3c", "#1A2B3C"},
+		{"#abc", "#AABBCC"},
+		{"  #FfF  ", "#FFFFFF"},
+		{"", ""},
+		{"not a colour", ""},
+		{"#12345", ""},
+		{"#gggggg", ""},
+	}
+	for _, c := range cases {
+		if got := normalizeHexColor(c.in); got != c.want {
+			t.Fatalf("normalizeHexColor(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestStripSCADProse(t *testing.T) {
+	if got := stripSCADProse("Here is the updated code:\ncube([10,10,10]);"); got != "cube([10,10,10]);" {
+		t.Fatalf("leading prose not stripped: %q", got)
+	}
+	if got := stripSCADProse("```scad\ncube([1,1,1]);\n```"); got != "cube([1,1,1]);" {
+		t.Fatalf("fence not stripped: %q", got)
+	}
+	// A real first line of code must be preserved.
+	code := "module foo() {\n  cube([1,1,1]);\n}"
+	if got := stripSCADProse(code); got != code {
+		t.Fatalf("code first line wrongly stripped: %q", got)
+	}
+}
+
+func TestChatCompletionRetriesOnTransient(t *testing.T) {
+	var calls int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&calls, 1)
+		if n < 3 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"error":"overloaded"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	}))
+	defer server.Close()
+
+	svc := &PrintMonitorService{httpClient: server.Client()}
+	cfg := model.PrintMonitorConfig{OpenRouterURL: server.URL, OpenRouterKey: "k", Model: "m"}
+	content, status, err := svc.chatCompletion(context.Background(), cfg, nil, false, 0)
+	if err != nil {
+		t.Fatalf("chatCompletion after retries: %v", err)
+	}
+	if content != "ok" || status != http.StatusOK {
+		t.Fatalf("content=%q status=%d, want ok/200", content, status)
+	}
+	if got := atomic.LoadInt32(&calls); got != 3 {
+		t.Fatalf("server calls = %d, want 3 (two 503s then success)", got)
 	}
 }
 

@@ -493,54 +493,13 @@ func (s *PrintMonitorService) callOpenRouter(ctx context.Context, cfg model.Prin
 		referenceURL := "data:image/png;base64," + base64.StdEncoding.EncodeToString(referencePNG)
 		userContent = append(userContent, map[string]any{"type": "image_url", "image_url": map[string]string{"url": referenceURL}})
 	}
-	payload := map[string]any{
-		"model": cfg.Model,
-		"messages": []map[string]any{
-			{
-				"role":    "system",
-				"content": cfg.Prompt,
-			},
-			{
-				"role":    "user",
-				"content": userContent,
-			},
-		},
-		"response_format": map[string]string{"type": "json_object"},
+	messages := []map[string]any{
+		{"role": "system", "content": cfg.Prompt},
+		{"role": "user", "content": userContent},
 	}
-	body, err := json.Marshal(payload)
+	raw, status, err := s.chatCompletion(ctx, cfg, messages, true, 1024*1024)
 	if err != nil {
-		return aiVerdict{}, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, printMonitorChatCompletionsURL(cfg.OpenRouterURL), bytes.NewReader(body))
-	if err != nil {
-		return aiVerdict{}, err
-	}
-	req.Header.Set("Authorization", "Bearer "+cfg.OpenRouterKey)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("HTTP-Referer", "https://github.com/jr551/ankerctl_go_remake")
-	req.Header.Set("X-Title", "ankerctl")
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return aiVerdict{}, err
-	}
-	defer resp.Body.Close()
-	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
-	rawBody := strings.TrimSpace(string(data))
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return aiVerdict{Raw: rawBody, HTTPStatus: resp.StatusCode}, fmt.Errorf("AI provider returned HTTP %d: %s", resp.StatusCode, rawBody)
-	}
-	var apiResp struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-	if err := json.Unmarshal(data, &apiResp); err != nil {
-		return aiVerdict{Raw: rawBody, HTTPStatus: resp.StatusCode}, err
-	}
-	if len(apiResp.Choices) == 0 {
-		return aiVerdict{Raw: rawBody, HTTPStatus: resp.StatusCode}, fmt.Errorf("AI provider returned no choices")
+		return aiVerdict{HTTPStatus: status}, err
 	}
 	var parsed struct {
 		Failing        bool    `json:"failing"`
@@ -549,18 +508,18 @@ func (s *PrintMonitorService) callOpenRouter(ctx context.Context, cfg model.Prin
 		AnimalDetected bool    `json:"animal_detected"`
 		Animal         string  `json:"animal"`
 	}
-	content := stripJSONCodeFence(apiResp.Choices[0].Message.Content)
+	content := extractJSON(raw)
 	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
-		return aiVerdict{Raw: content, HTTPStatus: resp.StatusCode}, fmt.Errorf("AI provider returned non-JSON content: %w", err)
+		return aiVerdict{Raw: content, HTTPStatus: status}, fmt.Errorf("AI provider returned non-JSON content: %w", err)
 	}
 	return aiVerdict{
 		Failing:        parsed.Failing,
-		Confidence:     parsed.Confidence,
-		Reason:         parsed.Reason,
+		Confidence:     clamp01(parsed.Confidence),
+		Reason:         strings.TrimSpace(parsed.Reason),
 		AnimalDetected: parsed.AnimalDetected,
 		Animal:         strings.TrimSpace(parsed.Animal),
 		Raw:            content,
-		HTTPStatus:     resp.StatusCode,
+		HTTPStatus:     status,
 	}, nil
 }
 
@@ -581,48 +540,21 @@ func (s *PrintMonitorService) AnalyzeSliceImage(ctx context.Context, imageDataUR
 		return SliceCheckResult{}, false, nil
 	}
 	const sys = "You are reviewing a 2D top-down toolpath preview of a model that was just sliced for 3D printing (green lines are extrusion paths on the bed). Reply with strict JSON only: {\"serious\": boolean, \"issue\": string}. Set serious=true ONLY for problems that would clearly ruin the print: the toolpath is empty or almost empty, it is cut off / runs off the plate, or it is grossly distorted or degenerate. Normal infill, perimeters, skirts and small gaps are FINE — do not flag them. Keep issue to one short sentence; use an empty string when serious is false."
-	payload := map[string]any{
-		"model": cfg.Model,
-		"messages": []map[string]any{
-			{"role": "system", "content": sys},
-			{"role": "user", "content": []map[string]any{
-				{"type": "image_url", "image_url": map[string]string{"url": imageDataURI}},
-			}},
-		},
+	messages := []map[string]any{
+		{"role": "system", "content": sys},
+		{"role": "user", "content": []map[string]any{
+			{"type": "image_url", "image_url": map[string]string{"url": imageDataURI}},
+		}},
 	}
-	body, err := json.Marshal(payload)
+	raw, _, err := s.chatCompletion(ctx, cfg, messages, true, 1024*1024)
 	if err != nil {
 		return SliceCheckResult{}, false, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, printMonitorChatCompletionsURL(cfg.OpenRouterURL), bytes.NewReader(body))
-	if err != nil {
-		return SliceCheckResult{}, false, err
-	}
-	req.Header.Set("Authorization", "Bearer "+cfg.OpenRouterKey)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return SliceCheckResult{}, false, err
-	}
-	defer resp.Body.Close()
-	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return SliceCheckResult{}, false, fmt.Errorf("AI provider returned HTTP %d", resp.StatusCode)
-	}
-	var apiResp struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-	if err := json.Unmarshal(data, &apiResp); err != nil || len(apiResp.Choices) == 0 {
-		return SliceCheckResult{}, false, fmt.Errorf("AI provider returned no usable response")
 	}
 	var out SliceCheckResult
-	if err := json.Unmarshal([]byte(stripJSONCodeFence(apiResp.Choices[0].Message.Content)), &out); err != nil {
+	if err := json.Unmarshal([]byte(extractJSON(raw)), &out); err != nil {
 		return SliceCheckResult{}, false, fmt.Errorf("AI provider returned non-JSON content")
 	}
+	out.Issue = strings.TrimSpace(out.Issue)
 	return out, true, nil
 }
 
@@ -636,52 +568,24 @@ func (s *PrintMonitorService) DetectFilamentColor(ctx context.Context, imageData
 	if strings.TrimSpace(cfg.OpenRouterKey) == "" || strings.TrimSpace(cfg.Model) == "" {
 		return "", false, nil
 	}
-	const sys = "Look at this 3D printer camera image. Identify the dominant colour of the filament being printed (the plastic of the model / the extruded material). Reply with strict JSON only: {\"hex\": \"#RRGGBB\"}. Use a best-effort estimate of the main colour; if you truly cannot tell, use an empty string for hex."
-	payload := map[string]any{
-		"model": cfg.Model,
-		"messages": []map[string]any{
-			{"role": "system", "content": sys},
-			{"role": "user", "content": []map[string]any{
-				{"type": "image_url", "image_url": map[string]string{"url": imageDataURI}},
-			}},
-		},
+	const sys = "Look at this 3D printer camera image. Identify the dominant colour of the filament being printed (the plastic of the model / the extruded material), ignoring the bed, frame and background. Reply with strict JSON only: {\"hex\": \"#RRGGBB\"} using a full 6-digit hex colour. Use a best-effort estimate of the main colour; if you truly cannot tell, use an empty string for hex."
+	messages := []map[string]any{
+		{"role": "system", "content": sys},
+		{"role": "user", "content": []map[string]any{
+			{"type": "image_url", "image_url": map[string]string{"url": imageDataURI}},
+		}},
 	}
-	body, err := json.Marshal(payload)
+	raw, _, err := s.chatCompletion(ctx, cfg, messages, true, 1024*1024)
 	if err != nil {
 		return "", false, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, printMonitorChatCompletionsURL(cfg.OpenRouterURL), bytes.NewReader(body))
-	if err != nil {
-		return "", false, err
-	}
-	req.Header.Set("Authorization", "Bearer "+cfg.OpenRouterKey)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return "", false, err
-	}
-	defer resp.Body.Close()
-	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", false, fmt.Errorf("AI provider returned HTTP %d", resp.StatusCode)
-	}
-	var apiResp struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-	if err := json.Unmarshal(data, &apiResp); err != nil || len(apiResp.Choices) == 0 {
-		return "", false, fmt.Errorf("AI provider returned no usable response")
 	}
 	var out struct {
 		Hex string `json:"hex"`
 	}
-	if err := json.Unmarshal([]byte(stripJSONCodeFence(apiResp.Choices[0].Message.Content)), &out); err != nil {
+	if err := json.Unmarshal([]byte(extractJSON(raw)), &out); err != nil {
 		return "", false, fmt.Errorf("AI provider returned non-JSON content")
 	}
-	return strings.TrimSpace(out.Hex), true, nil
+	return normalizeHexColor(out.Hex), true, nil
 }
 
 // EditOpenSCAD asks the AI model to (re)write OpenSCAD source for a
@@ -694,7 +598,7 @@ func (s *PrintMonitorService) EditOpenSCAD(ctx context.Context, currentSCAD, pro
 	if strings.TrimSpace(cfg.OpenRouterKey) == "" || strings.TrimSpace(cfg.Model) == "" {
 		return "", false, nil
 	}
-	const sys = "You are an expert in OpenSCAD. You are given the current OpenSCAD source (possibly empty) and a requested change, plus optional reference images. Reply with ONLY the complete, valid, updated OpenSCAD source — no markdown fences, no commentary, no explanation. Make the requested change while keeping sensible existing structure. Prefer parametric, well-formed OpenSCAD."
+	const sys = "You are an expert in OpenSCAD. You are given the current OpenSCAD source (possibly empty) and a requested change, plus optional reference images. Reply with ONLY the complete, valid, updated OpenSCAD source — no markdown fences, no commentary, no explanation, no leading sentence. Make the requested change while keeping sensible existing structure. Prefer parametric, well-formed OpenSCAD with millimetre units. Keep the model a reasonable size for a desktop FDM printer (roughly within a 200mm cube). Do not add example/test calls that were not present unless the request asks for them."
 	userContent := []map[string]any{
 		{"type": "text", "text": "Current OpenSCAD code:\n" + currentSCAD + "\n\nRequested change: " + prompt},
 	}
@@ -703,47 +607,58 @@ func (s *PrintMonitorService) EditOpenSCAD(ctx context.Context, currentSCAD, pro
 			userContent = append(userContent, map[string]any{"type": "image_url", "image_url": map[string]string{"url": img}})
 		}
 	}
-	payload := map[string]any{
-		"model": cfg.Model,
-		"messages": []map[string]any{
-			{"role": "system", "content": sys},
-			{"role": "user", "content": userContent},
-		},
+	messages := []map[string]any{
+		{"role": "system", "content": sys},
+		{"role": "user", "content": userContent},
 	}
-	body, err := json.Marshal(payload)
+	raw, _, err := s.chatCompletion(ctx, cfg, messages, false, 2*1024*1024)
 	if err != nil {
 		return "", false, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, printMonitorChatCompletionsURL(cfg.OpenRouterURL), bytes.NewReader(body))
-	if err != nil {
-		return "", false, err
-	}
-	req.Header.Set("Authorization", "Bearer "+cfg.OpenRouterKey)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return "", false, err
-	}
-	defer resp.Body.Close()
-	data, _ := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024))
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", false, fmt.Errorf("AI provider returned HTTP %d", resp.StatusCode)
-	}
-	var apiResp struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-	if err := json.Unmarshal(data, &apiResp); err != nil || len(apiResp.Choices) == 0 {
-		return "", false, fmt.Errorf("AI provider returned no usable response")
-	}
-	code := strings.TrimSpace(stripJSONCodeFence(apiResp.Choices[0].Message.Content))
+	code := stripSCADProse(raw)
 	if code == "" {
 		return "", false, fmt.Errorf("AI returned empty code")
 	}
 	return code, true, nil
+}
+
+// stripSCADProse cleans an OpenSCAD code reply: it removes ``` fences and a
+// single leading prose line like "Here is the updated code:" that some models
+// prepend despite being told not to.
+func stripSCADProse(raw string) string {
+	code := strings.TrimSpace(stripCodeFence(raw))
+	// Drop a leading natural-language line if the real code clearly starts later.
+	if nl := strings.IndexByte(code, '\n'); nl > 0 {
+		first := strings.TrimSpace(code[:nl])
+		lower := strings.ToLower(first)
+		looksLikeProse := strings.HasSuffix(first, ":") ||
+			strings.HasPrefix(lower, "here") || strings.HasPrefix(lower, "sure") ||
+			strings.HasPrefix(lower, "certainly") || strings.HasPrefix(lower, "below")
+		// Only strip when it doesn't look like OpenSCAD (no code punctuation).
+		if looksLikeProse && !strings.ContainsAny(first, "{}();=") {
+			code = strings.TrimSpace(code[nl+1:])
+		}
+	}
+	return code
+}
+
+// stripCodeFence removes a leading ```lang fence and trailing ``` from any
+// fenced code block (not just JSON), returning the inner body.
+func stripCodeFence(content string) string {
+	content = strings.TrimSpace(content)
+	if !strings.HasPrefix(content, "```") {
+		return content
+	}
+	rest := strings.TrimPrefix(content, "```")
+	lineEnd := strings.IndexByte(rest, '\n')
+	if lineEnd < 0 {
+		return content
+	}
+	body := strings.TrimSpace(rest[lineEnd+1:])
+	if strings.HasSuffix(body, "```") {
+		body = strings.TrimSpace(strings.TrimSuffix(body, "```"))
+	}
+	return body
 }
 
 func stripJSONCodeFence(content string) string {
@@ -765,6 +680,189 @@ func stripJSONCodeFence(content string) string {
 		body = strings.TrimSpace(strings.TrimSuffix(body, "```"))
 	}
 	return body
+}
+
+// extractJSON pulls the first balanced JSON object out of model output, after
+// stripping any ``` fences. Models sometimes wrap JSON in a sentence of prose
+// ("Here is the result: {...}"); this finds the {...} regardless.
+func extractJSON(content string) string {
+	content = stripJSONCodeFence(content)
+	start := strings.IndexByte(content, '{')
+	if start < 0 {
+		return content
+	}
+	depth, inStr, esc := 0, false, false
+	for i := start; i < len(content); i++ {
+		c := content[i]
+		if inStr {
+			switch {
+			case esc:
+				esc = false
+			case c == '\\':
+				esc = true
+			case c == '"':
+				inStr = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inStr = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return content[start : i+1]
+			}
+		}
+	}
+	return content[start:]
+}
+
+// clamp01 bounds a confidence score to [0,1] so a misbehaving model can't push
+// it out of range.
+func clamp01(v float64) float64 {
+	if v < 0 {
+		return 0
+	}
+	if v > 1 {
+		return 1
+	}
+	return v
+}
+
+// normalizeHexColor validates and normalizes a model-supplied colour to
+// "#RRGGBB" (expanding "#RGB"), returning "" when it is not a usable hex colour.
+func normalizeHexColor(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	if !strings.HasPrefix(s, "#") {
+		s = "#" + s
+	}
+	hex := s[1:]
+	isHex := func(str string) bool {
+		for _, c := range str {
+			if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+				return false
+			}
+		}
+		return len(str) > 0
+	}
+	switch len(hex) {
+	case 3:
+		if !isHex(hex) {
+			return ""
+		}
+		return "#" + strings.ToUpper(string([]byte{hex[0], hex[0], hex[1], hex[1], hex[2], hex[2]}))
+	case 6:
+		if !isHex(hex) {
+			return ""
+		}
+		return "#" + strings.ToUpper(hex)
+	default:
+		return ""
+	}
+}
+
+// snippet trims a possibly-large provider body to something safe to log/return.
+func snippet(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) > 300 {
+		return s[:300] + "…"
+	}
+	return s
+}
+
+// chatCompletion performs one OpenAI-compatible chat-completion call with retry
+// on transient failures (network errors, HTTP 429, and 5xx), returning the
+// assistant message content. It is the single HTTP path shared by every AI
+// helper so retry, headers, response_format and error shaping stay consistent.
+func (s *PrintMonitorService) chatCompletion(ctx context.Context, cfg model.PrintMonitorConfig, messages []map[string]any, jsonObject bool, bodyLimit int64) (string, int, error) {
+	payload := map[string]any{
+		"model":    cfg.Model,
+		"messages": messages,
+	}
+	if jsonObject {
+		payload["response_format"] = map[string]string{"type": "json_object"}
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", 0, err
+	}
+	if bodyLimit <= 0 {
+		bodyLimit = 1024 * 1024
+	}
+	url := printMonitorChatCompletionsURL(cfg.OpenRouterURL)
+
+	const maxAttempts = 3
+	var lastErr error
+	var lastStatus int
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return "", lastStatus, ctx.Err()
+			case <-time.After(time.Duration(attempt) * 750 * time.Millisecond):
+			}
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+		if err != nil {
+			return "", 0, err
+		}
+		req.Header.Set("Authorization", "Bearer "+cfg.OpenRouterKey)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("HTTP-Referer", "https://github.com/jr551/ankerctl_go_remake")
+		req.Header.Set("X-Title", "ankerctl")
+
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			if ctx.Err() != nil {
+				return "", lastStatus, fmt.Errorf("AI request timed out — try a shorter / more specific instruction")
+			}
+			lastErr = err
+			continue // network error — retry
+		}
+		data, readErr := io.ReadAll(io.LimitReader(resp.Body, bodyLimit))
+		_ = resp.Body.Close()
+		lastStatus = resp.StatusCode
+		if readErr != nil && ctx.Err() != nil {
+			return "", resp.StatusCode, fmt.Errorf("AI request timed out — try a shorter / more specific instruction")
+		}
+		raw := strings.TrimSpace(string(data))
+
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+			lastErr = fmt.Errorf("AI provider returned HTTP %d: %s", resp.StatusCode, snippet(raw))
+			continue // transient — retry
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return "", resp.StatusCode, fmt.Errorf("AI provider returned HTTP %d: %s", resp.StatusCode, snippet(raw))
+		}
+
+		var apiResp struct {
+			Choices []struct {
+				Message struct {
+					Content string `json:"content"`
+				} `json:"message"`
+			} `json:"choices"`
+		}
+		if err := json.Unmarshal(data, &apiResp); err != nil {
+			if ctx.Err() != nil {
+				return "", resp.StatusCode, fmt.Errorf("AI request timed out — try a shorter / more specific instruction")
+			}
+			return "", resp.StatusCode, fmt.Errorf("AI provider returned malformed response: %w", err)
+		}
+		if len(apiResp.Choices) == 0 {
+			return "", resp.StatusCode, fmt.Errorf("AI provider returned no choices")
+		}
+		return apiResp.Choices[0].Message.Content, resp.StatusCode, nil
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("AI provider request failed")
+	}
+	return "", lastStatus, lastErr
 }
 
 func (s *PrintMonitorService) printMonitorMetadata(ctx context.Context, cfg model.PrintMonitorConfig, filename string) map[string]any {

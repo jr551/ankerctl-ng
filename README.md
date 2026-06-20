@@ -20,6 +20,9 @@ Experimental AnkerMake web UI and CLI build — *now with extra AI goodness! (ad
 ## What this fork adds
 
 - AI print-failure monitoring with saved replies and short-lived evidence images
+- AI safety stop: cuts printer power via the smart socket the moment a non-human animal is spotted in frame
+- Slice & Build tab: in-browser slicing (polyslice) of STL **and** OpenSCAD, with AI-assisted OpenSCAD editing, a live 3D preview, and a post-slice AI sanity check
+- One-tap on-screen E-STOP that cuts printer power
 - PPPP upload hardening / self-healing: keepalives, health checks, channel-close abort, and power-cycle recovery
 - Smart-socket power-cycle recovery for stuck uploads
 - Home Assistant camera support and smart-socket controls
