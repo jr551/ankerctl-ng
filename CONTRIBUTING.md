@@ -16,8 +16,8 @@ Please read [NOTICE](NOTICE) for the attribution chain.
 ## Development setup
 
 ```sh
-git clone https://github.com/jr551/ankerctl_go_remake.git
-cd ankerctl_go_remake
+git clone https://github.com/jr551/ankerctl-ng.git
+cd ankerctl-ng
 sh scripts/install-hooks.sh        # installs a pre-commit hook (blocks commits to main)
 bash scripts/prepare-web-vendor.sh # fetch vendored web assets
 go build -o ankerctl-ng ./cmd/ankerctl/

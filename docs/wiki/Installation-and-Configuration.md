@@ -46,7 +46,7 @@ docker compose up -d
 
 ## Binary Download
 
-Download the latest release for your platform from [Releases](https://github.com/jr551/ankerctl_go_remake/releases).
+Download the latest release for your platform from [Releases](https://github.com/jr551/ankerctl-ng/releases).
 
 Available binaries:
 - `ankerctl-linux-amd64`
@@ -68,8 +68,8 @@ chmod +x ankerctl-linux-amd64
 Requires Go 1.24 or later.
 
 ```sh
-git clone https://github.com/jr551/ankerctl_go_remake.git
-cd ankerctl_go_remake
+git clone https://github.com/jr551/ankerctl-ng.git
+cd ankerctl-ng
 
 # Download vendor assets — required before building, otherwise blank web UI!
 # Linux/macOS:
@@ -167,7 +167,7 @@ See [Protocol-Details#local-socket-bind-ufw--conntrack](Protocol-Details#local-s
 
 ## Environment Variables
 
-See [`.env.example`](https://github.com/jr551/ankerctl_go_remake/blob/main/.env.example) for a complete template with comments. All variables are optional -- ankerctl works with sensible defaults.
+See [`.env.example`](https://github.com/jr551/ankerctl-ng/blob/main/.env.example) for a complete template with comments. All variables are optional -- ankerctl works with sensible defaults.
 
 ### Server
 

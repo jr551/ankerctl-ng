@@ -3,7 +3,7 @@
 > **Closed — all items resolved before v1.0.0 (2026-05-01).**
 >
 > This tracker is preserved as a historical record of the migration's last open
-> issues. New work is tracked via [GitHub Issues](https://github.com/jr551/ankerctl_go_remake/issues).
+> issues. New work is tracked via [GitHub Issues](https://github.com/jr551/ankerctl-ng/issues).
 
 ## Items
 
