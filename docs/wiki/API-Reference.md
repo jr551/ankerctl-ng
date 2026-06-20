@@ -100,6 +100,30 @@ This endpoint is compatible with PrusaSlicer, OrcaSlicer, and other OctoPrint-co
 | POST | `/api/settings/timelapse` | Yes | Update timelapse config |
 | GET | `/api/settings/mqtt` | Yes | Get Home Assistant MQTT config |
 | POST | `/api/settings/mqtt` | Yes | Update Home Assistant MQTT config |
+| GET | `/api/settings/camera` | No | Get resolved camera settings for the active printer |
+| POST | `/api/settings/camera` | Yes | Update camera source / external camera config |
+
+#### External camera presets
+
+`POST /api/settings/camera` accepts `{"source":"printer"|"external","external":{…}}`.
+For an external feed the `external` object carries the resolved `stream_url` /
+`snapshot_url` (what the backend dials) plus an optional preset `kind` and a raw
+`fields` map describing the friendly inputs. Supported `kind` values:
+
+| `kind` | Required `fields` | Resolves to |
+|--------|-------------------|-------------|
+| `mjpeg` | `stream_url` | the MJPEG URL verbatim |
+| `octoprint` | `base_url` | `{base}/webcam/?action=stream` + `?action=snapshot` |
+| `frigate` | `base_url`, `camera` | `{base}/api/{cam}` + `{base}/api/{cam}/latest.jpg` |
+| `go2rtc` | `base_url`, `stream` | `{base}/api/stream.mjpeg?src={s}` + `frame.jpeg` |
+| `reolink` | `host`, `user`, `password`, `channel` | FLV stream + snapshot CGI |
+| `rtsp` | `stream_url` | RTSP passthrough (snapshots only; restream for live view) |
+| `custom` | — | `stream_url` / `snapshot_url` entered directly (legacy/advanced) |
+
+URLs are derived in both the browser (live preview) and the server (on save), so
+configs that carry only `kind` + `fields` still resolve. Legacy configs with no
+`kind` behave as `custom`. Browsers cannot play RTSP directly — use a restreamer
+(go2rtc / MediaMTX) and the `go2rtc` preset for a live view.
 
 ### History
 

@@ -518,6 +518,17 @@ func (h *Handler) SettingsCameraUpdate(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		// For preset kinds, re-derive the stream/snapshot URLs server-side from
+		// the raw fields so a hand-edited config (or a client that only sends
+		// kind+fields) still resolves to working URLs. Custom/legacy entries
+		// keep whatever URLs were supplied directly.
+		if entry.External.Kind != "" && entry.External.Kind != model.CameraKindCustom {
+			if s, snap := model.DeriveExternalCameraURLs(entry.External.Kind, entry.External.Fields); s != "" || snap != "" {
+				entry.External.StreamURL = s
+				entry.External.SnapshotURL = snap
+			}
+		}
+
 		if err := util.ValidateExternalURL(entry.External.StreamURL); err != nil {
 			return nil, err
 		}
@@ -641,6 +652,11 @@ func normalizeExternalSettings(e model.ExternalCameraSettings) model.ExternalCam
 		e.RefreshSec = 30
 	}
 	e.HomeAssistant = model.NormalizeHomeAssistantCameraSettings(e.HomeAssistant)
+	// Normalize the preset kind. An empty kind (old configs) stays empty so the
+	// JSON shape is unchanged; any non-empty value is coerced to a known kind.
+	if e.Kind != "" {
+		e.Kind = model.NormalizeCameraKind(e.Kind)
+	}
 	return e
 }
 
@@ -667,6 +683,18 @@ func mergeExternalCamera(dst *model.ExternalCameraSettings, src map[string]json.
 		var n int
 		if json.Unmarshal(v, &n) == nil && n >= 1 && n <= 30 {
 			dst.RefreshSec = n
+		}
+	}
+	if v, ok := src["kind"]; ok {
+		var s string
+		if json.Unmarshal(v, &s) == nil {
+			dst.Kind = model.NormalizeCameraKind(s)
+		}
+	}
+	if v, ok := src["fields"]; ok {
+		var m map[string]string
+		if json.Unmarshal(v, &m) == nil {
+			dst.Fields = m
 		}
 	}
 	if v, ok := src["home_assistant"]; ok {
