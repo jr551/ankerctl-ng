@@ -1,0 +1,46 @@
+ankerctl-ng
+===========
+
+ankerctl-ng is a community fork. It is distributed under the GNU General Public
+License, version 3 (see the LICENSE file). This NOTICE records the attribution
+chain and the obligations that come with the GPLv3.
+
+Attribution chain
+-----------------
+
+1. Original project (upstream of upstream)
+   Ankermgmt/ankerctl  -  https://github.com/Ankermgmt/ankerctl
+   The original Python "ankerctl" tool and the "libflagship" library that
+   reverse-engineered the AnkerMake M5 MQTT, PPPP, and HTTP/Cloud protocols and
+   their crypto. Licensed under GPLv3.
+
+2. Go re-implementation (direct upstream of this fork)
+   Django1982/ankerctl_go_remake  -  https://github.com/Django1982/ankerctl_go_remake
+   A Go port aiming for 1:1 feature parity with the Python original, including
+   bit-exact protocol and crypto behavior. Licensed under GPLv3.
+   The Go module path of this codebase (github.com/django1982/ankerctl) reflects
+   this lineage and is intentionally preserved.
+
+3. This fork
+   ankerctl-ng (jr)
+   Rebranded "ankerctl-ng" and extended with, among other things:
+     - AI print-failure monitoring (saved replies, short-lived evidence images)
+     - PPPP upload hardening / self-healing (keepalives, health checks,
+       channel-close abort, power-cycle recovery)
+     - Smart-socket power-cycle recovery for stuck uploads
+     - Home Assistant camera and smart-socket integration
+     - Notifications via SMTP, raw webhook, and Apprise; notification history;
+       Home Assistant speech hooks
+     - Timelapse / camera capture
+     - UI changes and an OrcaSlicer-first setup flow
+
+License obligations (GPLv3)
+---------------------------
+
+- The complete corresponding source code is, and must remain, available.
+- This NOTICE and the upstream copyright/license text in LICENSE must be kept
+  intact in all copies and derivative works.
+- Any further redistribution or modification must remain under GPLv3.
+
+This software is provided "as is", without warranty of any kind, to the extent
+permitted by the GPLv3.

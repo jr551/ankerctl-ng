@@ -524,20 +524,14 @@ func (s *PPPPService) uploadWithRetries(ctx context.Context, info UploadInfo, pa
 // isRetryableUploadErr reports whether an upload error is worth retrying
 // (connection dropped, channel closed, stale session, handshake timeout).
 func isRetryableUploadErr(err error) bool {
-	if errors.Is(err, protocol.ErrChannelClosed) {
-		return true
-	}
-	if errors.Is(err, errStaleSession) {
+	if errors.Is(err, protocol.ErrChannelClosed) || errors.Is(err, errStaleSession) {
 		return true
 	}
 	msg := err.Error()
-	if strings.Contains(msg, "connection reset") ||
+	return strings.Contains(msg, "connection reset") ||
 		strings.Contains(msg, "channel closed") ||
 		strings.Contains(msg, "connection timeout") ||
-		strings.Contains(msg, "no client") {
-		return true
-	}
-	return false
+		strings.Contains(msg, "no client")
 }
 
 func (s *PPPPService) uploadOnce(ctx context.Context, info UploadInfo, payload []byte, progress func(sent, total int64)) error {

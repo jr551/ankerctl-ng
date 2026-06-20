@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Upstream Go remake (Django1982/ankerctl_go_remake)
+    url: https://github.com/Django1982/ankerctl_go_remake/issues
+    about: For issues not specific to the ankerctl-ng fork's added features.
+  - name: Original project (Ankermgmt/ankerctl)
+    url: https://github.com/Ankermgmt/ankerctl
+    about: The original Python ankerctl / protocol project this descends from.
+  - name: Security vulnerability
+    url: https://github.com/jr551/ankerctl_go_remake/blob/main/SECURITY.md
+    about: Please report security issues privately per SECURITY.md, not as a public issue.

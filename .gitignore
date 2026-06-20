@@ -1,5 +1,6 @@
 # Binaries (root-level only, not cmd/ankerctl/ directory)
 /ankerctl
+/ankerctl-ng
 /ankerctl.exe
 /find_anker
 *.exe
@@ -49,3 +50,22 @@ temp/
 *.tmp
 *.bak
 *~
+
+# Local artifacts that must never be published
+# OAuth/login callback captures (contain short-lived auth codes/tokens)
+callback?*
+*code=*state=*
+# Firmware blobs (large binaries, not part of source)
+*.factory.bin
+firmware*.bin
+*.bin
+
+# Secrets and local runtime config (contain auth tokens / mqtt keys / api keys)
+config.json
+login.json
+login_cache.json
+*.token
+*.pem
+*.key
+.ankerctl/
+.ankerctl-ng/

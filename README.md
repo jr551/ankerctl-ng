@@ -1,6 +1,13 @@
 # ankerctl-ng
 
-Experimental AnkerMake web UI and CLI build.
+Experimental AnkerMake web UI and CLI build — *now with extra AI goodness! (adapted by jr)*.
+
+> **This is a fork.** `ankerctl-ng` builds on
+> [`Django1982/ankerctl_go_remake`](https://github.com/Django1982/ankerctl_go_remake)
+> (a Go re-implementation), which is itself a port of the original Python
+> [`Ankermgmt/ankerctl`](https://github.com/Ankermgmt/ankerctl) project and its
+> `libflagship` protocol library. All upstream work remains under the
+> [GNU GPLv3](LICENSE). See [Credits & attribution](#credits--attribution).
 
 [![Release](https://img.shields.io/badge/release-v1.0.0-success)](https://github.com/jr551/ankerctl_go_remake/releases/tag/v1.0.0)
 [![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)](https://go.dev/)
@@ -12,10 +19,13 @@ Experimental AnkerMake web UI and CLI build.
 
 ## What this fork adds
 
-- Home Assistant camera support and smart socket controls
-- AI print checks with saved replies and short-lived evidence images
-- Notification history, raw webhook posting, SMTP helper, and HA speech hooks
-- Power saving controls, better camera loading, and UI cleanup for day-to-day printer use
+- AI print-failure monitoring with saved replies and short-lived evidence images
+- PPPP upload hardening / self-healing: keepalives, health checks, channel-close abort, and power-cycle recovery
+- Smart-socket power-cycle recovery for stuck uploads
+- Home Assistant camera support and smart-socket controls
+- Notifications via SMTP, raw webhook, and Apprise; notification history; HA speech hooks
+- Timelapse / camera capture
+- Power-saving controls, better camera loading, and UI cleanup for day-to-day printer use
 - OrcaSlicer-first setup flow
 
 ## Status
@@ -117,3 +127,41 @@ Most of the older migration and protocol docs are still in [`docs/`](docs/), but
 2. open the web UI
 3. import/login
 4. connect OrcaSlicer
+
+## Building manually
+
+If you prefer to build the binary yourself instead of `install.sh`:
+
+```sh
+bash scripts/prepare-web-vendor.sh   # fetch vendored web assets
+go build -o ankerctl-ng ./cmd/ankerctl/
+go test ./...                        # optional: run the test suite
+```
+
+## Credits & attribution
+
+`ankerctl-ng` is a community fork and would not exist without the work it descends from:
+
+- **Original project:** [`Ankermgmt/ankerctl`](https://github.com/Ankermgmt/ankerctl)
+  (the Python `ankerctl` / `ankermake-m5-protocol` project) — the `libflagship`
+  library that reverse-engineered the AnkerMake M5 MQTT, PPPP, and HTTP/Cloud
+  APIs, and the first web UI/CLI that everything here is built on.
+- **Go re-implementation (direct upstream):**
+  [`Django1982/ankerctl_go_remake`](https://github.com/Django1982/ankerctl_go_remake) —
+  a 1:1 Go port of the Python original (see [`docs/MIGRATION_PLAN.md`](docs/MIGRATION_PLAN.md)).
+  This fork is based on it, and keeps the Go module path
+  `github.com/django1982/ankerctl` to preserve import compatibility.
+- **This fork (`ankerctl-ng`, by jr):** adds AI print-failure monitoring, PPPP
+  upload hardening / self-healing, smart-socket power-cycle recovery, Home
+  Assistant integration, expanded notifications, and UI changes.
+
+Many thanks to the upstream authors and the AnkerMake protocol community.
+See [`NOTICE`](NOTICE) for the full attribution chain and
+[`CONTRIBUTING.md`](CONTRIBUTING.md) to get involved.
+
+## License
+
+This project and all of its upstreams are licensed under the
+**[GNU General Public License v3.0](LICENSE)**. As a derivative work, this fork
+stays under the same license, with source available and the upstream
+copyright/license text in [`LICENSE`](LICENSE) preserved unchanged.

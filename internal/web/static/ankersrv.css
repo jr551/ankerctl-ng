@@ -611,3 +611,22 @@ code {
         min-width: 0;
     }
 }
+
+/* ── Notification delivery-method selector ───────────────────────────── */
+.apprise-mode-group {
+    flex-wrap: wrap;
+}
+
+.apprise-mode-panel {
+    border-color: rgba(136, 243, 135, 0.25) !important;
+    background-color: rgba(136, 243, 135, 0.04);
+}
+
+.apprise-mode-panel .form-text a {
+    color: var(--agreen2);
+}
+
+#apprise-effective-url {
+    color: var(--agreen3);
+    background-color: rgba(0, 0, 0, 0.25);
+}

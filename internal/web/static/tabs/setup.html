@@ -519,101 +519,149 @@
                                             notifications</label>
                                     </div>
 
-                                    <div class="row g-3">
-                                        <div class="col-lg-7">
-                                            <label class="form-label" for="apprise-server-url">Webhook, notify API, or
-                                                SMTP URL</label>
-                                            <input class="form-control" type="text" id="apprise-server-url"
-                                                placeholder="jsons://hermes.example.com/hookincoming/printer" />
+                                    <!-- Delivery method selector: the user picks ONE method and only sees
+                                         the fields for it. JS composes the canonical Apprise server_url. -->
+                                    <div>
+                                        <label class="form-label d-block mb-1">Delivery method</label>
+                                        <div class="btn-group apprise-mode-group" role="group"
+                                            aria-label="Notification delivery method">
+                                            <input type="radio" class="btn-check" name="apprise-mode"
+                                                id="apprise-mode-smtp" value="smtp" autocomplete="off" />
+                                            <label class="btn btn-outline-success" for="apprise-mode-smtp">
+                                                <i class="bi-envelope-fill pe-1"></i>Email (SMTP)</label>
+                                            <input type="radio" class="btn-check" name="apprise-mode"
+                                                id="apprise-mode-webhook" value="webhook" autocomplete="off" />
+                                            <label class="btn btn-outline-success" for="apprise-mode-webhook">
+                                                <i class="bi-cloud-arrow-up-fill pe-1"></i>Webhook</label>
+                                            <input type="radio" class="btn-check" name="apprise-mode"
+                                                id="apprise-mode-server" value="server" autocomplete="off" />
+                                            <label class="btn btn-outline-success" for="apprise-mode-server">
+                                                <i class="bi-bell-fill pe-1"></i>Apprise server</label>
                                         </div>
-                                        <div class="col-lg-5 col-md-6">
-                                            <label class="form-label" for="apprise-tag">Tag (filter)</label>
-                                            <input class="form-control" type="text" id="apprise-tag"
-                                                placeholder="optional" />
-                                            <div class="form-text">Only URLs with this tag will receive notifications.
-                                            </div>
-                                        </div>
+                                        <div class="form-text">Choose one way to deliver notifications — fill in only
+                                            that section. Not sure? <strong>Email</strong> is the simplest.</div>
                                     </div>
 
-                                    <details class="mt-2">
-                                        <summary class="text-muted small">Advanced: notify API key</summary>
-                                        <div class="row g-3 mt-1">
-                                            <div class="col-lg-4 col-md-6">
-                                                <label class="form-label" for="apprise-key">Key</label>
-                                                <input class="form-control" type="password" id="apprise-key"
-                                                    placeholder="Saved key - leave blank to keep" autocomplete="off" />
-                                                <div class="form-text">Used for <code>/notify/&lt;key&gt;</code> on the
-                                                    notify server.</div>
-                                            </div>
-                                        </div>
-                                    </details>
-
-                                    <details class="mt-2">
-                                        <summary class="text-muted small">Raw webhook body</summary>
-                                        <div class="row g-3 mt-1">
-                                            <div class="col-lg-4">
-                                                <label class="form-label" for="apprise-raw-content-type">Content type</label>
-                                                <input class="form-control" type="text" id="apprise-raw-content-type"
-                                                    placeholder="application/json" />
-                                            </div>
-                                            <div class="col-12">
-                                                <label class="form-label" for="apprise-raw-body-template">POST body template</label>
-                                                <textarea class="form-control" id="apprise-raw-body-template" rows="5"
-                                                    placeholder='{"event":"{event}","title":"{title}","message":"{body}"}'></textarea>
-                                                <div class="form-text">Available placeholders include <code>{event}</code>,
-                                                    <code>{title}</code>, <code>{body}</code>, <code>{type}</code>,
-                                                    <code>{filename}</code>, <code>{percent}</code>, and your normal event
-                                                    fields.</div>
-                                            </div>
-                                        </div>
-                                    </details>
-
-                                    <details class="mt-2">
-                                        <summary class="text-muted small">SMTP helper</summary>
-                                        <div class="row g-3 mt-1 align-items-end">
-                                            <div class="col-md-4">
-                                                <label class="form-label" for="apprise-smtp-host">SMTP host</label>
+                                    <!-- ===== Email (SMTP) ===== -->
+                                    <div class="apprise-mode-panel border rounded p-3" data-apprise-mode="smtp">
+                                        <div class="row g-3">
+                                            <div class="col-md-7">
+                                                <label class="form-label" for="apprise-smtp-host">Mail server</label>
                                                 <input class="form-control" type="text" id="apprise-smtp-host"
-                                                    placeholder="smtp.example.com" autocomplete="off" />
+                                                    placeholder="smtp.gmail.com" autocomplete="off" />
                                             </div>
-                                            <div class="col-md-2">
+                                            <div class="col-md-2 col-4">
                                                 <label class="form-label" for="apprise-smtp-port">Port</label>
                                                 <input class="form-control" type="number" id="apprise-smtp-port"
                                                     placeholder="587" min="1" max="65535" />
                                             </div>
-                                            <div class="col-md-3">
-                                                <label class="form-label" for="apprise-smtp-user">Username</label>
-                                                <input class="form-control" type="text" id="apprise-smtp-user"
-                                                    autocomplete="off" />
-                                            </div>
-                                            <div class="col-md-3">
-                                                <label class="form-label" for="apprise-smtp-password">Password</label>
-                                                <input class="form-control" type="password" id="apprise-smtp-password"
-                                                    autocomplete="off" />
-                                            </div>
-                                            <div class="col-md-4">
-                                                <label class="form-label" for="apprise-smtp-from">From</label>
-                                                <input class="form-control" type="email" id="apprise-smtp-from"
-                                                    placeholder="printer@example.com" autocomplete="off" />
-                                            </div>
-                                            <div class="col-md-4">
-                                                <label class="form-label" for="apprise-smtp-to">To</label>
-                                                <input class="form-control" type="email" id="apprise-smtp-to"
-                                                    placeholder="you@example.com" autocomplete="off" />
-                                            </div>
-                                            <div class="col-md-2">
+                                            <div class="col-md-3 col-8">
                                                 <label class="form-label" for="apprise-smtp-security">Security</label>
                                                 <select class="form-select" id="apprise-smtp-security">
-                                                    <option value="starttls">STARTTLS</option>
-                                                    <option value="ssl">SSL/TLS</option>
+                                                    <option value="starttls">STARTTLS (587)</option>
+                                                    <option value="ssl">SSL/TLS (465)</option>
                                                     <option value="none">None</option>
                                                 </select>
                                             </div>
-                                            <div class="col-md-2">
-                                                <button class="btn btn-secondary w-100" type="button"
-                                                    id="apprise-smtp-build">Use SMTP</button>
+                                            <div class="col-md-6">
+                                                <label class="form-label" for="apprise-smtp-user">Username</label>
+                                                <input class="form-control" type="text" id="apprise-smtp-user"
+                                                    placeholder="you@gmail.com" autocomplete="off" />
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label class="form-label" for="apprise-smtp-password">Password</label>
+                                                <input class="form-control" type="password" id="apprise-smtp-password"
+                                                    placeholder="app password" autocomplete="new-password" />
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label class="form-label" for="apprise-smtp-from">From address</label>
+                                                <input class="form-control" type="email" id="apprise-smtp-from"
+                                                    placeholder="printer@example.com" autocomplete="off" />
+                                                <div class="form-text">Defaults to the username if left blank.</div>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label class="form-label" for="apprise-smtp-to">Send to</label>
+                                                <input class="form-control" type="text" id="apprise-smtp-to"
+                                                    placeholder="you@example.com" autocomplete="off" />
+                                                <div class="form-text">Separate multiple addresses with commas.</div>
                                             </div>
                                         </div>
+                                    </div>
+
+                                    <!-- ===== Webhook (direct JSON POST) ===== -->
+                                    <div class="apprise-mode-panel border rounded p-3 d-none" data-apprise-mode="webhook">
+                                        <div class="row g-3">
+                                            <div class="col-12">
+                                                <label class="form-label" for="apprise-webhook-url">Webhook URL</label>
+                                                <input class="form-control" type="text" id="apprise-webhook-url"
+                                                    placeholder="https://hooks.example.com/printer" />
+                                                <div class="form-text">A <code>https://</code> endpoint that accepts a
+                                                    JSON POST. Plain <code>http://</code> is allowed for local servers.
+                                                </div>
+                                            </div>
+                                            <div class="col-12">
+                                                <details>
+                                                    <summary class="text-muted small">Custom POST body (optional)</summary>
+                                                    <div class="row g-3 mt-1">
+                                                        <div class="col-md-5">
+                                                            <label class="form-label"
+                                                                for="apprise-raw-content-type">Content type</label>
+                                                            <input class="form-control" type="text"
+                                                                id="apprise-raw-content-type"
+                                                                placeholder="application/json" />
+                                                        </div>
+                                                        <div class="col-12">
+                                                            <label class="form-label"
+                                                                for="apprise-raw-body-template">Body template</label>
+                                                            <textarea class="form-control" id="apprise-raw-body-template"
+                                                                rows="4"
+                                                                placeholder='{"event":"{event}","title":"{title}","message":"{body}"}'></textarea>
+                                                            <div class="form-text">Placeholders:
+                                                                <code>{event}</code>, <code>{title}</code>,
+                                                                <code>{body}</code>, <code>{type}</code>,
+                                                                <code>{filename}</code>, <code>{percent}</code>. Leave
+                                                                blank to send the default JSON payload.</div>
+                                                        </div>
+                                                    </div>
+                                                </details>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- ===== Apprise server (notify API) ===== -->
+                                    <div class="apprise-mode-panel border rounded p-3 d-none" data-apprise-mode="server">
+                                        <div class="row g-3">
+                                            <div class="col-md-7">
+                                                <label class="form-label" for="apprise-server-url">Apprise server
+                                                    URL</label>
+                                                <input class="form-control" type="text" id="apprise-server-url"
+                                                    placeholder="https://apprise.example.com" />
+                                                <div class="form-text">Base URL of your
+                                                    <a href="https://github.com/caronc/apprise-api" target="_blank"
+                                                        rel="noopener">Apprise API</a> server.</div>
+                                            </div>
+                                            <div class="col-md-5">
+                                                <label class="form-label" for="apprise-key">Config key</label>
+                                                <input class="form-control" type="password" id="apprise-key"
+                                                    placeholder="Saved key - leave blank to keep" autocomplete="off" />
+                                                <div class="form-text">Used as <code>/notify/&lt;key&gt;</code>.</div>
+                                            </div>
+                                            <div class="col-md-7">
+                                                <label class="form-label" for="apprise-tag">Tag (optional)</label>
+                                                <input class="form-control" type="text" id="apprise-tag"
+                                                    placeholder="optional" />
+                                                <div class="form-text">Only configs with this tag are notified.</div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <details class="mt-1">
+                                        <summary class="text-muted small">Advanced: effective Apprise URL</summary>
+                                        <input class="form-control form-control-sm mt-2 font-monospace"
+                                            type="text" id="apprise-effective-url" readonly
+                                            placeholder="(built from the fields above when you save)" />
+                                        <div class="form-text">This is the URL ankerctl sends through. It updates as you
+                                            edit the fields above.</div>
                                     </details>
 
                                     <details class="mt-2">
@@ -754,11 +802,9 @@
                                             test</button>
                                     </div>
                                     <div class="form-text">
-                                        Use a notify API plus key, a direct <code>json://</code>/<code>jsons://</code>
-                                        webhook, raw POST templating, or <code>mailto://</code> SMTP helper URLs.
+                                        <strong>Send test</strong> uses the values currently on screen, even before
+                                        saving. Environment variables (<code>APPRISE_*</code>) override these settings.
                                     </div>
-                                    <div class="form-text">Environment variables (<code>APPRISE_*</code>) override these
-                                        values.</div>
                                 </form>
                             </div>
                         </div>

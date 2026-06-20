@@ -1660,7 +1660,11 @@ $(function () {
     if (appriseForm.length) {
         const appriseFields = {
             enabled: $("#apprise-enabled"),
+            mode: $("input[name='apprise-mode']"),
+            modePanels: $(".apprise-mode-panel"),
+            effectiveUrl: $("#apprise-effective-url"),
             serverUrl: $("#apprise-server-url"),
+            webhookUrl: $("#apprise-webhook-url"),
             key: $("#apprise-key"),
             tag: $("#apprise-tag"),
             progressInterval: $("#apprise-progress-interval"),
@@ -1678,7 +1682,6 @@ $(function () {
                 from: $("#apprise-smtp-from"),
                 to: $("#apprise-smtp-to"),
                 security: $("#apprise-smtp-security"),
-                build: $("#apprise-smtp-build"),
             },
             announcement: {
                 enabled: $("#announcement-enabled"),
@@ -1707,14 +1710,85 @@ $(function () {
             appriseButtons.test.prop("disabled", busy);
         };
 
+        // ── Delivery-method helpers ────────────────────────────────────────
+        // The backend stores a single canonical Apprise `server_url`; its scheme
+        // selects the transport (mailto[s]:// = SMTP, json[s]:// = direct webhook,
+        // http[s]:// + key = Apprise notify API). These helpers let the UI present
+        // friendly per-method fields while composing/parsing that one URL.
+        const getAppriseMode = () =>
+            appriseFields.mode.filter(":checked").val() || "smtp";
+
+        const showAppriseMode = (mode) => {
+            appriseFields.modePanels.each(function () {
+                $(this).toggleClass("d-none", $(this).data("apprise-mode") !== mode);
+            });
+        };
+
+        const setAppriseMode = (mode) => {
+            appriseFields.mode.filter(`[value='${mode}']`).prop("checked", true);
+            showAppriseMode(mode);
+            updateEffectiveUrl();
+        };
+
+        const composeSmtpUrl = () => {
+            const host = appriseFields.smtp.host.val().trim();
+            if (!host) return "";
+            const security = appriseFields.smtp.security.val() || "starttls";
+            const scheme = security === "ssl" ? "mailtos" : "mailto";
+            const user = appriseFields.smtp.user.val().trim();
+            const pass = appriseFields.smtp.password.val();
+            const port = parseInt(appriseFields.smtp.port.val(), 10);
+            let auth = "";
+            if (user) {
+                auth = encodeURIComponent(user);
+                if (pass) auth += `:${encodeURIComponent(pass)}`;
+                auth += "@";
+            }
+            let url = `${scheme}://${auth}${host}`;
+            if (Number.isFinite(port) && port > 0) url += `:${port}`;
+            const params = new URLSearchParams();
+            const from = appriseFields.smtp.from.val().trim();
+            const to = appriseFields.smtp.to.val().trim();
+            if (from) params.set("from", from);
+            if (to) params.set("to", to);
+            params.set("tls", security);
+            return `${url}/?${params.toString()}`;
+        };
+
+        // Map a friendly http(s) webhook URL to the json[s]:// scheme the backend
+        // recognises as a direct JSON POST. Pass through anything already schemed.
+        const composeWebhookUrl = () => {
+            const raw = appriseFields.webhookUrl.val().trim();
+            if (!raw) return "";
+            if (/^https:\/\//i.test(raw)) return `jsons://${raw.slice(8)}`;
+            if (/^http:\/\//i.test(raw)) return `json://${raw.slice(7)}`;
+            return raw;
+        };
+
+        const composeServerUrl = (mode) => {
+            switch (mode || getAppriseMode()) {
+                case "smtp": return composeSmtpUrl();
+                case "webhook": return composeWebhookUrl();
+                default: return appriseFields.serverUrl.val().trim();
+            }
+        };
+
+        const updateEffectiveUrl = () => {
+            if (!appriseFields.effectiveUrl.length) return;
+            // Mask any password embedded in the authority before displaying.
+            const masked = composeServerUrl().replace(/(\/\/[^:@/]+:)[^@/]+(@)/, "$1•••$2");
+            appriseFields.effectiveUrl.val(masked);
+        };
+
         const buildAppriseConfig = () => {
             const interval = parseInt(appriseFields.progressInterval.val(), 10);
             const snapshotQuality = appriseFields.snapshotQuality.val().trim().toLowerCase();
+            const mode = getAppriseMode();
             const config = {
                 enabled: appriseFields.enabled.is(":checked"),
-                server_url: appriseFields.serverUrl.val().trim(),
-                tag: appriseFields.tag.val().trim(),
-                raw_body_template: appriseFields.rawBodyTemplate.val().trim(),
+                server_url: composeServerUrl(mode),
+                tag: mode === "server" ? appriseFields.tag.val().trim() : "",
+                raw_body_template: mode === "webhook" ? appriseFields.rawBodyTemplate.val().trim() : "",
                 raw_content_type: appriseFields.rawContentType.val().trim() || "application/json",
                 events: {
                     print_started: appriseFields.events.print_started.is(":checked"),
@@ -1731,7 +1805,7 @@ $(function () {
                     snapshot_light: appriseFields.snapshotLight.is(":checked"),
                 },
             };
-            addSecretIfEntered(config, "key", appriseFields.key);
+            if (mode === "server") addSecretIfEntered(config, "key", appriseFields.key);
             const announcement = {
                 enabled: appriseFields.announcement.enabled.is(":checked"),
                 base_url: appriseFields.announcement.baseUrl.val().trim(),
@@ -1745,14 +1819,51 @@ $(function () {
             return { apprise: config, announcement };
         };
 
+        // Parse a stored Apprise server_url into the friendly per-method fields
+        // and select the matching delivery mode. Inverse of composeServerUrl().
+        const applyServerUrlToFields = (rawUrl) => {
+            const raw = (rawUrl || "").trim();
+            appriseFields.webhookUrl.val("");
+            appriseFields.serverUrl.val("");
+
+            if (/^mailtos?:\/\//i.test(raw)) {
+                try {
+                    const u = new URL(raw);
+                    appriseFields.smtp.host.val(u.hostname || "");
+                    appriseFields.smtp.port.val(u.port || "");
+                    appriseFields.smtp.user.val(u.username ? decodeURIComponent(u.username) : "");
+                    appriseFields.smtp.password.val(u.password ? decodeURIComponent(u.password) : "");
+                    appriseFields.smtp.from.val(u.searchParams.get("from") || "");
+                    appriseFields.smtp.to.val(u.searchParams.getAll("to").join(", "));
+                    const tls = u.searchParams.get("tls") || (/^mailtos:/i.test(raw) ? "ssl" : "starttls");
+                    appriseFields.smtp.security.val(tls);
+                } catch (e) {
+                    appriseFields.smtp.host.val("");
+                }
+                setAppriseMode("smtp");
+            } else if (/^jsons?:\/\//i.test(raw)) {
+                const https = /^jsons:\/\//i.test(raw);
+                appriseFields.webhookUrl.val((https ? "https://" : "http://") + raw.replace(/^jsons?:\/\//i, ""));
+                setAppriseMode("webhook");
+            } else if (raw) {
+                appriseFields.serverUrl.val(raw);
+                setAppriseMode("server");
+            } else {
+                // Unconfigured — default to the simplest method.
+                setAppriseMode("smtp");
+            }
+        };
+
         const applyAppriseSettings = (apprise, announcement) => {
             const settings = apprise || {};
             const events = settings.events || {};
             const progress = settings.progress || {};
             appriseFields.enabled.prop("checked", Boolean(settings.enabled));
-            appriseFields.serverUrl.val(settings.server_url || "");
             markSavedSecret(appriseFields.key, Boolean(settings.key), "key");
             appriseFields.tag.val(settings.tag || "");
+            // Parse the canonical server_url back into the friendly per-method
+            // fields and select the matching delivery mode.
+            applyServerUrlToFields(settings.server_url || "");
             appriseFields.events.print_started.prop("checked", Boolean(events.print_started));
             appriseFields.events.print_finished.prop("checked", Boolean(events.print_finished));
             appriseFields.events.print_failed.prop("checked", Boolean(events.print_failed));
@@ -1849,43 +1960,17 @@ $(function () {
             }
         });
 
-        appriseFields.smtp.build.on("click", function () {
-            const host = appriseFields.smtp.host.val().trim();
-            if (!host) {
-                flash_message("SMTP host is required", "warning");
-                appriseFields.smtp.host.trigger("focus");
-                return;
-            }
-            const scheme = "mailto";
-            const tlsMode = appriseFields.smtp.security.val() || "starttls";
-            const user = appriseFields.smtp.user.val().trim();
-            const pass = appriseFields.smtp.password.val();
-            const port = parseInt(appriseFields.smtp.port.val(), 10);
-            const params = new URLSearchParams();
-            const from = appriseFields.smtp.from.val().trim();
-            const to = appriseFields.smtp.to.val().trim();
-            params.set("tls", tlsMode);
-            if (from) params.set("from", from);
-            if (to) params.set("to", to);
-            let auth = "";
-            if (user) {
-                auth = encodeURIComponent(user);
-                if (pass) auth += `:${encodeURIComponent(pass)}`;
-                auth += "@";
-            }
-            let built = `${scheme}://${auth}${host}`;
-            if (Number.isFinite(port) && port > 0) {
-                built += `:${port}`;
-            }
-            const query = params.toString();
-            if (query) {
-                built += `/?${query}`;
-            }
-            appriseFields.serverUrl.val(built);
-            appriseFields.enabled.prop("checked", true);
-            appriseFields.key.val("");
-            flash_message("SMTP notification URL populated", "success", 3000);
+        // Switching delivery method reveals the matching panel; editing any
+        // connection field refreshes the effective-URL preview.
+        appriseFields.mode.on("change", function () {
+            showAppriseMode(getAppriseMode());
+            updateEffectiveUrl();
         });
+        appriseForm.on("input change",
+            "#apprise-webhook-url, #apprise-server-url, " +
+            "#apprise-smtp-host, #apprise-smtp-port, #apprise-smtp-user, " +
+            "#apprise-smtp-password, #apprise-smtp-from, #apprise-smtp-to, #apprise-smtp-security",
+            updateEffectiveUrl);
 
         loadAppriseSettings();
     }
