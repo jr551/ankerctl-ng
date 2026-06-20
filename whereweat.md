@@ -339,3 +339,42 @@ returns to idle, so ankerctl's state stays `printing` — uploads still work fin
 - **Rewind crossfade / gcode viewer canvas** — browser-visual; open the Home rewind
   scrubber and a history row's "View" button to eyeball. Endpoint + parser already
   verified against the real 8.2 MB print file.
+
+## Print-completion fix — confirmed live (2026-06-20)
+The M5C stops at 100% at the end of a model and never reports idle, so ankerctl
+stayed "printing" forever and `RecordFinish` was never called (entries left
+"started" → "interrupted" by the next print). Fixed in `mqttqueue.go`:
+`handlePrintSchedule` now treats progress==100 (while printing) as completion —
+records the finish, forces idle, emits a `print_state` idle event; a
+`finishedAtFull` latch ignores the printer's continued "printing" reports until a
+new print resets progress. Commit `8eec09f` (+2 unit tests).
+
+**Verified on real hardware:** deployed to NAS, printed a tiny 10mm test cube
+start→finish. The M5C held at 100%; the fix logged `print finished (progress
+reached 100%)`, recorded history entry `finished` (dur=149s, prog=100), and
+returned state to idle. Deploying also unstuck the previously-jammed Bean print.
+
+Minor known quirk (pre-existing, not from this fix): the deferred-history-start
+logic can create two rows for one print (one `interrupted` prog=0 + one
+`finished`) when the printer re-sends the filename across the pre_print→printing
+transition. Cosmetic; the `finished` row is correct. Worth a follow-up.
+
+## Polyslice (STL→slice→print) tab — feasibility verdict
+Asked: add https://github.com/jgphilpott/polyslice as a tab for in-browser STL
+slicing + print. **Feasible and architecturally clean.** Polyslice is a mature
+MIT-licensed JS slicer that runs in the browser (ESM/IIFE, no native/WASM deps),
+parses STL/OBJ/3MF itself, and has infill/walls/supports/adhesion + printer
+profiles. It's built on three.js.
+
+Why it fits: the print path already exists — slice client-side → POST the gcode
+to the existing `/api/files/local` (print=true/false). NO backend change needed;
+the new gcode toolpath viewer can preview the slice. Work is front-end: vendor
+three.js + polyslice (CSP requires self-hosting, no CDN), a "Slice" tab (STL
+upload + three.js preview + settings + slice + send-to-printer).
+
+Risks before trusting it: (a) bundle size — three.js is large, lazy-load the tab;
+(b) in-browser slicing of big models is slow/memory-heavy — use a Web Worker;
+(c) **slice-output correctness/safety on the M5C** — must confirm a Marlin-style
+M5C profile (220×220 bed, temps, start/end gcode) and validate real output on the
+printer (like the cube test) before trusting an auto-sliced print. Estimate: a
+few focused hours + hardware validation.
