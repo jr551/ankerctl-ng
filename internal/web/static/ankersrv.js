@@ -2407,6 +2407,220 @@ $(function () {
     }
 
     /**
+     * Camera Settings
+     *
+     * Talks to GET/POST /api/settings/camera. The form offers friendly presets
+     * (Frigate, go2rtc, OctoPrint, MJPEG, Reolink, RTSP) plus an Advanced/Custom
+     * mode. The preset fields are resolved to a concrete stream_url/snapshot_url
+     * client-side (deriveCameraUrls) and sent alongside the chosen kind + raw
+     * fields, so the server can re-derive if needed. This mirrors the Go
+     * model.DeriveExternalCameraURLs function — keep the two in sync.
+     */
+    const cameraForm = $("#camera-form");
+    if (cameraForm.length) {
+        const camKindHelp = {
+            mjpeg: "A single MJPEG stream URL that a browser <img> can display directly.",
+            octoprint: "Just the base URL of your OctoPrint / mjpg-streamer host.",
+            frigate: "Frigate base URL and the camera name as defined in your Frigate config.",
+            go2rtc: "go2rtc / MediaMTX base URL and the stream name. Serves a browser-friendly MJPEG feed.",
+            reolink: "Reolink host plus credentials. Uses the camera's FLV stream and snapshot CGI.",
+            rtsp: "Raw RTSP — usable for snapshots only. For live view, restream via go2rtc/MediaMTX.",
+            custom: "Enter the stream and snapshot URLs by hand.",
+        };
+
+        const trimSlash = (s) => (s || "").trim().replace(/\/+$/, "");
+
+        // Mirror of model.DeriveExternalCameraURLs (internal/model/defaults.go).
+        function deriveCameraUrls(kind, f) {
+            switch (kind) {
+                case "mjpeg":
+                    return { stream: (f.stream_url || "").trim(), snapshot: "" };
+                case "rtsp":
+                    return { stream: (f.stream_url || "").trim(), snapshot: "" };
+                case "octoprint": {
+                    const base = trimSlash(f.base_url);
+                    if (!base) return { stream: "", snapshot: "" };
+                    return {
+                        stream: base + "/webcam/?action=stream",
+                        snapshot: base + "/webcam/?action=snapshot",
+                    };
+                }
+                case "frigate": {
+                    const base = trimSlash(f.base_url);
+                    const cam = (f.camera || "").trim();
+                    if (!base || !cam) return { stream: "", snapshot: "" };
+                    return { stream: base + "/api/" + cam, snapshot: base + "/api/" + cam + "/latest.jpg" };
+                }
+                case "go2rtc": {
+                    const base = trimSlash(f.base_url);
+                    const stream = (f.stream || "").trim();
+                    if (!base || !stream) return { stream: "", snapshot: "" };
+                    return {
+                        stream: base + "/api/stream.mjpeg?src=" + stream,
+                        snapshot: base + "/api/frame.jpeg?src=" + stream,
+                    };
+                }
+                case "reolink": {
+                    let host = trimSlash(f.host);
+                    if (!host) return { stream: "", snapshot: "" };
+                    if (!host.includes("://")) host = "http://" + host;
+                    const channel = (f.channel || "").trim() || "0";
+                    const user = (f.user || "").trim();
+                    const pass = (f.password || "");
+                    const cred = user ? "&user=" + user + "&password=" + pass : "";
+                    return {
+                        stream: host + "/flv?port=1935&app=bcs&stream=channel" + channel + "_main.bcs" + cred,
+                        snapshot: host + "/cgi-bin/api.cgi?cmd=Snap&channel=" + channel + "&rs=ankerctl" + cred,
+                    };
+                }
+                default: // custom
+                    return { stream: "", snapshot: "" };
+            }
+        }
+
+        // Collect the raw per-preset fields from the visible inputs.
+        function collectCameraFields(kind) {
+            switch (kind) {
+                case "mjpeg": return { stream_url: $("#camera-mjpeg-stream").val() };
+                case "rtsp": return { stream_url: $("#camera-rtsp-stream").val() };
+                case "octoprint": return { base_url: $("#camera-octoprint-base").val() };
+                case "frigate": return { base_url: $("#camera-frigate-base").val(), camera: $("#camera-frigate-camera").val() };
+                case "go2rtc": return { base_url: $("#camera-go2rtc-base").val(), stream: $("#camera-go2rtc-stream").val() };
+                case "reolink": return {
+                    host: $("#camera-reolink-host").val(),
+                    user: $("#camera-reolink-user").val(),
+                    password: $("#camera-reolink-password").val(),
+                    channel: $("#camera-reolink-channel").val(),
+                };
+                default: return {}; // custom uses direct URL fields, not preset fields
+            }
+        }
+
+        function activeKind() {
+            return $("#camera-source").val() === "external" ? $("#camera-kind").val() : "printer";
+        }
+
+        // Show/hide external block + the active preset's field block, and refresh
+        // the resolved-URL preview.
+        function refreshCameraUi() {
+            const isExternal = $("#camera-source").val() === "external";
+            $("#camera-external-wrap").toggleClass("d-none", !isExternal);
+            if (!isExternal) return;
+
+            const kind = $("#camera-kind").val();
+            $("#camera-kind-help").text(camKindHelp[kind] || "");
+            $(".camera-preset-fields").each(function () {
+                $(this).toggleClass("d-none", $(this).data("kind") !== kind);
+            });
+
+            let stream = "", snapshot = "";
+            if (kind === "custom") {
+                stream = ($("#camera-custom-stream").val() || "").trim();
+                snapshot = ($("#camera-custom-snapshot").val() || "").trim();
+            } else {
+                const d = deriveCameraUrls(kind, collectCameraFields(kind));
+                stream = d.stream;
+                snapshot = d.snapshot;
+            }
+            $("#camera-resolved-stream").text(stream || "—");
+            $("#camera-resolved-snapshot").text(snapshot || "—");
+        }
+
+        // Populate the form from a resolved camera settings object.
+        function applyCameraSettings(cam) {
+            const src = cam.source || "printer";
+            $("#camera-source").val(src === "external" ? "external" : "printer");
+            const ext = cam.external || {};
+            $("#camera-name").val(ext.name || "");
+            $("#camera-refresh").val(ext.refresh_sec || 3);
+
+            const kind = ext.kind || (ext.stream_url || ext.snapshot_url ? "custom" : "mjpeg");
+            $("#camera-kind").val(kind);
+
+            const f = ext.fields || {};
+            $("#camera-mjpeg-stream").val(f.stream_url || (kind === "mjpeg" ? ext.stream_url : "") || "");
+            $("#camera-rtsp-stream").val(f.stream_url || (kind === "rtsp" ? ext.stream_url : "") || "");
+            $("#camera-octoprint-base").val(f.base_url || "");
+            $("#camera-frigate-base").val(f.base_url || "");
+            $("#camera-frigate-camera").val(f.camera || "");
+            $("#camera-go2rtc-base").val(f.base_url || "");
+            $("#camera-go2rtc-stream").val(f.stream || "");
+            $("#camera-reolink-host").val(f.host || "");
+            $("#camera-reolink-user").val(f.user || "");
+            $("#camera-reolink-password").val(f.password || "");
+            $("#camera-reolink-channel").val(f.channel || "");
+            $("#camera-custom-stream").val(kind === "custom" ? (ext.stream_url || "") : "");
+            $("#camera-custom-snapshot").val(kind === "custom" ? (ext.snapshot_url || "") : "");
+
+            $("#camera-detail").text(cam.detail || "");
+            refreshCameraUi();
+        }
+
+        const loadCameraSettings = async () => {
+            try {
+                const resp = await fetch("/api/settings/camera");
+                if (resp.ok) {
+                    const data = await resp.json();
+                    applyCameraSettings(data.camera || {});
+                }
+            } catch (err) {
+                console.error("Failed to load camera settings:", err);
+            }
+        };
+
+        // Live preview + show/hide on any change.
+        cameraForm.on("change input", "select, input", refreshCameraUi);
+
+        $("#camera-save").on("click", async function () {
+            const btn = $(this);
+            btn.prop("disabled", true);
+
+            const source = $("#camera-source").val() === "external" ? "external" : "printer";
+            const external = {
+                name: ($("#camera-name").val() || "").trim(),
+                refresh_sec: parseInt($("#camera-refresh").val(), 10) || 3,
+            };
+
+            if (source === "external") {
+                const kind = $("#camera-kind").val();
+                external.kind = kind;
+                if (kind === "custom") {
+                    external.stream_url = ($("#camera-custom-stream").val() || "").trim();
+                    external.snapshot_url = ($("#camera-custom-snapshot").val() || "").trim();
+                    external.fields = {};
+                } else {
+                    const fields = collectCameraFields(kind);
+                    external.fields = fields;
+                    const d = deriveCameraUrls(kind, fields);
+                    external.stream_url = d.stream;
+                    external.snapshot_url = d.snapshot;
+                }
+            }
+
+            try {
+                const resp = await fetch("/api/settings/camera", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ source: source, external: external }),
+                });
+                if (resp.ok) {
+                    flash_message("Camera settings saved", "success");
+                    loadCameraSettings();
+                } else {
+                    const data = await resp.json().catch(() => ({}));
+                    flash_message(`Failed to save: ${data.error || resp.statusText}`, "danger");
+                }
+            } catch (err) {
+                flash_message(`Error: ${err.message}`, "danger");
+            } finally {
+                btn.prop("disabled", false);
+            }
+        });
+
+        loadCameraSettings();
+    }
+
+    /**
      * Appearance Settings
      */
     const appearanceForm = $("#appearance-form");

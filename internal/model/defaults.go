@@ -138,12 +138,144 @@ const (
 	CameraSourceExternal = "external"
 )
 
+// Camera preset kinds. These record which "easy setup" preset the user picked
+// for an external camera, so the UI can re-populate the friendly fields. The
+// preset always resolves to a concrete StreamURL/SnapshotURL (derived by
+// DeriveExternalCameraURLs) so the backend stays preset-agnostic.
+//
+// CameraKindCustom is the default/backward-compatible value: the user supplies
+// the stream/snapshot URLs directly (this is the original "external" behaviour).
+const (
+	CameraKindCustom    = "custom"    // raw stream/snapshot URLs (advanced)
+	CameraKindMJPEG     = "mjpeg"     // a single MJPEG stream URL
+	CameraKindOctoPrint = "octoprint" // mjpg-streamer / OctoPrint webcam base URL
+	CameraKindFrigate   = "frigate"   // Frigate NVR base URL + camera name
+	CameraKindGo2RTC    = "go2rtc"    // go2rtc / MediaMTX base URL + stream name
+	CameraKindReolink   = "reolink"   // Reolink host + credentials + channel
+	CameraKindRTSP      = "rtsp"      // raw RTSP (needs a restreamer for browsers)
+)
+
+// CameraKinds lists every valid preset kind. Used for validation / round-trip.
+var CameraKinds = []string{
+	CameraKindCustom,
+	CameraKindMJPEG,
+	CameraKindOctoPrint,
+	CameraKindFrigate,
+	CameraKindGo2RTC,
+	CameraKindReolink,
+	CameraKindRTSP,
+}
+
 // ExternalCameraSettings holds the external camera configuration.
+//
+// Kind records which UI preset produced these settings (one of the CameraKind*
+// constants). Fields holds the raw per-preset inputs (e.g. {"base_url":...,
+// "camera":...}) so the UI can re-render the friendly form. StreamURL and
+// SnapshotURL are the resolved URLs the backend actually dials; for presets
+// they are derived from Kind+Fields (see DeriveExternalCameraURLs) and for the
+// custom/legacy kind they are entered directly. Kind and Fields are optional
+// and omitted from JSON when empty, so existing config.json files (which only
+// have name/stream_url/snapshot_url/refresh_sec) load unchanged.
 type ExternalCameraSettings struct {
-	Name        string `json:"name"`
-	StreamURL   string `json:"stream_url"`
-	SnapshotURL string `json:"snapshot_url"`
-	RefreshSec  int    `json:"refresh_sec"`
+	Name        string            `json:"name"`
+	StreamURL   string            `json:"stream_url"`
+	SnapshotURL string            `json:"snapshot_url"`
+	RefreshSec  int               `json:"refresh_sec"`
+	Kind        string            `json:"kind,omitempty"`
+	Fields      map[string]string `json:"fields,omitempty"`
+}
+
+// NormalizeCameraKind returns a valid camera kind, defaulting to
+// CameraKindCustom for empty/unknown values (backward compatible: old configs
+// have no "kind" and behave as custom raw-URL entries).
+func NormalizeCameraKind(kind string) string {
+	k := strings.ToLower(strings.TrimSpace(kind))
+	for _, valid := range CameraKinds {
+		if k == valid {
+			return valid
+		}
+	}
+	return CameraKindCustom
+}
+
+// DeriveExternalCameraURLs computes the resolved stream and snapshot URLs for a
+// preset kind given its raw fields. It is the single source of truth for URL
+// derivation and is mirrored client-side in ankersrv.js (deriveCameraUrls) so
+// the form can preview/auto-fill before saving; the server re-derives on save
+// for any non-custom kind so a hand-edited config still resolves correctly.
+//
+// For CameraKindCustom (and unknown kinds) it returns empty strings, signalling
+// "use the StreamURL/SnapshotURL already on the struct verbatim".
+//
+// Field keys per kind:
+//   - mjpeg:     stream_url
+//   - octoprint: base_url            -> {base}/webcam/?action=stream + ?action=snapshot
+//   - frigate:   base_url, camera    -> {base}/api/{cam} (mjpeg) + {base}/api/{cam}/latest.jpg
+//   - go2rtc:    base_url, stream    -> {base}/api/stream.mjpeg?src={s} + frame.jpeg
+//   - reolink:   host, user, password[, channel] -> flv stream + snap cgi
+//   - rtsp:      stream_url          -> passthrough (RTSP, needs restreamer)
+func DeriveExternalCameraURLs(kind string, fields map[string]string) (streamURL, snapshotURL string) {
+	get := func(k string) string { return strings.TrimSpace(fields[k]) }
+	trimSlash := func(s string) string { return strings.TrimRight(strings.TrimSpace(s), "/") }
+
+	switch NormalizeCameraKind(kind) {
+	case CameraKindMJPEG:
+		return get("stream_url"), ""
+
+	case CameraKindRTSP:
+		// Browsers cannot play RTSP directly; the UI warns the user to point at
+		// a restreamer. We still store/derive it so snapshots via ffmpeg work.
+		return get("stream_url"), ""
+
+	case CameraKindOctoPrint:
+		base := trimSlash(get("base_url"))
+		if base == "" {
+			return "", ""
+		}
+		return base + "/webcam/?action=stream", base + "/webcam/?action=snapshot"
+
+	case CameraKindFrigate:
+		base := trimSlash(get("base_url"))
+		cam := get("camera")
+		if base == "" || cam == "" {
+			return "", ""
+		}
+		return base + "/api/" + cam, base + "/api/" + cam + "/latest.jpg"
+
+	case CameraKindGo2RTC:
+		base := trimSlash(get("base_url"))
+		stream := get("stream")
+		if base == "" || stream == "" {
+			return "", ""
+		}
+		return base + "/api/stream.mjpeg?src=" + stream, base + "/api/frame.jpeg?src=" + stream
+
+	case CameraKindReolink:
+		host := trimSlash(get("host"))
+		if host == "" {
+			return "", ""
+		}
+		// Default to http:// when the user gives a bare host.
+		if !strings.Contains(host, "://") {
+			host = "http://" + host
+		}
+		channel := get("channel")
+		if channel == "" {
+			channel = "0"
+		}
+		user := get("user")
+		pass := get("password")
+		cred := ""
+		if user != "" {
+			cred = "&user=" + user + "&password=" + pass
+		}
+		streamURL = host + "/flv?port=1935&app=bcs&stream=channel" + channel + "_main.bcs" + cred
+		snapshotURL = host + "/cgi-bin/api.cgi?cmd=Snap&channel=" + channel + "&rs=ankerctl" + cred
+		return streamURL, snapshotURL
+
+	default: // CameraKindCustom
+		return "", ""
+	}
 }
 
 // PrinterCameraEntry holds per-printer camera source settings.

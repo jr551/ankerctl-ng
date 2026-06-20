@@ -189,3 +189,65 @@ func TestSettingsCameraUpdate_ValidExternal(t *testing.T) {
 		t.Errorf("refresh_sec = %d, want 5", cam.External.RefreshSec)
 	}
 }
+
+func TestSettingsCameraUpdate_FrigatePresetDerivesURLs(t *testing.T) {
+	h := newTestHandlerWithConfig(t, &model.Config{
+		Printers: []model.Printer{{SN: "SN001", Model: "M5", Name: "Test"}},
+		Camera:   model.DefaultCameraConfig(),
+	})
+
+	// Client sends only the preset kind + raw fields; server derives the URLs.
+	body := `{"source":"external","external":{"kind":"frigate","fields":{"base_url":"http://frigate.local:5000","camera":"front"},"refresh_sec":4}}`
+	r := httptest.NewRequest(http.MethodPost, "/api/settings/camera", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	h.SettingsCameraUpdate(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]json.RawMessage
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	var cam model.ResolvedCameraSettings
+	if err := json.Unmarshal(resp["camera"], &cam); err != nil {
+		t.Fatal(err)
+	}
+	if cam.External.Kind != model.CameraKindFrigate {
+		t.Errorf("kind = %q, want %q", cam.External.Kind, model.CameraKindFrigate)
+	}
+	if cam.External.StreamURL != "http://frigate.local:5000/api/front" {
+		t.Errorf("derived stream_url = %q", cam.External.StreamURL)
+	}
+	if cam.External.SnapshotURL != "http://frigate.local:5000/api/front/latest.jpg" {
+		t.Errorf("derived snapshot_url = %q", cam.External.SnapshotURL)
+	}
+}
+
+func TestSettingsCameraUpdate_CustomKeepsRawURLs(t *testing.T) {
+	h := newTestHandlerWithConfig(t, &model.Config{
+		Printers: []model.Printer{{SN: "SN001", Model: "M5", Name: "Test"}},
+		Camera:   model.DefaultCameraConfig(),
+	})
+
+	body := `{"source":"external","external":{"kind":"custom","stream_url":"http://cam.local/s","snapshot_url":"http://cam.local/snap.jpg"}}`
+	r := httptest.NewRequest(http.MethodPost, "/api/settings/camera", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	h.SettingsCameraUpdate(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]json.RawMessage
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	var cam model.ResolvedCameraSettings
+	if err := json.Unmarshal(resp["camera"], &cam); err != nil {
+		t.Fatal(err)
+	}
+	if cam.External.StreamURL != "http://cam.local/s" {
+		t.Errorf("custom stream_url overwritten: %q", cam.External.StreamURL)
+	}
+	if cam.External.SnapshotURL != "http://cam.local/snap.jpg" {
+		t.Errorf("custom snapshot_url overwritten: %q", cam.External.SnapshotURL)
+	}
+}
