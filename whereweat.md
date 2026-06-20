@@ -239,10 +239,28 @@ fields and **round-trips properly**.
   `firmware.factory.bin` and `callback?code=…` (contains a live OAuth auth code —
   **delete this one manually**). Publish plan: GPLv3 obligations preserved.
 
-## In-flight feature branches (worktrees — review & merge before publishing)
-- `worktree-agent-afc4f4f603317b714` (commit `2bee962`) — **Live preview rewind**:
-  built from scratch (ring buffer sampling the live `<video>`), scrubber with
-  keyboard support, LIVE/REWIND states, crossfade + vignette effects,
-  prefers-reduced-motion. Needs live-camera testing.
-- Camera-systems expansion (presets for Frigate/MJPEG/OctoPrint/etc.) — separate
-  worktree, finishing as of this writing; merge + re-test when done.
+## Parallel feature agents — outcome (both hit a stale-base problem)
+Two agents ran in isolated worktrees branched from an OLD commit (`4a5841e`) that
+predated this branch's Camera & AI pane, HA camera proxy, and existing rewind
+feature. Both built things that **collided** with newer work on this branch.
+
+- **Camera presets** (`worktree-agent-afbed6b1...`, `49b8971`) — MERGED PARTIALLY
+  (commit `2003644`). Kept the backward-compatible model + backend: `Kind`/`Fields`
+  on `ExternalCameraSettings`, `CameraKind*` presets (MJPEG/OctoPrint/Frigate/
+  go2rtc/Reolink/RTSP), `DeriveExternalCameraURLs`, settings-handler merge, tests,
+  API docs. **Dropped** its new "Camera" setup pane + JS — it duplicated the
+  existing `#camera-form` (Camera & AI pane), causing duplicate element IDs. The
+  presets are dormant until the picker is grafted into the real form (TODO below).
+- **Live preview rewind** (`worktree-agent-afc4f4f...`, `2bee962`) — NOT MERGED
+  (merge aborted). This branch already has a working rewind (`cameraFrameBuffer` +
+  `rewindControls/Slider/Label`); the agent built a parallel from-scratch version
+  that would break it. Branch retained for cherry-picking effects ideas (crossfade,
+  vignette, LIVE pulse, reduced-motion) into the EXISTING rewind as a follow-up.
+
+## TODO from this session
+- [ ] Graft the camera preset picker into the existing Camera & AI `#camera-form`
+      (backend already supports `kind`/`fields`).
+- [ ] Optionally enhance the existing rewind with effects (don't re-merge the agent
+      branch — port the CSS ideas onto the working markup).
+- [ ] Publish-as-fork steps (see fork-prep plan); delete the stray `callback?code=…`
+      file (live OAuth code) before any publish.
