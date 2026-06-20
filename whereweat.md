@@ -442,3 +442,24 @@ printer-model picker (M5C/M5) deployed (latest-571c6fe).
 - Filament-colour CV (experimental research)
 - Project rename (awaiting user decision: branding/docs vs Go module path)
 - Cleanup: duplicate-history dedupe + double first_layer (above)
+
+## Post-slice AI check DONE (2026-06-20)
+After slicing, the Slice tab runs a fast deterministic check (off-bed / empty —
+no gcode sent) AND an efficient AI-vision check: it POSTs the rendered preview
+IMAGE to POST /api/slice/check → PrintMonitorService.AnalyzeSliceImage reuses the
+configured vision model to flag only SERIOUS issues. Any issue → warning +
+"Continue anyway" gate stating what it is; clean slices print silently; no AI
+configured → skipped. Browser-verified on the NAS: a normal cube slices, the AI
+check runs and does not false-block, print enables.
+
+## Remaining queue (after a very large multi-feature session)
+- **OpenSCAD paste → slice** (Phase 2): vendor openscad-wasm (official GitHub
+  release, ~7.4MB .wasm + glue + a worker; GPL-2.0 notice; patch openscad.js to
+  drop its data:-URL import). Wire the "Render OpenSCAD" button → worker compiles
+  SCAD→STL → existing slice tail. Single-threaded build = NO COOP/COEP needed.
+- **Filament-colour detection** (experimental): best via the vision model on a
+  camera frame (robust to the view changing) rather than naive pixel sampling.
+- **Project rename**: branding/docs (low-risk) vs Go module path (invasive) —
+  needs the user's decision.
+- **Cleanup**: dedupe duplicate history rows per print; stop the double
+  first_layer event (both noted earlier; pre-existing-ish, cosmetic).
