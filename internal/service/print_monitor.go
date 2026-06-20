@@ -510,6 +510,64 @@ func (s *PrintMonitorService) AnalyzeSliceImage(ctx context.Context, imageDataUR
 	return out, true, nil
 }
 
+// DetectFilamentColor asks the vision model for the dominant filament colour in
+// a camera frame and returns it as a "#RRGGBB" hex string. Returns ok=false when
+// no AI provider is configured.
+func (s *PrintMonitorService) DetectFilamentColor(ctx context.Context, imageDataURI string) (string, bool, error) {
+	s.mu.Lock()
+	cfg := s.cfg
+	s.mu.Unlock()
+	if strings.TrimSpace(cfg.OpenRouterKey) == "" || strings.TrimSpace(cfg.Model) == "" {
+		return "", false, nil
+	}
+	const sys = "Look at this 3D printer camera image. Identify the dominant colour of the filament being printed (the plastic of the model / the extruded material). Reply with strict JSON only: {\"hex\": \"#RRGGBB\"}. Use a best-effort estimate of the main colour; if you truly cannot tell, use an empty string for hex."
+	payload := map[string]any{
+		"model": cfg.Model,
+		"messages": []map[string]any{
+			{"role": "system", "content": sys},
+			{"role": "user", "content": []map[string]any{
+				{"type": "image_url", "image_url": map[string]string{"url": imageDataURI}},
+			}},
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return "", false, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, printMonitorChatCompletionsURL(cfg.OpenRouterURL), bytes.NewReader(body))
+	if err != nil {
+		return "", false, err
+	}
+	req.Header.Set("Authorization", "Bearer "+cfg.OpenRouterKey)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return "", false, err
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", false, fmt.Errorf("AI provider returned HTTP %d", resp.StatusCode)
+	}
+	var apiResp struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(data, &apiResp); err != nil || len(apiResp.Choices) == 0 {
+		return "", false, fmt.Errorf("AI provider returned no usable response")
+	}
+	var out struct {
+		Hex string `json:"hex"`
+	}
+	if err := json.Unmarshal([]byte(stripJSONCodeFence(apiResp.Choices[0].Message.Content)), &out); err != nil {
+		return "", false, fmt.Errorf("AI provider returned non-JSON content")
+	}
+	return strings.TrimSpace(out.Hex), true, nil
+}
+
 func stripJSONCodeFence(content string) string {
 	content = strings.TrimSpace(content)
 	if !strings.HasPrefix(content, "```") {

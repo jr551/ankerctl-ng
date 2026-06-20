@@ -5600,6 +5600,51 @@ $(function () {
         filamentSearch.addEventListener("input", function () { _renderFilaments(); });
     }
 
+    // Detect filament colour from the camera (vision model) and suggest the
+    // closest profile in the library.
+    const hexRGB = (h) => { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+    const filamentClosestColor = (hex) => {
+        const [r, g, b] = hexRGB(hex);
+        let best = null, bestD = Infinity;
+        (_filamentAllProfiles || []).forEach((p) => {
+            const c = (p.color || "").trim();
+            if (!/^#?[0-9a-fA-F]{6}$/.test(c)) return;
+            const [pr, pg, pb] = hexRGB(c[0] === "#" ? c : "#" + c);
+            const d = (r - pr) ** 2 + (g - pg) ** 2 + (b - pb) ** 2;
+            if (d < bestD) { bestD = d; best = p; }
+        });
+        return best;
+    };
+    const filamentDetectBtn = document.getElementById("filament-detect-color");
+    if (filamentDetectBtn) {
+        filamentDetectBtn.addEventListener("click", async function () {
+            const result = document.getElementById("filament-detect-result");
+            filamentDetectBtn.disabled = true;
+            result.textContent = "Capturing camera…";
+            try {
+                const frame = await fetch("/api/camera/frame");
+                if (!frame.ok) throw new Error("camera frame unavailable");
+                const blob = await frame.blob();
+                const dataUri = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(blob); });
+                result.textContent = "Detecting colour…";
+                const resp = await fetch("/api/filament/detect-color", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: dataUri }) });
+                const d = await resp.json().catch(() => ({}));
+                if (d.skipped) { result.textContent = "AI not configured (set it up under Camera & AI)."; return; }
+                let hex = (d.hex || "").trim();
+                if (!/^#?[0-9a-fA-F]{6}$/.test(hex)) { result.textContent = "Could not determine a colour from the camera."; return; }
+                if (hex[0] !== "#") hex = "#" + hex;
+                document.getElementById("filament-color").value = hex;
+                const match = filamentClosestColor(hex);
+                result.innerHTML = `Detected <span style="display:inline-block;width:0.8em;height:0.8em;vertical-align:-1px;border:1px solid #888;background:${escapeHtml(hex)}"></span> ${escapeHtml(hex)}` +
+                    (match ? ` · closest in library: <strong>${escapeHtml(match.name)}</strong>` : "");
+            } catch (err) {
+                result.textContent = "Detect failed: " + (err && err.message ? err.message : err);
+            } finally {
+                filamentDetectBtn.disabled = false;
+            }
+        });
+    }
+
     // Filament service: profile select sync
     var filamentServiceProfile = document.getElementById("filament-service-profile");
     if (filamentServiceProfile) {

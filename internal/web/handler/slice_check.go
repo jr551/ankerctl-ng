@@ -41,3 +41,36 @@ func (h *Handler) SliceCheck(w http.ResponseWriter, r *http.Request) {
 	}
 	h.writeJSON(w, http.StatusOK, map[string]any{"serious": res.Serious, "issue": res.Issue})
 }
+
+// FilamentDetectColor detects the dominant filament colour from a camera frame
+// via the vision model, so the Filaments form can suggest a matching library
+// colour.
+//
+// POST /api/filament/detect-color  body: {"image":"data:image/...;base64,..."}
+// Returns {"hex":"#RRGGBB"} or {"skipped":true}.
+func (h *Handler) FilamentDetectColor(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Image string `json:"image"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 12<<20)).Decode(&body); err != nil || body.Image == "" {
+		h.writeError(w, http.StatusBadRequest, "missing image")
+		return
+	}
+	pm, ok := h.printMonitor()
+	if !ok {
+		h.writeJSON(w, http.StatusOK, map[string]any{"skipped": true})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+	defer cancel()
+	hex, ran, err := pm.DetectFilamentColor(ctx, body.Image)
+	if err != nil || !ran {
+		resp := map[string]any{"skipped": true}
+		if err != nil {
+			resp["error"] = err.Error()
+		}
+		h.writeJSON(w, http.StatusOK, resp)
+		return
+	}
+	h.writeJSON(w, http.StatusOK, map[string]any{"hex": hex})
+}
