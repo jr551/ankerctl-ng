@@ -18,6 +18,8 @@ if (fileInput) {
         layerLabel: $("slice-layer-label"),
         travel: $("slice-travel"),
         print: $("slice-print"),
+        continueBtn: $("slice-continue"),
+        warning: $("slice-warning"),
         download: $("slice-download"),
     };
 
@@ -130,11 +132,26 @@ if (fileInput) {
         draw();
     };
 
+    // Fast, deterministic pre-print sanity check on the sliced result — no gcode
+    // is sent anywhere. Flags the serious issues that ruin a print (nothing
+    // extruded, or the toolpath runs off the bed). Returns a list of issues.
+    const sanityCheck = (bedW, bedL) => {
+        const issues = [];
+        const hasExtrusion = parsed.layers.some((l) => l.segs.some((s) => s[4]));
+        if (!hasExtrusion) issues.push("No extruded toolpath was produced — the model may be empty or not watertight.");
+        const b = parsed.bbox, tol = 0.5;
+        if (b.minX < -tol || b.minY < -tol || b.maxX > bedW + tol || b.maxY > bedL + tol) {
+            issues.push(`The toolpath extends beyond the ${bedW}×${bedL} mm bed (X ${b.minX.toFixed(0)}–${b.maxX.toFixed(0)}, Y ${b.minY.toFixed(0)}–${b.maxY.toFixed(0)} mm) — it would print off the plate.`);
+        }
+        return issues;
+    };
+
     const sliceMesh = async (mesh) => {
         const { Polyslice } = libs;
         const modelSel = $("slice-printer-model");
         const model = (modelSel && MODELS[modelSel.value]) || {};
-        const slicer = new Polyslice({ ...M5C, ...model });
+        const cfg = { ...M5C, ...model };
+        const slicer = new Polyslice(cfg);
         const t0 = performance.now();
         let g = slicer.slice(mesh);
         if (g && typeof g.then === "function") g = await g;
@@ -143,9 +160,22 @@ if (fileInput) {
         gcode = ANKER_PREAMBLE + g;
         const moves = (gcode.match(/^G1[ ]/gm) || []).length;
         showPreview();
-        els.print.disabled = false;
         els.download.disabled = false;
-        setStatus(`Sliced in ${dt} ms — ${parsed.layers.length} layers, ${moves} moves. Download & inspect before printing a new model.`, "ok");
+
+        // Pre-print sanity check: only block (warn + Continue anyway) on serious issues.
+        const issues = sanityCheck(cfg.buildPlateWidth, cfg.buildPlateLength);
+        if (issues.length) {
+            els.warning.innerHTML = "<strong>Possible problem:</strong> " + issues.map((i) => i.replace(/</g, "&lt;")).join(" ");
+            els.warning.classList.remove("d-none");
+            els.continueBtn.classList.remove("d-none");
+            els.print.disabled = true;
+            setStatus(`Sliced in ${dt} ms — ${parsed.layers.length} layers, ${moves} moves, but a check flagged an issue (see below).`, "error");
+        } else {
+            els.warning.classList.add("d-none");
+            els.continueBtn.classList.add("d-none");
+            els.print.disabled = false;
+            setStatus(`Sliced in ${dt} ms — ${parsed.layers.length} layers, ${moves} moves. Download & inspect before printing a new model.`, "ok");
+        }
     };
 
     els.run.addEventListener("click", async () => {
@@ -174,6 +204,13 @@ if (fileInput) {
     els.travel.addEventListener("change", draw);
 
     fileInput.addEventListener("change", () => { els.run.disabled = !(fileInput.files && fileInput.files[0]); });
+
+    els.continueBtn.addEventListener("click", () => {
+        els.warning.classList.add("d-none");
+        els.continueBtn.classList.add("d-none");
+        els.print.disabled = false;
+        setStatus("Override accepted — you can send to the printer. Inspect carefully.", "ok");
+    });
 
     els.download.addEventListener("click", () => {
         if (!gcode) return;
