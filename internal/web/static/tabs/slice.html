@@ -1,0 +1,192 @@
+<div class="tab-pane fade" id="slice" role="tabpanel" aria-labelledby="slice-tab">
+    <div class="container mb-4">
+        <div class="row g-3">
+            <div class="col-lg-10 offset-lg-1">
+                <div class="card">
+                    <div class="card-header fs-6">
+                        <i class="bi-box px-1"></i> Slice &amp; Build <span class="badge bg-secondary ms-1">beta</span>
+                    </div>
+                    <div class="card-body vstack gap-3">
+                        <div class="alert alert-warning py-2 px-3 mb-0 small">
+                            <i class="bi-exclamation-triangle px-1"></i> Slices in your browser. For a new model,
+                            <strong>Download &amp; inspect</strong> the gcode before trusting an auto-sliced print.
+                        </div>
+
+                        <!-- ── Model input ───────────────────────────────────── -->
+                        <div>
+                            <label class="form-label fw-semibold" for="slice-stl-file">
+                                <i class="bi-file-earmark-binary px-1"></i> STL file
+                            </label>
+                            <input type="file" class="form-control" id="slice-stl-file" accept=".stl" />
+                        </div>
+                        <details id="slice-scad-details">
+                            <summary class="text-muted small">Or build with OpenSCAD</summary>
+                            <div class="row g-2 mt-1">
+                                <div class="col-md-7">
+                                    <textarea class="form-control font-monospace" id="slice-scad" rows="8"
+                                        placeholder="// e.g.\ncube([20,20,10]);"></textarea>
+                                    <div class="d-flex gap-2 mt-2 align-items-center flex-wrap">
+                                        <button class="btn btn-outline-primary btn-sm" id="slice-scad-render"
+                                            type="button" disabled>Slice this</button>
+                                        <div class="form-check form-switch mb-0">
+                                            <input class="form-check-input" type="checkbox" role="switch"
+                                                id="slice-scad-live" checked />
+                                            <label class="form-check-label small" for="slice-scad-live">Live
+                                                preview</label>
+                                        </div>
+                                        <span class="form-text mb-0" id="slice-scad-note">Loads on first use
+                                            (~7&nbsp;MB).</span>
+                                    </div>
+                                    <div class="input-group input-group-sm mt-2">
+                                        <span class="input-group-text"><i class="bi-stars"></i></span>
+                                        <input type="text" class="form-control" id="scad-ai-prompt"
+                                            placeholder="Describe a change… e.g. add a 5mm hole in the centre" />
+                                        <button class="btn btn-outline-primary" id="scad-ai-go" type="button">AI
+                                            edit</button>
+                                        <button class="btn btn-outline-secondary" id="scad-ai-undo" type="button"
+                                            disabled title="Undo last AI edit"><i
+                                                class="bi-arrow-counterclockwise"></i></button>
+                                    </div>
+                                    <div class="d-flex gap-2 mt-1 align-items-center">
+                                        <label class="btn btn-outline-secondary btn-sm mb-0" for="scad-ai-images">
+                                            <i class="bi-image px-1"></i>Ref images</label>
+                                        <input type="file" id="scad-ai-images" accept="image/*" multiple
+                                            class="d-none" />
+                                        <span class="form-text mb-0" id="scad-ai-images-note"></span>
+                                    </div>
+                                </div>
+                                <div class="col-md-5">
+                                    <div class="position-relative scad-preview-stage">
+                                        <canvas id="scad-preview-canvas" class="w-100 rounded slice-bed-canvas"
+                                            style="aspect-ratio: 1 / 1;"></canvas>
+                                        <div class="scad-preview-loading d-none" id="scad-preview-loading">
+                                            <div class="spinner-border text-success" role="status"></div>
+                                            <div class="small mt-2 text-body-secondary">Rendering…</div>
+                                        </div>
+                                        <div class="form-text text-center"><i class="bi-arrows-move px-1"></i>drag to
+                                            rotate · scroll to zoom</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </details>
+
+                        <!-- ── Print settings ────────────────────────────────── -->
+                        <div class="row g-2 align-items-end">
+                            <div class="col-6 col-md-3">
+                                <label class="form-label small mb-1" for="slice-printer-model">Printer</label>
+                                <select class="form-select form-select-sm" id="slice-printer-model">
+                                    <option value="m5c" selected>M5C (220×220)</option>
+                                    <option value="m5">M5 (235×235)</option>
+                                </select>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <label class="form-label small mb-1" for="slice-layer-height">Layer height</label>
+                                <select class="form-select form-select-sm" id="slice-layer-height">
+                                    <option value="0.12">0.12 mm (fine)</option>
+                                    <option value="0.16">0.16 mm</option>
+                                    <option value="0.2" selected>0.20 mm</option>
+                                    <option value="0.28">0.28 mm (fast)</option>
+                                </select>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <label class="form-label small mb-1" for="slice-pattern">Infill pattern</label>
+                                <select class="form-select form-select-sm" id="slice-pattern">
+                                    <option value="grid" selected>Grid</option>
+                                    <option value="hexagons">Hexagons</option>
+                                    <option value="triangles">Triangles</option>
+                                </select>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <label class="form-label small mb-1" for="slice-adhesion">Bed adhesion</label>
+                                <select class="form-select form-select-sm" id="slice-adhesion">
+                                    <option value="skirt" selected>Skirt</option>
+                                    <option value="brim">Brim</option>
+                                    <option value="raft">Raft</option>
+                                    <option value="none">None</option>
+                                </select>
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <label class="form-label small mb-1" for="slice-infill">Infill:
+                                    <span id="slice-infill-label">20</span>%</label>
+                                <input type="range" class="form-range" id="slice-infill" min="0" max="100" step="5"
+                                    value="20" />
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <div class="form-check form-switch mt-3">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="slice-supports" />
+                                    <label class="form-check-label small" for="slice-supports">Supports</label>
+                                </div>
+                            </div>
+                            <div class="col-3 col-md-2">
+                                <label class="form-label small mb-1" for="slice-nozzle-temp">Nozzle °C</label>
+                                <input type="number" class="form-control form-control-sm" id="slice-nozzle-temp"
+                                    min="150" max="275" value="215" />
+                            </div>
+                            <div class="col-3 col-md-2">
+                                <label class="form-label small mb-1" for="slice-bed-temp">Bed °C</label>
+                                <input type="number" class="form-control form-control-sm" id="slice-bed-temp" min="0"
+                                    max="100" value="60" />
+                            </div>
+                        </div>
+
+                        <div class="d-flex flex-wrap gap-2 align-items-center">
+                            <button class="btn btn-primary" id="slice-run" type="button" disabled>
+                                <i class="bi-layers px-1"></i> Slice
+                            </button>
+                            <span class="form-text mb-0" id="slice-status"></span>
+                        </div>
+
+                        <!-- ── Bed preview (drag the model to reposition) ─────── -->
+                        <div class="slice-preview-wrap d-none" id="slice-preview-wrap">
+                            <canvas id="slice-canvas" width="700" height="700"
+                                class="w-100 rounded slice-bed-canvas"></canvas>
+                            <div class="d-flex align-items-center gap-3 mt-2 flex-wrap">
+                                <span class="small text-body-secondary"><i class="bi-arrows-move px-1"></i>Drag the
+                                    model to position it on the bed</span>
+                                <div class="ms-auto d-flex align-items-center gap-3">
+                                    <label class="form-label mb-0 small text-nowrap" for="slice-layer">Layer
+                                        <span id="slice-layer-label">–</span></label>
+                                    <input type="range" class="form-range" id="slice-layer" min="0" max="0" value="0"
+                                        disabled aria-label="Layer" style="width: 160px;" />
+                                    <div class="form-check form-switch mb-0">
+                                        <input class="form-check-input" type="checkbox" role="switch"
+                                            id="slice-travel" />
+                                        <label class="form-check-label small text-nowrap"
+                                            for="slice-travel">Travel</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="alert alert-danger py-2 px-3 mb-0 small d-none" id="slice-warning"></div>
+
+                        <div class="d-flex flex-wrap gap-2">
+                            <button class="btn btn-success" id="slice-print" type="button" disabled>
+                                <i class="bi-printer px-1"></i> Send to printer
+                            </button>
+                            <button class="btn btn-warning d-none" id="slice-continue" type="button">
+                                <i class="bi-exclamation-triangle px-1"></i> Continue anyway
+                            </button>
+                            <button class="btn btn-outline-secondary" id="slice-download" type="button" disabled>
+                                <i class="bi-download px-1"></i> Download .gcode
+                            </button>
+                        </div>
+
+                        <!-- ── Raw GCode upload (moved here from the old GCode tab) ── -->
+                        <details class="mt-1">
+                            <summary class="text-muted small">Upload a .gcode file directly</summary>
+                            <div class="input-group input-group-sm mt-2">
+                                <input type="file" class="form-control" id="slice-gcode-file"
+                                    accept=".gcode,.gco,.g" />
+                                <button class="btn btn-outline-primary" id="slice-gcode-send" type="button">
+                                    <i class="bi-upload px-1"></i> Upload &amp; Print
+                                </button>
+                            </div>
+                            <div class="form-text">Sends a ready-made .gcode straight to the printer.</div>
+                        </details>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

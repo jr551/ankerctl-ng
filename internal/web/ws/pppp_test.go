@@ -182,9 +182,8 @@ func TestPPPPState_RecoveryResetsFailCount(t *testing.T) {
 }
 
 func TestPPPPState_MQTTStaleness(t *testing.T) {
-	// Scenario 5: When MQTT messages stop arriving (>30s gap), the state
-	// machine should detect staleness and trigger probing. We test this
-	// by providing a mqttqueue service with a LastMessageTime in the past.
+	// When ppppservice is registered, the websocket must stay passive even if
+	// MQTT is stale. Active probes bind UDP 32108 and can race real uploads.
 	mgr := service.NewServiceManager()
 	pppp := newMockService("ppppservice")
 	pppp.state = service.StateRunning
@@ -209,15 +208,15 @@ func TestPPPPState_MQTTStaleness(t *testing.T) {
 	conn, cleanup := newWSServer(t, "/ws/pppp-state", h.PPPPState)
 	defer cleanup()
 
-	// The handler should detect MQTT staleness and trigger a probe.
+	// The handler should report passive state without opening a PPPP probe.
 	_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	_, _, _ = conn.ReadMessage() // consume initial message
 
-	// Wait for the poll loop to fire and trigger a probe due to staleness.
+	// Wait for the poll loop; no probe should run despite stale MQTT.
 	time.Sleep(2 * time.Second)
 
-	if !probed.Load() {
-		t.Fatal("expected probe to be triggered due to MQTT staleness")
+	if probed.Load() {
+		t.Fatal("expected no active probe while ppppservice is registered")
 	}
 }
 

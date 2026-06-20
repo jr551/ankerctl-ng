@@ -34,18 +34,20 @@ type PrinterSummary struct {
 
 // TemplateData holds the common variables for rendering the web UI.
 type TemplateData struct {
-	Printers            []model.Printer
-	PrinterList         []PrinterSummary // enriched list for the selector dropdown
-	ActivePrinterIndex  int
-	Printer             *model.Printer
-	PrinterIndexLocked  bool
-	VideoSupported      bool
-	UnsupportedDevice   bool // true when active printer is a non-3D-printer device
-	Configure           bool
-	DebugMode           bool
-	Flashes             []Flash
-	VideoProfiles       []VideoProfile
-	VideoProfileDefault string
+	Printers              []model.Printer
+	PrinterList           []PrinterSummary // enriched list for the selector dropdown
+	ActivePrinterIndex    int
+	Printer               *model.Printer
+	PrinterIndexLocked    bool
+	VideoSupported        bool
+	CameraEffectiveSource string
+	CameraRefreshSec      int
+	UnsupportedDevice     bool // true when active printer is a non-3D-printer device
+	Configure             bool
+	DebugMode             bool
+	Flashes               []Flash
+	VideoProfiles         []VideoProfile
+	VideoProfileDefault   string
 
 	// Request context (used in instructions tab)
 	RequestHost string
@@ -301,6 +303,24 @@ func (h *Handler) timelapse() (*service.TimelapseService, bool) {
 		return nil, false
 	}
 	q, ok := svc.(*service.TimelapseService)
+	return q, ok
+}
+
+func (h *Handler) printMonitor() (*service.PrintMonitorService, bool) {
+	svc, ok := h.serviceByName("printmonitor")
+	if !ok {
+		return nil, false
+	}
+	q, ok := svc.(*service.PrintMonitorService)
+	return q, ok
+}
+
+func (h *Handler) powerSaving() (*service.PowerSavingService, bool) {
+	svc, ok := h.serviceByName("powersaving")
+	if !ok {
+		return nil, false
+	}
+	q, ok := svc.(*service.PowerSavingService)
 	return q, ok
 }
 

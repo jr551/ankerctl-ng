@@ -39,8 +39,8 @@ var (
 
 func main() {
 	rootCmd := &cobra.Command{
-		Use:   "ankerctl",
-		Short: "AnkerMake M5 3D Printer Control CLI",
+		Use:   "ankerctl-ng",
+		Short: "Experimental AnkerMake printer control CLI",
 		CompletionOptions: cobra.CompletionOptions{
 			DisableDefaultCmd: true,
 		},
@@ -65,9 +65,17 @@ func main() {
 func defaultDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ".ankerctl"
+		return ".ankerctl-ng"
 	}
-	return filepath.Join(home, ".ankerctl")
+	newDir := filepath.Join(home, ".ankerctl-ng")
+	oldDir := filepath.Join(home, ".ankerctl")
+	if _, err := os.Stat(newDir); err == nil {
+		return newDir
+	}
+	if _, err := os.Stat(oldDir); err == nil {
+		return oldDir
+	}
+	return newDir
 }
 
 func newWebserverCmd() *cobra.Command {
@@ -147,6 +155,7 @@ func runWebserver() error {
 	// Background services monitor the printer specified by printerIdx.
 	// All services are skipped when the active device is unsupported.
 	pppp := service.NewPPPPServiceWithDB(cfgMgr, printerIdx, database)
+	pppp.WithPowerController(service.PrinterPowerControllerFromConfig(cfgMgr))
 	sm.Register(pppp)
 
 	video := service.NewVideoQueue(pppp, pppp)
@@ -154,6 +163,18 @@ func runWebserver() error {
 
 	timelapse := service.NewTimelapseService(filepath.Join(configDir, "captures"), video)
 	sm.Register(timelapse)
+
+	cameraSnapshotter := service.NewConfigCameraSnapshotter(cfgMgr, printerIdx, video)
+	printMonitorCfg := model.DefaultPrintMonitorConfig()
+	if startupCfg, err := cfgMgr.Load(); err == nil && startupCfg != nil {
+		printMonitorCfg = startupCfg.PrintMonitor
+	}
+	printMonitor := service.NewPrintMonitorService(cfgMgr, printMonitorCfg, cameraSnapshotter)
+	printMonitor.WithReferenceArchive(database, service.NewGCodeArchiver(configDir))
+	sm.Register(printMonitor)
+
+	powerSaving := service.NewPowerSavingService(cfgMgr)
+	sm.Register(powerSaving)
 
 	// Apply saved timelapse config at startup so it is active without requiring a settings save.
 	if startupCfg, err := cfgMgr.Load(); err == nil && startupCfg != nil {
@@ -178,11 +199,13 @@ func runWebserver() error {
 		sm.Register(ha)
 	}
 
-	mqtt := service.NewMqttQueue(cfgMgr, printerIdx, database, ha, timelapse)
+	mqtt := service.NewMqttQueue(cfgMgr, printerIdx, database, ha, timelapse, printMonitor, powerSaving)
 	sm.Register(mqtt)
 
-	notif := notifications.NewNotificationService(cfgMgr, mqtt, video)
+	notif := notifications.NewNotificationService(cfgMgr, mqtt, video).WithHistory(database)
 	sm.Register(notif)
+	// Let the AI monitor alert the user when its animal-detection emergency stop fires.
+	printMonitor.WithNotifier(notif)
 
 	ft := service.NewFileTransferService(pppp, mqtt)
 	sm.Register(ft)
@@ -197,8 +220,14 @@ func runWebserver() error {
 		if _, err := sm.Borrow("timelapse"); err != nil {
 			slog.Warn("failed to start timelapse service", "err", err)
 		}
+		if _, err := sm.Borrow("printmonitor"); err != nil {
+			slog.Warn("failed to start print monitor service", "err", err)
+		}
+		if _, err := sm.Borrow("powersaving"); err != nil {
+			slog.Warn("failed to start power saving service", "err", err)
+		}
 		if haEnabled {
-			if _, err := sm.Borrow("ha"); err != nil {
+			if _, err := sm.Borrow("homeassistant"); err != nil {
 				slog.Warn("failed to start Home Assistant service", "err", err)
 			}
 		}
@@ -415,7 +444,7 @@ func newVersionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print version info",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("ankerctl-go %s\n", Version)
+			fmt.Printf("ankerctl-ng %s\n", Version)
 		},
 	}
 }

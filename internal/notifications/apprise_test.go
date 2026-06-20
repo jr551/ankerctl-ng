@@ -14,6 +14,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/django1982/ankerctl/internal/db"
 	"github.com/django1982/ankerctl/internal/model"
 )
 
@@ -283,6 +284,43 @@ func TestProgressNotification_MaxValueCap(t *testing.T) {
 	defer mu.Unlock()
 	if sendCount != 2 {
 		t.Fatalf("expected 2 progress notifications (max_value=2), got %d", sendCount)
+	}
+}
+
+func TestNotificationServiceSendSkipsDisabledHomeAnnouncementHistory(t *testing.T) {
+	database, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("db.Open: %v", err)
+	}
+	defer database.Close()
+	if _, err := database.RecordStart("cube.gcode", "", "", 0); err != nil {
+		t.Fatalf("RecordStart: %v", err)
+	}
+
+	cfg := model.NewConfig(nil, nil)
+	cfg.Notifications = model.DefaultNotificationsConfig()
+	cfg.Notifications.Announcement.BaseURL = "http://ha.local"
+	cfg.Notifications.Announcement.Token = "test-token"
+	cfg.Notifications.Announcement.TTSEntityID = "tts.speak"
+	cfg.Notifications.Announcement.MediaPlayerEntityID = "media_player.office"
+	cfg.Notifications.Announcement.Enabled = false
+
+	orig := newClient
+	newClient = func(model.AppriseConfig) *Client { return nil }
+	defer func() { newClient = orig }()
+
+	svc := NewNotificationService(&mockConfigLoader{cfg: cfg}, &mockTapSource{}, nil).WithHistory(database)
+	svc.send(context.Background(), EventPrintFinished, map[string]any{"filename": "cube.gcode"})
+
+	rows, err := database.GetHistory(1, 0)
+	if err != nil {
+		t.Fatalf("GetHistory: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("history rows = %d, want 1", len(rows))
+	}
+	if got := len(rows[0].NotificationLog); got != 0 {
+		t.Fatalf("notification log entries = %d, want 0", got)
 	}
 }
 

@@ -37,7 +37,9 @@ CREATE TABLE IF NOT EXISTS print_history (
     failure_reason TEXT,
     task_id        TEXT,
     archive_relpath TEXT,
-    archive_size    INTEGER
+    archive_size    INTEGER,
+    ai_history_json TEXT,
+    notification_history_json TEXT
 );`
 
 // historyMigrationColumns are columns added after the initial release.
@@ -51,6 +53,8 @@ var historyMigrationColumns = []struct {
 	{"task_id", "TEXT"},
 	{"archive_relpath", "TEXT"},
 	{"archive_size", "INTEGER"},
+	{"ai_history_json", "TEXT"},
+	{"notification_history_json", "TEXT"},
 }
 
 // PrintRecord represents a single row in the print_history table.
@@ -67,6 +71,8 @@ type PrintRecord struct {
 	ArchiveRelpath   *string // relative filename inside the archive directory
 	ArchiveSize      *int64  // byte size of the archived GCode file
 	ArchiveAvailable bool    // true when the file actually exists on disk
+	AIHistory        []HistoryAIResult
+	NotificationLog  []HistoryNotificationResult
 }
 
 // migrateHistory creates the print_history table and applies any pending
@@ -161,6 +167,34 @@ func (d *DB) RecordStart(filename, taskID, archiveRelpath string, archiveSize in
 			}
 			if err != sql.ErrNoRows {
 				return fmt.Errorf("resume lookup: %w", err)
+			}
+		}
+
+		// 1b. No taskID: resume a recent open entry for the same filename. The
+		// upload path and the printer's "printing" report both call RecordStart
+		// for the same file with no taskID; resuming keeps ONE row (and its
+		// archive) instead of orphaning the first and leaving duplicate rows.
+		if taskID == "" && filename != "" {
+			var id int64
+			err := tx.QueryRow(
+				`SELECT id FROM print_history WHERE status='started' AND filename=? ORDER BY id DESC LIMIT 1`,
+				filename,
+			).Scan(&id)
+			if err == nil {
+				rowID = id
+				if archiveRelpath != "" {
+					if _, err := tx.Exec(
+						`UPDATE print_history SET archive_relpath=COALESCE(archive_relpath, ?), archive_size=COALESCE(archive_size, ?) WHERE id=?`,
+						archiveRelpath, archiveSize, id,
+					); err != nil {
+						return fmt.Errorf("update archive on filename resume: %w", err)
+					}
+				}
+				d.log.Debug("history: resuming open entry by filename", "id", id, "filename", filename)
+				return nil
+			}
+			if err != sql.ErrNoRows {
+				return fmt.Errorf("filename resume lookup: %w", err)
 			}
 		}
 
@@ -319,7 +353,7 @@ func (d *DB) GetHistory(limit, offset int) ([]PrintRecord, error) {
 	defer d.mu.Unlock()
 
 	rows, err := d.db.Query(
-		`SELECT id, filename, status, started_at, finished_at, duration_sec, progress, failure_reason, task_id, archive_relpath, archive_size
+		`SELECT id, filename, status, started_at, finished_at, duration_sec, progress, failure_reason, task_id, archive_relpath, archive_size, ai_history_json, notification_history_json
 		   FROM print_history
 		  ORDER BY id DESC
 		  LIMIT ? OFFSET ?`,
@@ -342,7 +376,7 @@ func (d *DB) GetEntry(id int64) (*PrintRecord, error) {
 	defer d.mu.Unlock()
 
 	rows, err := d.db.Query(
-		`SELECT id, filename, status, started_at, finished_at, duration_sec, progress, failure_reason, task_id, archive_relpath, archive_size
+		`SELECT id, filename, status, started_at, finished_at, duration_sec, progress, failure_reason, task_id, archive_relpath, archive_size, ai_history_json, notification_history_json
 		   FROM print_history
 		  WHERE id=?`,
 		id,
@@ -566,14 +600,16 @@ func scanHistoryRows(rows *sql.Rows) ([]PrintRecord, error) {
 	var records []PrintRecord
 	for rows.Next() {
 		var (
-			r              PrintRecord
-			finishedAtS    sql.NullString
-			durationSec    sql.NullInt64
-			failureReason  sql.NullString
-			taskID         sql.NullString
-			archiveRelpath sql.NullString
-			archiveSize    sql.NullInt64
-			startedAtS     string
+			r                PrintRecord
+			finishedAtS      sql.NullString
+			durationSec      sql.NullInt64
+			failureReason    sql.NullString
+			taskID           sql.NullString
+			archiveRelpath   sql.NullString
+			archiveSize      sql.NullInt64
+			aiHistoryJSON    sql.NullString
+			notifHistoryJSON sql.NullString
+			startedAtS       string
 		)
 		if err := rows.Scan(
 			&r.ID, &r.Filename, &r.Status,
@@ -585,6 +621,8 @@ func scanHistoryRows(rows *sql.Rows) ([]PrintRecord, error) {
 			&taskID,
 			&archiveRelpath,
 			&archiveSize,
+			&aiHistoryJSON,
+			&notifHistoryJSON,
 		); err != nil {
 			return nil, fmt.Errorf("scan history row: %w", err)
 		}
@@ -619,6 +657,12 @@ func scanHistoryRows(rows *sql.Rows) ([]PrintRecord, error) {
 		}
 		if archiveSize.Valid {
 			r.ArchiveSize = &archiveSize.Int64
+		}
+		if aiHistoryJSON.Valid {
+			r.AIHistory = decodeAIHistory(aiHistoryJSON.String)
+		}
+		if notifHistoryJSON.Valid {
+			r.NotificationLog = decodeNotificationHistory(notifHistoryJSON.String)
 		}
 
 		records = append(records, r)

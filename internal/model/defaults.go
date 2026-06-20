@@ -65,18 +65,33 @@ type AppriseTemplates struct {
 
 // AppriseConfig holds all Apprise notification settings.
 type AppriseConfig struct {
-	Enabled   bool             `json:"enabled"`
-	ServerURL string           `json:"server_url"`
-	Key       string           `json:"key"`
-	Tag       string           `json:"tag"`
-	Events    AppriseEvents    `json:"events"`
-	Progress  AppriseProgress  `json:"progress"`
-	Templates AppriseTemplates `json:"templates"`
+	Enabled         bool             `json:"enabled"`
+	ServerURL       string           `json:"server_url"`
+	Key             string           `json:"key"`
+	Tag             string           `json:"tag"`
+	RawBodyTemplate string           `json:"raw_body_template"`
+	RawContentType  string           `json:"raw_content_type"`
+	Events          AppriseEvents    `json:"events"`
+	Progress        AppriseProgress  `json:"progress"`
+	Templates       AppriseTemplates `json:"templates"`
+}
+
+type HomeAnnouncementConfig struct {
+	Enabled             bool          `json:"enabled"`
+	BaseURL             string        `json:"base_url"`
+	Token               string        `json:"token,omitempty"`
+	TTSEntityID         string        `json:"tts_entity_id"`
+	MediaPlayerEntityID string        `json:"media_player_entity_id"`
+	Language            string        `json:"language"`
+	Cache               bool          `json:"cache"`
+	Template            string        `json:"template"`
+	Events              AppriseEvents `json:"events"`
 }
 
 // NotificationsConfig wraps notification provider configs.
 type NotificationsConfig struct {
-	Apprise AppriseConfig `json:"apprise"`
+	Apprise      AppriseConfig          `json:"apprise"`
+	Announcement HomeAnnouncementConfig `json:"announcement"`
 }
 
 // TimelapseConfig holds timelapse recording settings.
@@ -128,6 +143,33 @@ type AppearanceConfig struct {
 	AccentColor string `json:"accent_color"`
 }
 
+// TemperatureOverrideEntry holds per-printer upload-time temperature floors.
+type TemperatureOverrideEntry struct {
+	Enabled        bool `json:"enabled"`
+	NozzleMinTempC int  `json:"nozzle_min_temp_c"`
+	BedMinTempC    int  `json:"bed_min_temp_c"`
+}
+
+// TemperatureOverridesConfig holds per-printer temperature override settings.
+type TemperatureOverridesConfig struct {
+	PerPrinter map[string]TemperatureOverrideEntry `json:"per_printer"`
+}
+
+// DefaultTemperatureOverridesConfig returns disabled temperature overrides.
+func DefaultTemperatureOverridesConfig() TemperatureOverridesConfig {
+	return TemperatureOverridesConfig{PerPrinter: map[string]TemperatureOverrideEntry{}}
+}
+
+// NormalizeTemperatureOverrideEntry clamps override values to printer-safe UI bounds.
+func NormalizeTemperatureOverrideEntry(entry TemperatureOverrideEntry) TemperatureOverrideEntry {
+	entry.NozzleMinTempC = clampInt(entry.NozzleMinTempC, 0, 320)
+	entry.BedMinTempC = clampInt(entry.BedMinTempC, 0, 120)
+	if entry.NozzleMinTempC == 0 && entry.BedMinTempC == 0 {
+		entry.Enabled = false
+	}
+	return entry
+}
+
 // PrintersWithoutCamera lists model codes that have no built-in camera.
 // Comparison is case-insensitive. Matches Python's PRINTERS_WITHOUT_CAMERA set.
 var PrintersWithoutCamera = map[string]struct{}{"V8110": {}}
@@ -138,12 +180,169 @@ const (
 	CameraSourceExternal = "external"
 )
 
+// HomeAssistantCameraSettings holds authenticated Home Assistant camera proxy settings.
+type HomeAssistantCameraSettings struct {
+	Enabled        bool   `json:"enabled"`
+	BaseURL        string `json:"base_url"`
+	Token          string `json:"token,omitempty"`
+	CameraEntityID string `json:"camera_entity_id"`
+}
+
+// Camera preset kinds. These record which "easy setup" preset the user picked
+// for an external camera, so the UI can re-populate the friendly fields. The
+// preset always resolves to a concrete StreamURL/SnapshotURL (derived by
+// DeriveExternalCameraURLs) so the backend stays preset-agnostic.
+//
+// CameraKindCustom is the default/backward-compatible value: the user supplies
+// the stream/snapshot URLs directly (this is the original "external" behaviour).
+const (
+	CameraKindCustom    = "custom"    // raw stream/snapshot URLs (advanced)
+	CameraKindMJPEG     = "mjpeg"     // a single MJPEG stream URL
+	CameraKindOctoPrint = "octoprint" // mjpg-streamer / OctoPrint webcam base URL
+	CameraKindFrigate   = "frigate"   // Frigate NVR base URL + camera name
+	CameraKindGo2RTC    = "go2rtc"    // go2rtc / MediaMTX base URL + stream name
+	CameraKindReolink   = "reolink"   // Reolink host + credentials + channel
+	CameraKindRTSP      = "rtsp"      // raw RTSP (needs a restreamer for browsers)
+)
+
+// CameraKinds lists every valid preset kind. Used for validation / round-trip.
+var CameraKinds = []string{
+	CameraKindCustom,
+	CameraKindMJPEG,
+	CameraKindOctoPrint,
+	CameraKindFrigate,
+	CameraKindGo2RTC,
+	CameraKindReolink,
+	CameraKindRTSP,
+}
+
 // ExternalCameraSettings holds the external camera configuration.
+//
+// Kind records which UI preset produced these settings (one of the CameraKind*
+// constants). Fields holds the raw per-preset inputs (e.g. {"base_url":...,
+// "camera":...}) so the UI can re-render the friendly form. StreamURL and
+// SnapshotURL are the resolved URLs the backend actually dials; for presets
+// they are derived from Kind+Fields (see DeriveExternalCameraURLs) and for the
+// custom/legacy kind they are entered directly. Kind and Fields are optional
+// and omitted from JSON when empty, so existing config.json files (which only
+// have name/stream_url/snapshot_url/refresh_sec) load unchanged.
 type ExternalCameraSettings struct {
-	Name        string `json:"name"`
-	StreamURL   string `json:"stream_url"`
-	SnapshotURL string `json:"snapshot_url"`
-	RefreshSec  int    `json:"refresh_sec"`
+	Name          string                       `json:"name"`
+	StreamURL     string                       `json:"stream_url"`
+	SnapshotURL   string                       `json:"snapshot_url"`
+	RefreshSec    int                          `json:"refresh_sec"`
+	Kind          string                       `json:"kind,omitempty"`
+	Fields        map[string]string            `json:"fields,omitempty"`
+	HomeAssistant *HomeAssistantCameraSettings `json:"home_assistant,omitempty"`
+}
+
+// NormalizeHomeAssistantCameraSettings trims HA camera settings and returns nil
+// when the object is completely unconfigured.
+func NormalizeHomeAssistantCameraSettings(cfg *HomeAssistantCameraSettings) *HomeAssistantCameraSettings {
+	if cfg == nil {
+		return nil
+	}
+	normalized := *cfg
+	normalized.BaseURL = strings.TrimRight(strings.TrimSpace(normalized.BaseURL), "/")
+	normalized.Token = strings.TrimSpace(normalized.Token)
+	normalized.CameraEntityID = strings.TrimSpace(normalized.CameraEntityID)
+	if !normalized.Enabled && normalized.BaseURL == "" && normalized.Token == "" && normalized.CameraEntityID == "" {
+		return nil
+	}
+	return &normalized
+}
+
+// NormalizeCameraKind returns a valid camera kind, defaulting to
+// CameraKindCustom for empty/unknown values (backward compatible: old configs
+// have no "kind" and behave as custom raw-URL entries).
+func NormalizeCameraKind(kind string) string {
+	k := strings.ToLower(strings.TrimSpace(kind))
+	for _, valid := range CameraKinds {
+		if k == valid {
+			return valid
+		}
+	}
+	return CameraKindCustom
+}
+
+// DeriveExternalCameraURLs computes the resolved stream and snapshot URLs for a
+// preset kind given its raw fields. It is the single source of truth for URL
+// derivation and is mirrored client-side in ankersrv.js (deriveCameraUrls) so
+// the form can preview/auto-fill before saving; the server re-derives on save
+// for any non-custom kind so a hand-edited config still resolves correctly.
+//
+// For CameraKindCustom (and unknown kinds) it returns empty strings, signalling
+// "use the StreamURL/SnapshotURL already on the struct verbatim".
+//
+// Field keys per kind:
+//   - mjpeg:     stream_url
+//   - octoprint: base_url            -> {base}/webcam/?action=stream + ?action=snapshot
+//   - frigate:   base_url, camera    -> {base}/api/{cam} (mjpeg) + {base}/api/{cam}/latest.jpg
+//   - go2rtc:    base_url, stream    -> {base}/api/stream.mjpeg?src={s} + frame.jpeg
+//   - reolink:   host, user, password[, channel] -> flv stream + snap cgi
+//   - rtsp:      stream_url          -> passthrough (RTSP, needs restreamer)
+func DeriveExternalCameraURLs(kind string, fields map[string]string) (streamURL, snapshotURL string) {
+	get := func(k string) string { return strings.TrimSpace(fields[k]) }
+	trimSlash := func(s string) string { return strings.TrimRight(strings.TrimSpace(s), "/") }
+
+	switch NormalizeCameraKind(kind) {
+	case CameraKindMJPEG:
+		return get("stream_url"), ""
+
+	case CameraKindRTSP:
+		// Browsers cannot play RTSP directly; the UI warns the user to point at
+		// a restreamer. We still store/derive it so snapshots via ffmpeg work.
+		return get("stream_url"), ""
+
+	case CameraKindOctoPrint:
+		base := trimSlash(get("base_url"))
+		if base == "" {
+			return "", ""
+		}
+		return base + "/webcam/?action=stream", base + "/webcam/?action=snapshot"
+
+	case CameraKindFrigate:
+		base := trimSlash(get("base_url"))
+		cam := get("camera")
+		if base == "" || cam == "" {
+			return "", ""
+		}
+		return base + "/api/" + cam, base + "/api/" + cam + "/latest.jpg"
+
+	case CameraKindGo2RTC:
+		base := trimSlash(get("base_url"))
+		stream := get("stream")
+		if base == "" || stream == "" {
+			return "", ""
+		}
+		return base + "/api/stream.mjpeg?src=" + stream, base + "/api/frame.jpeg?src=" + stream
+
+	case CameraKindReolink:
+		host := trimSlash(get("host"))
+		if host == "" {
+			return "", ""
+		}
+		// Default to http:// when the user gives a bare host.
+		if !strings.Contains(host, "://") {
+			host = "http://" + host
+		}
+		channel := get("channel")
+		if channel == "" {
+			channel = "0"
+		}
+		user := get("user")
+		pass := get("password")
+		cred := ""
+		if user != "" {
+			cred = "&user=" + user + "&password=" + pass
+		}
+		streamURL = host + "/flv?port=1935&app=bcs&stream=channel" + channel + "_main.bcs" + cred
+		snapshotURL = host + "/cgi-bin/api.cgi?cmd=Snap&channel=" + channel + "&rs=ankerctl" + cred
+		return streamURL, snapshotURL
+
+	default: // CameraKindCustom
+		return "", ""
+	}
 }
 
 // PrinterCameraEntry holds per-printer camera source settings.
@@ -165,7 +364,75 @@ func DefaultCameraConfig() CameraConfig {
 
 // DefaultExternalCameraSettings returns default external camera settings.
 func DefaultExternalCameraSettings() ExternalCameraSettings {
-	return ExternalCameraSettings{RefreshSec: 3}
+	return ExternalCameraSettings{RefreshSec: 1}
+}
+
+// PrintMonitorConfig holds vision-model print failure detection settings.
+type PrintMonitorConfig struct {
+	Enabled             bool    `json:"enabled"`
+	IntervalSec         int     `json:"interval_sec"`
+	FrameCount          int     `json:"frame_count"`
+	FrameSpacingSec     int     `json:"frame_spacing_sec"`
+	ConfidenceThreshold float64 `json:"confidence_threshold"`
+	OpenRouterURL       string  `json:"openrouter_url"`
+	OpenRouterKey       string  `json:"openrouter_key,omitempty"`
+	Model               string  `json:"model"`
+	Prompt              string  `json:"prompt"`
+	// EmergencyStopOnAnimal cuts mains power to the printer immediately when the
+	// AI monitor spots a non-human animal in the camera frame (a safety stop, so
+	// it fires regardless of the smart socket's AutoOffOnFail setting).
+	EmergencyStopOnAnimal bool `json:"emergency_stop_on_animal"`
+}
+
+// DefaultPrintMonitorConfig returns the default vision-model print monitor config.
+func DefaultPrintMonitorConfig() PrintMonitorConfig {
+	return PrintMonitorConfig{
+		Enabled:               false,
+		IntervalSec:           300,
+		FrameCount:            5,
+		FrameSpacingSec:       1,
+		ConfidenceThreshold:   0.7,
+		OpenRouterURL:         "https://api.kilo.ai/api/gateway",
+		Model:                 "kilo-auto/balanced",
+		EmergencyStopOnAnimal: true,
+		Prompt:                "You are monitoring a 3D printer. The first image is a contact sheet of sequential camera frames taken one second apart. A second image may be a slicer/G-code preview reference for the expected part. Reply with strict JSON only: {\"failing\": boolean, \"confidence\": number, \"reason\": string}. Set failing true only when the print appears to be failing, detached, spaghetti, blobbed, severely shifted, or otherwise visibly going wrong. Pay special attention to the FIRST LAYER and bed adhesion: if the first layer is not sticking to the bed — corners lifting or curling, the part dragging or detaching, or filament not being laid down onto the bed — treat that as a failure. Also inspect any visible filament path into the toolhead: if the filament looks missing, snapped, kinked, badly misrouted, or obviously not feeding correctly, treat that as a failure signal when the image supports it.",
+	}
+}
+
+// SmartSocketConfig holds Home Assistant smart socket control settings.
+type SmartSocketConfig struct {
+	Enabled                     bool   `json:"enabled"`
+	BaseURL                     string `json:"base_url"`
+	Token                       string `json:"token,omitempty"`
+	SwitchEntity                string `json:"switch_entity"`
+	PowerEntity                 string `json:"power_entity"`
+	PowerUnit                   string `json:"power_unit"`
+	ConfirmOff                  bool   `json:"confirm_off"`
+	AutoOffOnFail               bool   `json:"auto_off_on_fail"`
+	PowerSavingEnabled          bool   `json:"power_saving_enabled"`
+	PowerSavingDashboardWakeSec int    `json:"power_saving_dashboard_wake_sec"`
+	PowerSavingIdleOffSec       int    `json:"power_saving_idle_off_sec"`
+}
+
+// DefaultSmartSocketConfig returns default Home Assistant smart socket settings.
+func DefaultSmartSocketConfig() SmartSocketConfig {
+	return SmartSocketConfig{
+		Enabled:                     false,
+		PowerUnit:                   "W",
+		ConfirmOff:                  true,
+		PowerSavingDashboardWakeSec: 600,
+		PowerSavingIdleOffSec:       1800,
+	}
+}
+
+func clampInt(value, minValue, maxValue int) int {
+	if value < minValue {
+		return minValue
+	}
+	if value > maxValue {
+		return maxValue
+	}
+	return value
 }
 
 // PrinterSupportsCamera returns true when the printer model has a built-in camera.
@@ -209,10 +476,12 @@ const (
 // DefaultAppriseConfig returns the default Apprise notification configuration.
 func DefaultAppriseConfig() AppriseConfig {
 	return AppriseConfig{
-		Enabled:   false,
-		ServerURL: "",
-		Key:       "",
-		Tag:       "",
+		Enabled:         false,
+		ServerURL:       "",
+		Key:             "",
+		Tag:             "",
+		RawBodyTemplate: "",
+		RawContentType:  "application/json",
 		Events: AppriseEvents{
 			PrintStarted:  true,
 			PrintFinished: true,
@@ -243,7 +512,30 @@ func DefaultAppriseConfig() AppriseConfig {
 // DefaultNotificationsConfig returns the default notifications configuration.
 func DefaultNotificationsConfig() NotificationsConfig {
 	return NotificationsConfig{
-		Apprise: DefaultAppriseConfig(),
+		Apprise:      DefaultAppriseConfig(),
+		Announcement: DefaultHomeAnnouncementConfig(),
+	}
+}
+
+func DefaultHomeAnnouncementConfig() HomeAnnouncementConfig {
+	return HomeAnnouncementConfig{
+		Enabled:             false,
+		BaseURL:             "",
+		Token:               "",
+		TTSEntityID:         "",
+		MediaPlayerEntityID: "",
+		Language:            "",
+		Cache:               true,
+		Template:            "{body}",
+		Events: AppriseEvents{
+			PrintStarted:  false,
+			PrintFinished: true,
+			PrintFailed:   true,
+			PrintPaused:   false,
+			PrintResumed:  false,
+			GcodeUploaded: false,
+			PrintProgress: false,
+		},
 	}
 }
 

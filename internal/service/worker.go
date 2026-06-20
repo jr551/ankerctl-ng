@@ -7,6 +7,7 @@ import (
 )
 
 const restartHoldoff = time.Second
+const workerShutdownTimeout = 5 * time.Second
 
 // BaseWorker provides thread-safe default lifecycle and Tap/Notify behavior.
 // Concrete services should embed BaseWorker and implement worker hooks.
@@ -216,7 +217,10 @@ func (w *BaseWorker) Shutdown() {
 	w.mu.Unlock()
 
 	if done != nil {
-		<-done
+		select {
+		case <-done:
+		case <-time.After(workerShutdownTimeout):
+		}
 	}
 }
 

@@ -82,6 +82,9 @@ func (s *Server) registerRoutes() {
 
 	// Upload
 	r.Post("/api/files/local", h.SlicerUpload)
+	r.Post("/api/slice/check", h.SliceCheck)
+	r.Post("/api/filament/detect-color", h.FilamentDetectColor)
+	r.Post("/api/openscad/edit", h.OpenscadEdit)
 	r.Get("/api/files/printer", h.PrinterFilesList)
 	r.Get("/api/files/printer/thumbnail", h.PrinterFileThumbnail)
 	r.Post("/api/files/printer/print", h.PrinterFilePrint)
@@ -103,8 +106,20 @@ func (s *Server) registerRoutes() {
 	r.Post("/api/settings/filament-service/advanced/open", h.SettingsFilamentServiceAdvancedOpen)
 	r.Get("/api/settings/appearance", h.SettingsAppearanceGet)
 	r.Post("/api/settings/appearance", h.SettingsAppearanceUpdate)
+	r.Get("/api/settings/temperature-overrides", h.SettingsTemperatureOverridesGet)
+	r.Post("/api/settings/temperature-overrides", h.SettingsTemperatureOverridesUpdate)
 	r.Get("/api/settings/camera", h.SettingsCameraGet)
 	r.Post("/api/settings/camera", h.SettingsCameraUpdate)
+	r.Get("/api/settings/print-monitor", h.SettingsPrintMonitorGet)
+	r.Post("/api/settings/print-monitor", h.SettingsPrintMonitorUpdate)
+	r.Get("/api/settings/smart-socket", h.SettingsSmartSocketGet)
+	r.Post("/api/settings/smart-socket", h.SettingsSmartSocketUpdate)
+
+	// AI print monitor / smart socket
+	r.Get("/api/print-monitor/status", h.PrintMonitorStatus)
+	r.Post("/api/print-monitor/check", h.PrintMonitorCheck)
+	r.Get("/api/smart-socket/state", h.SmartSocketState)
+	r.Post("/api/smart-socket/control", h.SmartSocketControl)
 
 	// Camera streaming (B5)
 	r.Get("/api/camera/frame", h.CameraFrame)
@@ -116,6 +131,8 @@ func (s *Server) registerRoutes() {
 	r.Post("/api/history/delete", h.HistoryDeleteSelected)
 	r.Post("/api/history/{id}/reprint", h.HistoryReprint)
 	r.Get("/api/history/{id}/thumbnail", h.HistoryThumbnail)
+	r.Get("/api/history/{id}/gcode", h.HistoryGCode)
+	r.Get("/api/history/{id}/ai/{index}/image", h.HistoryAIImage)
 
 	// Filaments
 	r.Get("/api/filaments", h.FilamentList)

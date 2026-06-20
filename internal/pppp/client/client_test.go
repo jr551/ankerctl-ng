@@ -187,7 +187,7 @@ func TestLANHandshakePunchPkt(t *testing.T) {
 			t.Fatalf("decode write[%d]: %v", i, err)
 		}
 		var got string
-		switch decoded.(type) {
+		switch decoded := decoded.(type) {
 		case protocol.LanSearch:
 			got = "LanSearch"
 		case protocol.Close:
@@ -196,11 +196,110 @@ func TestLANHandshakePunchPkt(t *testing.T) {
 			got = "P2pRdy"
 		case protocol.P2pRdyAck:
 			got = "P2pRdyAck"
+			if !decoded.Host.Addr.Equal(net.IPv4zero) {
+				t.Errorf("P2pRdyAck host addr = %v, want %v", decoded.Host.Addr, net.IPv4zero)
+			}
+			if decoded.Host.Port != uint16(PPPPLANPort) {
+				t.Errorf("P2pRdyAck host port = %d, want %d", decoded.Host.Port, PPPPLANPort)
+			}
 		default:
 			got = fmt.Sprintf("%T", decoded)
 		}
 		if got != expectedTypes[i] {
 			t.Errorf("write[%d]: expected %s, got %s", i, expectedTypes[i], got)
+		}
+	}
+	if writes[3].addr.Port != printerAddr.Port {
+		t.Errorf("P2pRdyAck destination port = %d, want handshake port %d", writes[3].addr.Port, printerAddr.Port)
+	}
+}
+
+func TestRunRetriesLanSearchWhileConnecting(t *testing.T) {
+	oldInterval := lanSearchRetryInterval
+	lanSearchRetryInterval = 30 * time.Millisecond
+	defer func() { lanSearchRetryInterval = oldInterval }()
+
+	duid := protocol.Duid{Prefix: "EUPRAKM", Serial: 100001, Check: "ABCDE"}
+	printerAddr := &net.UDPAddr{IP: net.IPv4(192, 168, 1, 100), Port: PPPPLANPort}
+	mock := &mockUDPConn{}
+	cli := NewClient(mock, duid, printerAddr)
+
+	if err := cli.ConnectLANSearch(); err != nil {
+		t.Fatalf("ConnectLANSearch: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Millisecond)
+	defer cancel()
+	if err := cli.Run(ctx); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	mock.mu.Lock()
+	writes := make([]queuedRead, len(mock.writes))
+	copy(writes, mock.writes)
+	mock.mu.Unlock()
+
+	lanSearchWrites := 0
+	for _, write := range writes {
+		decoded, err := protocol.DecodePacket(write.data)
+		if err != nil {
+			t.Fatalf("decode write: %v", err)
+		}
+		if _, ok := decoded.(protocol.LanSearch); ok {
+			lanSearchWrites++
+		}
+	}
+	if lanSearchWrites < 2 {
+		t.Fatalf("LanSearch writes = %d, want at least 2", lanSearchWrites)
+	}
+}
+
+func TestRunRotatesLANSearchTargetsWhileConnecting(t *testing.T) {
+	oldInterval := lanSearchRetryInterval
+	lanSearchRetryInterval = 30 * time.Millisecond
+	defer func() { lanSearchRetryInterval = oldInterval }()
+
+	duid := protocol.Duid{Prefix: "EUPRAKM", Serial: 100001, Check: "ABCDE"}
+	targets := []*net.UDPAddr{
+		{IP: net.IPv4(192, 168, 69, 33), Port: PPPPLANPort},
+		{IP: net.IPv4(192, 168, 69, 255), Port: PPPPLANPort},
+		{IP: net.IPv4(192, 168, 71, 255), Port: PPPPLANPort},
+	}
+	mock := &mockUDPConn{}
+	cli := NewClient(mock, duid, targets[0])
+	cli.lanSearchAddrs = targets
+
+	if err := cli.ConnectLANSearch(); err != nil {
+		t.Fatalf("ConnectLANSearch: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Millisecond)
+	defer cancel()
+	if err := cli.Run(ctx); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	mock.mu.Lock()
+	writes := make([]queuedRead, len(mock.writes))
+	copy(writes, mock.writes)
+	mock.mu.Unlock()
+
+	var got []string
+	for _, write := range writes {
+		decoded, err := protocol.DecodePacket(write.data)
+		if err != nil {
+			t.Fatalf("decode write: %v", err)
+		}
+		if _, ok := decoded.(protocol.LanSearch); ok {
+			got = append(got, write.addr.IP.String())
+		}
+	}
+	if len(got) < len(targets) {
+		t.Fatalf("LanSearch target count = %d, want at least %d (%v)", len(got), len(targets), got)
+	}
+	for i, target := range targets {
+		if got[i] != target.IP.String() {
+			t.Fatalf("target[%d] = %s, want %s (all targets %v)", i, got[i], target.IP, got)
 		}
 	}
 }

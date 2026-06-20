@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"sync"
 	"time"
@@ -12,6 +13,21 @@ const (
 	DefaultMaxAgeWarn  = uint16(128)
 	DefaultRetransmit  = 500 * time.Millisecond
 )
+
+// ErrChannelClosed is returned by WriteContext when the owning client has
+// been shut down. This unblocks uploads that are waiting for ACKs on a
+// connection that has been closed and replaced by a new handshake.
+var ErrChannelClosed = errors.New("pppp: channel closed")
+
+// Close marks the channel as closed and wakes all blocked writers.
+// After Close, WriteContext returns ErrChannelClosed immediately.
+// This is called by Client.Close() to abort pending uploads on dead sessions.
+func (c *Channel) Close() {
+	c.mu.Lock()
+	c.closed = true
+	c.mu.Unlock()
+	c.signal()
+}
 
 type txItem struct {
 	deadline time.Time
@@ -158,6 +174,11 @@ type Channel struct {
 	txAck CyclicU16
 
 	acks map[CyclicU16]struct{}
+
+	// closed is set when the owning client is shut down. Once set,
+	// WriteContext returns ErrChannelClosed immediately so blocked uploads
+	// don't hang forever waiting for ACKs that will never arrive.
+	closed bool
 
 	RX *Wire
 	TX *Wire
@@ -348,6 +369,10 @@ func (c *Channel) WriteContext(ctx context.Context, payload []byte, block bool) 
 
 	for {
 		c.mu.Lock()
+		if c.closed {
+			c.mu.Unlock()
+			return start, done, ErrChannelClosed
+		}
 		acked := IsAfterOrEqual(done, c.txAck)
 		c.mu.Unlock()
 		if acked {

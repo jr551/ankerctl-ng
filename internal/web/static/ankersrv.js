@@ -45,6 +45,20 @@ $(function () {
      */
     $("#copyYear").text(new Date().getFullYear());
 
+    const savedSecretPlaceholder = "Saved - leave blank to keep";
+    const markSavedSecret = (field, configured, label) => {
+        if (!field || !field.length) return;
+        field.val("");
+        field.attr("placeholder", configured ? `Saved ${label || "secret"} - leave blank to keep` : "");
+    };
+    const addSecretIfEntered = (payload, key, field) => {
+        const value = field && field.length ? field.val().trim() : "";
+        if (value) payload[key] = value;
+    };
+    const setPrintingGlow = (active) => {
+        document.body.classList.toggle("print-active-glow", Boolean(active));
+    };
+
     /**
      * Version display + update notification.
      * Fetches /api/ankerctl/version once on load. Shows version in footer
@@ -227,6 +241,18 @@ $(function () {
         return div.innerHTML;
     }
 
+    function safeHttpURL(raw) {
+        try {
+            const url = new URL(String(raw), window.location.origin);
+            if (url.protocol === "http:" || url.protocol === "https:") {
+                return url.href;
+            }
+        } catch (_) {
+            return "";
+        }
+        return "";
+    }
+
     /**
      * Calculates the AnkerMake M5 Speed ratio ("X-factor")
      * @param {number} speed - The speed value in mm/s
@@ -234,6 +260,19 @@ $(function () {
      */
     function getSpeedFactor(speed) {
         return `X${speed / 50}`;
+    }
+
+    function updateTemperatureVisual(field, current, target, kind) {
+        if (!field || !field.length) {
+            return;
+        }
+        field.removeClass("temp-heating temp-hot");
+        const activeTarget = Number.isFinite(target) ? target : 0;
+        const activeCurrent = Number.isFinite(current) ? current : 0;
+        const hotThreshold = kind === "bed" ? 50 : 180;
+        if (activeTarget > 0 || activeCurrent >= hotThreshold) {
+            field.addClass(activeCurrent >= hotThreshold ? "temp-hot" : "temp-heating");
+        }
     }
 
     /**
@@ -341,8 +380,26 @@ $(function () {
     const uploadBar = $("#upload-progressbar");
     const uploadLabel = $("#upload-progress");
     const uploadMeta = $("#upload-progress-meta");
+    const uploadCardWrapper = $("#upload-card-wrapper");
     let uploadName = "";
     let uploadSize = 0;
+    let uploadResetTimer = null;
+    let uploadActive = false;
+
+    function setUploadCardVisible(visible) {
+        if (!uploadCardWrapper.length) {
+            return;
+        }
+        if (visible) {
+            uploadCardWrapper.addClass("is-visible");
+        } else {
+            uploadCardWrapper.removeClass("is-visible");
+        }
+    }
+
+    function setUploadActive(active) {
+        uploadActive = !!active;
+    }
 
     function setUploadProgress(percent) {
         if (!uploadBar.length) {
@@ -358,11 +415,402 @@ $(function () {
         if (!uploadBar.length) {
             return;
         }
+        if (uploadResetTimer) {
+            clearTimeout(uploadResetTimer);
+            uploadResetTimer = null;
+        }
         uploadBar.removeClass("bg-danger");
         setUploadProgress(0);
         uploadMeta.text(message || "Idle");
         uploadName = "";
         uploadSize = 0;
+        setUploadCardVisible(false);
+    }
+
+    const stateFields = {
+        phase: document.getElementById("printer-state-phase"),
+        phaseDetail: document.getElementById("printer-state-detail"),
+        upload: document.getElementById("printer-state-upload"),
+        uploadDetail: document.getElementById("printer-state-upload-detail"),
+        nozzle: document.getElementById("printer-state-nozzle"),
+        nozzleDetail: document.getElementById("printer-state-nozzle-detail"),
+        bed: document.getElementById("printer-state-bed"),
+        bedDetail: document.getElementById("printer-state-bed-detail"),
+        feed: document.getElementById("printer-debug-feed"),
+        commandFeed: document.getElementById("printer-command-feed"),
+    };
+    const dashboardState = {
+        phase: "Idle",
+        phaseDetail: "Waiting for upload",
+        phaseTone: "muted",
+        upload: "Idle",
+        uploadDetail: "No active transfer",
+        uploadTone: "muted",
+        nozzleCurrent: null,
+        nozzleTarget: null,
+        bedCurrent: null,
+        bedTarget: null,
+    };
+    let uploadDebugBucket = -1;
+    let uploadStateHoldUntil = 0;
+    let lastDashboardPrintState = "";
+    let lastDashboardProgressBucket = -1;
+    let lastDashboardTargetText = "";
+    let lastDashboardPPPPStatus = "";
+    let lastDashboardCameraStatus = "";
+
+    function setElementText(element, text) {
+        if (element) {
+            element.textContent = text;
+        }
+    }
+
+    function stateTileFor(element) {
+        return element ? element.closest(".state-tile") : null;
+    }
+
+    function setStateTileStatus(tile, status) {
+        if (!tile) {
+            return;
+        }
+        tile.classList.remove("status-good", "status-info", "status-warn", "status-bad", "status-muted");
+        if (status) {
+            tile.classList.add(`status-${status}`);
+        }
+    }
+
+    function normalizeStateNumber(value) {
+        const numeric = Number(value);
+        return Number.isFinite(numeric) ? numeric : null;
+    }
+
+    function normalizeStateTemp(value) {
+        const numeric = normalizeStateNumber(value);
+        return numeric === null ? null : Math.round(numeric);
+    }
+
+    function formatStateTemp(current, target) {
+        const currentTemp = normalizeStateTemp(current);
+        const targetTemp = normalizeStateTemp(target);
+        const currentText = currentTemp === null ? "--" : `${currentTemp}°C`;
+        const targetText = targetTemp === null ? "--" : `${targetTemp}°C`;
+        return `${currentText} -> ${targetText}`;
+    }
+
+    function formatStateTempDetail(target) {
+        const targetTemp = normalizeStateTemp(target);
+        if (targetTemp === null) {
+            return "current -> target unknown";
+        }
+        if (targetTemp <= 0) {
+            return "current -> target off";
+        }
+        return `current -> target ${targetTemp}°C`;
+    }
+
+    function tempTileTone(current, target) {
+        const currentTemp = normalizeStateTemp(current);
+        const targetTemp = normalizeStateTemp(target);
+        if (targetTemp !== null && targetTemp > 0) {
+            if (currentTemp === null) {
+                return "warn";
+            }
+            return Math.abs(currentTemp - targetTemp) <= 3 ? "good" : "warn";
+        }
+        if (currentTemp !== null && currentTemp > 45) {
+            return "info";
+        }
+        return "muted";
+    }
+
+    function renderDashboardState() {
+        if (!stateFields.phase) {
+            return;
+        }
+        setElementText(stateFields.phase, dashboardState.phase);
+        setElementText(stateFields.phaseDetail, dashboardState.phaseDetail);
+        setElementText(stateFields.upload, dashboardState.upload);
+        setElementText(stateFields.uploadDetail, dashboardState.uploadDetail);
+        setElementText(stateFields.nozzle, formatStateTemp(dashboardState.nozzleCurrent, dashboardState.nozzleTarget));
+        setElementText(stateFields.nozzleDetail, formatStateTempDetail(dashboardState.nozzleTarget));
+        setElementText(stateFields.bed, formatStateTemp(dashboardState.bedCurrent, dashboardState.bedTarget));
+        setElementText(stateFields.bedDetail, formatStateTempDetail(dashboardState.bedTarget));
+
+        setStateTileStatus(stateTileFor(stateFields.phase), dashboardState.phaseTone);
+        setStateTileStatus(stateTileFor(stateFields.upload), dashboardState.uploadTone);
+        setStateTileStatus(stateTileFor(stateFields.nozzle), tempTileTone(dashboardState.nozzleCurrent, dashboardState.nozzleTarget));
+        setStateTileStatus(stateTileFor(stateFields.bed), tempTileTone(dashboardState.bedCurrent, dashboardState.bedTarget));
+    }
+
+    function dashboardTimestamp() {
+        const now = new Date();
+        return `${now.getHours().toString().padStart(2, "0")}:` +
+            `${now.getMinutes().toString().padStart(2, "0")}:` +
+            `${now.getSeconds().toString().padStart(2, "0")}`;
+    }
+
+    function addDebugFeed(message, tone = "info") {
+        if (!stateFields.feed || !message) {
+            return;
+        }
+        const line = document.createElement("div");
+        line.className = `state-debug-line ${tone}`;
+        line.textContent = `${dashboardTimestamp()} ${message}`;
+        const placeholder = stateFields.feed.querySelector(".state-debug-line.muted");
+        if (placeholder && placeholder.textContent === "Waiting for live events...") {
+            placeholder.remove();
+        }
+        stateFields.feed.prepend(line);
+        while (stateFields.feed.children.length > 12) {
+            stateFields.feed.removeChild(stateFields.feed.lastElementChild);
+        }
+    }
+
+    function addCommandFeed(message, tone = "info") {
+        if (!stateFields.commandFeed || !message) {
+            return;
+        }
+        const line = document.createElement("div");
+        line.className = `state-debug-line ${tone}`;
+        line.textContent = `${dashboardTimestamp()} ${message}`;
+        const placeholder = stateFields.commandFeed.querySelector(".state-debug-line.muted");
+        if (placeholder && placeholder.textContent === "Waiting for commands...") {
+            placeholder.remove();
+        }
+        stateFields.commandFeed.prepend(line);
+        while (stateFields.commandFeed.children.length > 8) {
+            stateFields.commandFeed.removeChild(stateFields.commandFeed.lastElementChild);
+        }
+    }
+
+    function logInstructionLines(prefix, gcode, tone = "info") {
+        const lines = String(gcode || "")
+            .split(/\r?\n/)
+            .map(line => line.split(";", 1)[0].trim())
+            .filter(Boolean);
+        const shown = lines.slice(0, 4).join(" | ");
+        const suffix = lines.length > 4 ? ` | +${lines.length - 4} more` : "";
+        addCommandFeed(`${prefix}: ${shown || "(empty)"}${suffix}`, tone);
+    }
+
+    function updateDashboardState(patch, debugMessage, tone = "info") {
+        Object.assign(dashboardState, patch || {});
+        renderDashboardState();
+        if (debugMessage) {
+            addDebugFeed(debugMessage, tone);
+        }
+    }
+
+    function shortTempPair(current, target) {
+        const currentTemp = normalizeStateTemp(current);
+        const targetTemp = normalizeStateTemp(target);
+        const currentText = currentTemp === null ? "--" : `${currentTemp}`;
+        const targetText = targetTemp === null ? "--" : `${targetTemp}`;
+        return `${currentText}->${targetText}C`;
+    }
+
+    function uploadDetailText(name, size) {
+        const safeName = name || "file";
+        const sizeText = size ? ` (${formatBytes(size)})` : "";
+        return `${safeName}${sizeText}`;
+    }
+
+    function startDashboardUpload(name, size) {
+        uploadName = name || uploadName;
+        uploadSize = size || uploadSize;
+        uploadDebugBucket = -1;
+        uploadStateHoldUntil = 0;
+        updateDashboardState({
+            phase: "Uploading",
+            phaseDetail: "Sending file to printer",
+            phaseTone: "info",
+            upload: "Starting",
+            uploadDetail: uploadDetailText(uploadName, uploadSize),
+            uploadTone: "info",
+        }, `upload start: ${uploadDetailText(uploadName, uploadSize)}`, "info");
+    }
+
+    function progressDashboardUpload(percent, sent, total) {
+        const pct = Math.max(0, Math.min(100, Number(percent) || 0));
+        const detail = total ? `${formatBytes(sent || 0)} / ${formatBytes(total)}` : uploadDetailText(uploadName, uploadSize);
+        let message = "";
+        const bucket = pct === 100 ? 100 : Math.floor(pct / 25) * 25;
+        if (bucket !== uploadDebugBucket) {
+            uploadDebugBucket = bucket;
+            message = `upload ${pct}%: ${uploadName || "file"}`;
+        }
+        updateDashboardState({
+            phase: "Uploading",
+            phaseDetail: "Transfer in progress",
+            phaseTone: "info",
+            upload: `${pct}%`,
+            uploadDetail: detail,
+            uploadTone: "info",
+        }, message, "info");
+    }
+
+    function completeDashboardUpload(name, size, currentPrint) {
+        uploadStateHoldUntil = Date.now() + 45000;
+        const printName = (currentPrint || "").trim();
+        if (!printName && typeof setPrintPreparing === "function") {
+            setPrintPreparing(true);
+        }
+        updateDashboardState({
+            phase: printName ? "Printing" : "Upload accepted",
+            phaseDetail: printName ? `Printing ${printName}` : "Waiting for printer heat/start",
+            phaseTone: printName ? "good" : "warn",
+            upload: "Accepted",
+            uploadDetail: printName ? `Started ${printName}` : uploadDetailText(name || uploadName, size || uploadSize),
+            uploadTone: "good",
+        }, `upload done: ${uploadDetailText(name || uploadName, size || uploadSize)}`, "good");
+    }
+
+    function failDashboardUpload(errorText) {
+        uploadStateHoldUntil = 0;
+        updateDashboardState({
+            phase: "Upload failed",
+            phaseDetail: errorText || "Printer did not accept the transfer",
+            phaseTone: "bad",
+            upload: "Failed",
+            uploadDetail: errorText || "Upload failed",
+            uploadTone: "bad",
+        }, `upload failed: ${errorText || "unknown error"}`, "bad");
+    }
+
+    function noteDashboardTargetChange() {
+        const targetText = `target nozzle ${shortTempPair(dashboardState.nozzleCurrent, dashboardState.nozzleTarget)} ` +
+            `bed ${shortTempPair(dashboardState.bedCurrent, dashboardState.bedTarget)}`;
+        if (targetText !== lastDashboardTargetText) {
+            lastDashboardTargetText = targetText;
+            addDebugFeed(targetText, "info");
+        }
+    }
+
+    function updateDashboardPrintPhase(phase, detail, tone, sourceKey, debugLabel) {
+        if (phase === "Idle" && Date.now() < uploadStateHoldUntil &&
+                (dashboardState.phase === "Upload accepted" || dashboardState.phase === "Preparing")) {
+            return;
+        }
+        if (phase === "Printing" || phase === "Preparing" || phase === "Paused") {
+            uploadStateHoldUntil = 0;
+        }
+        const debugKey = `${sourceKey}:${phase}:${detail}`;
+        const message = debugKey !== lastDashboardPrintState ? debugLabel : "";
+        lastDashboardPrintState = debugKey;
+        updateDashboardState({
+            phase,
+            phaseDetail: detail,
+            phaseTone: tone,
+        }, message, tone);
+    }
+
+    function updateDashboardPrintStateFromMqtt(rawState) {
+        const state = Number(rawState);
+        if (state === 1) {
+            const printName = ($("#print-name").text() || "").trim();
+            updateDashboardPrintPhase("Printing", printName ? `Printing ${printName}` : "Active print", "good", `mqtt-${state}`, "mqtt state: printing");
+        } else if (state === 2) {
+            updateDashboardPrintPhase("Paused", "Print is paused", "warn", `mqtt-${state}`, "mqtt state: paused");
+        } else if (state === 8) {
+            updateDashboardPrintPhase("Preparing", "Printer is calibrating or preparing", "info", `mqtt-${state}`, "mqtt state: preparing");
+        } else {
+            updateDashboardPrintPhase("Idle", "No active print", "muted", `mqtt-${state}`, "mqtt state: idle");
+        }
+    }
+
+    function updateDashboardProgress(progress, remainingSeconds) {
+        const pct = Math.max(0, Math.min(100, Number(progress) || 0));
+        if (pct <= 0 && dashboardState.phase !== "Printing") {
+            return;
+        }
+        const detail = Number.isFinite(Number(remainingSeconds))
+            ? `Progress ${pct}%, ${getTime(Number(remainingSeconds))} remaining`
+            : `Progress ${pct}%`;
+        const bucket = Math.floor(pct / 10) * 10;
+        const message = bucket !== lastDashboardProgressBucket && pct > 0 ? `print progress: ${pct}%` : "";
+        if (message) {
+            lastDashboardProgressBucket = bucket;
+        }
+        updateDashboardPrintPhase("Printing", detail, "good", `progress-${bucket}`, message);
+    }
+
+    function applyRuntimeState(data, fromTick = false) {
+        if (!data || typeof data !== "object") {
+            return;
+        }
+        const temperature = data.temperature || {};
+        updateDashboardState({
+            nozzleCurrent: normalizeStateTemp(temperature.nozzle),
+            nozzleTarget: normalizeStateTemp(temperature.nozzle_target),
+            bedCurrent: normalizeStateTemp(temperature.bed),
+            bedTarget: normalizeStateTemp(temperature.bed_target),
+        });
+
+        const print = data.print || {};
+        const progress = print.last_progress !== null && print.last_progress !== undefined
+            ? getPercentage(print.last_progress)
+            : null;
+        const filename = print.last_filename || "";
+        const printState = print.print_state || "unknown";
+
+        if (printState === "printing") {
+            const detail = progress !== null
+                ? `Progress ${progress}%${filename ? `, ${filename}` : ""}`
+                : (filename ? `Printing ${filename}` : "Active print");
+            updateDashboardPrintPhase("Printing", detail, "good", `runtime-${printState}-${progress}`, "");
+        } else if (printState === "paused") {
+            updateDashboardPrintPhase("Paused", print.pause_reason_label || "Print is paused", "warn", `runtime-${printState}`, "");
+        } else if (printState === "pre_print" || printState === "preparing") {
+            updateDashboardPrintPhase("Preparing", filename ? `Preparing ${filename}` : "Heating/homing before print", "info", `runtime-${printState}`, "");
+        } else if (printState === "idle") {
+            updateDashboardPrintPhase("Idle", "No active print", "muted", `runtime-${printState}`, "");
+        }
+
+        noteDashboardTargetChange();
+        if (fromTick) {
+            const pctText = progress !== null ? ` ${progress}%` : "";
+            addDebugFeed(`tick: ${printState}${pctText} nozzle ${shortTempPair(temperature.nozzle, temperature.nozzle_target)} bed ${shortTempPair(temperature.bed, temperature.bed_target)}`, "muted");
+        }
+    }
+
+    async function loadDashboardRuntimeState() {
+        if (!stateFields.phase) {
+            return;
+        }
+        try {
+            const resp = await fetch(`/api/printer/runtime-state?t=${Date.now()}`, { cache: "no-store" });
+            if (!resp.ok) {
+                addDebugFeed(`tick failed: runtime HTTP ${resp.status}`, "warn");
+                return;
+            }
+            applyRuntimeState(await resp.json(), true);
+        } catch (err) {
+            addDebugFeed(`tick failed: ${err.message || err}`, "warn");
+        }
+    }
+
+    function notePPPPStatus(status) {
+        if (!status || status === lastDashboardPPPPStatus) {
+            return;
+        }
+        lastDashboardPPPPStatus = status;
+        const tone = status === "connected" ? "good" : (status === "dormant" ? "muted" : "bad");
+        addDebugFeed(`pppp: ${status}`, tone);
+    }
+
+    function noteCameraStatus(status, tone) {
+        if (!status || status === lastDashboardCameraStatus) {
+            return;
+        }
+        lastDashboardCameraStatus = status;
+        addDebugFeed(`camera: ${status}`, tone);
+    }
+
+    renderDashboardState();
+    if (stateFields.phase) {
+        addDebugFeed("dashboard ready", "muted");
+        loadDashboardRuntimeState();
+        window.setInterval(loadDashboardRuntimeState, 5000);
     }
 
     /**
@@ -386,10 +834,13 @@ $(function () {
             if (data.commandType == 1000) {
                 // Printer state machine: value=0 idle, value=1 printing, value=2 paused
                 _updatePrintControlButtons(data.value);
+                updateDashboardPrintStateFromMqtt(data.value);
                 if (data.value === PRINT_STATE.IDLE) {
+                    _maxSeenProgress = 0;
+                    _lastDisplayedProgress = 0;
                     if (_preparing) {
-                        _preparing = false;
                         $("#progressbar").removeClass("progress-bar-striped progress-bar-animated");
+                        setPrintPreparing(false);
                     }
                     $("#print-layer").text("0 / 0");
                 }
@@ -404,47 +855,67 @@ $(function () {
                 }
                 if (data.progress !== undefined) {
                     const progress = Math.min(100, getPercentage(data.progress));
-                    // Ignore transient progress=0 packets the printer may send during
-                    // pause/resume state transitions — they cause the bar to jump to 0%
-                    // and back. Only allow 0 when the printer is truly idle (ct=1000 value=0).
-                    const isSpuriousZero = progress === 0 && _lastDisplayedProgress > 2 &&
-                        _currentPrintState !== PRINT_STATE.IDLE;
-                    if (!isSpuriousZero) {
+                    // Progress must be monotonic during printing: a value more
+                    // than 2% below the max seen so far is a transient MQTT packet
+                    // (printer occasionally sends wrong progress during state changes).
+                    const isBackward = _currentPrintState === PRINT_STATE.PRINTING &&
+                        _maxSeenProgress > 10 && progress < _maxSeenProgress - 2;
+                    if (!isBackward) {
                         if (_preparing) {
-                            _preparing = false;
                             $("#progressbar").removeClass("progress-bar-striped progress-bar-animated");
+                            setPrintPreparing(false);
                         }
                         _lastDisplayedProgress = progress;
+                        if (progress > _maxSeenProgress) {
+                            _maxSeenProgress = progress;
+                        }
                         $("#progressbar").attr("aria-valuenow", progress);
                         $("#progressbar").attr("style", `width: ${progress}%`);
                         $("#progress").text(`${progress}%`);
                         document.title = progress > 0 && progress < 100
-                            ? `\u{1F5A8}\uFE0F ${progress}% | ankerctl`
-                            : "ankerctl";
+                            ? `\u{1F5A8}\uFE0F ${progress}% | ankerctl-ng`
+                            : "ankerctl-ng";
+                        updateDashboardProgress(progress, data.time);
                     }
                 }
             } else if (data.commandType == 1003) {
                 // Returns Nozzle Temp
                 const current = getTempRounded(data.currentTemp);
+                let target = 0;
                 $("#nozzle-temp").text(`${current}°C`);
                 if (data.hasOwnProperty('targetTemp')) {
-                    const target = getTempRounded(data.targetTemp);
+                    target = getTempRounded(data.targetTemp);
                     if (!$("#set-nozzle-temp").is(":focus")) {
                         $("#set-nozzle-temp").val(target);
                     }
                 }
+                updateTemperatureVisual($("#nozzle-temp"), current, target, "nozzle");
                 pushTempData("nozzle", getTemp(data.currentTemp), getTemp(data.targetTemp));
+                const tempPatch = { nozzleCurrent: current };
+                if (data.hasOwnProperty('targetTemp')) {
+                    tempPatch.nozzleTarget = target;
+                }
+                updateDashboardState(tempPatch);
+                noteDashboardTargetChange();
             } else if (data.commandType == 1004) {
                 // Returns Bed Temp
                 const current = getTempRounded(data.currentTemp);
+                let target = 0;
                 $("#bed-temp").text(`${current}°C`);
                 if (data.hasOwnProperty('targetTemp')) {
-                    const target = getTempRounded(data.targetTemp);
+                    target = getTempRounded(data.targetTemp);
                     if (!$("#set-bed-temp").is(":focus")) {
                         $("#set-bed-temp").val(target);
                     }
                 }
+                updateTemperatureVisual($("#bed-temp"), current, target, "bed");
                 pushTempData("bed", getTemp(data.currentTemp), getTemp(data.targetTemp));
+                const tempPatch = { bedCurrent: current };
+                if (data.hasOwnProperty('targetTemp')) {
+                    tempPatch.bedTarget = target;
+                }
+                updateDashboardState(tempPatch);
+                noteDashboardTargetChange();
             } else if (data.commandType == 1006) {
                 // Returns Print Speed
                 const X = getSpeedFactor(data.value);
@@ -477,14 +948,23 @@ $(function () {
                 const filePath = data.filePath || "";
                 const baseName = filePath.split("/").pop().split("\\").pop();
                 if (baseName) { $("#print-name").text(baseName); }
+                _maxSeenProgress = 0;
                 _lastDisplayedProgress = 0;
-                _preparing = true;
+                setPrintPreparing(true);
                 $("#progressbar")
                     .attr("aria-valuenow", 100)
                     .attr("style", "width: 100%")
                     .addClass("progress-bar-striped progress-bar-animated");
                 $("#progress").text("Preparing…");
-                document.title = "ankerctl";
+                document.title = "ankerctl-ng";
+                updateDashboardState({
+                    phase: "Preparing",
+                    phaseDetail: baseName ? `Preparing ${baseName}` : "Printer acknowledged start",
+                    phaseTone: "info",
+                    upload: "Print starting",
+                    uploadDetail: baseName || "Printer acknowledged start",
+                    uploadTone: "good",
+                }, baseName ? `mqtt print start: ${baseName}` : "mqtt print start", "good");
             } else if (data.commandType == 1052) {
                 // Returns Layer Info — layer display only; progress comes from ct=1001
                 const layer = `${data.real_print_layer} / ${data.total_layer}`;
@@ -495,8 +975,9 @@ $(function () {
         },
 
         close: function () {
+            _maxSeenProgress = 0;
             _lastDisplayedProgress = 0;
-            _preparing = false;
+            setPrintPreparing(false);
             $("#progressbar").removeClass("progress-bar-striped progress-bar-animated");
             $("#print-name").text("");
             $("#time-elapsed").text("00:00:00");
@@ -505,13 +986,24 @@ $(function () {
             $("#progressbar").attr("style", "width: 0%");
             $("#progress").text("0%");
             $("#nozzle-temp").text("0°C");
+            $("#nozzle-temp").removeClass("temp-heating temp-hot");
             $("#set-nozzle-temp").val(0);
             $("#bed-temp").text("0°C");
+            $("#bed-temp").removeClass("temp-heating temp-hot");
             $("#set-bed-temp").val(0);
             $("#print-speed").text("0mm/s");
             $("#print-layer").text("0 / 0");
-            document.title = "ankerctl";
+            document.title = "ankerctl-ng";
             _updatePrintControlButtons(PRINT_STATE.IDLE);
+            updateDashboardState({
+                phase: "MQTT disconnected",
+                phaseDetail: "Waiting for printer telemetry",
+                phaseTone: "bad",
+                nozzleCurrent: null,
+                nozzleTarget: null,
+                bedCurrent: null,
+                bedTarget: null,
+            }, "mqtt: disconnected", "bad");
         },
     });
 
@@ -562,6 +1054,26 @@ $(function () {
     });
 
     const videoPlayer = document.getElementById("player");
+    const rewindOverlay = document.getElementById("camera-rewind-image");
+    const rewindControls = document.getElementById("camera-rewind-controls");
+    const rewindSlider = document.getElementById("camera-rewind-slider");
+    const rewindLabel = document.getElementById("camera-rewind-label");
+    const rewindShell = rewindOverlay ? rewindOverlay.closest(".camera-frame-shell") : null;
+    const rewindStatus = rewindShell ? rewindShell.querySelector(".rewind-status") : null;
+    const rewindReduceMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    let rewindClearTimer = null;
+    // Flip the LIVE/REWIND pill + the shell's vignette. Display-only — never
+    // touches the print; rewind just scrubs the local frame buffer.
+    const setRewinding = (active) => {
+        if (rewindShell) rewindShell.classList.toggle("is-rewinding", active);
+        if (rewindStatus) {
+            rewindStatus.classList.toggle("is-live", !active);
+            const text = rewindStatus.querySelector(".rewind-status-text");
+            if (text) text.textContent = active ? "REWIND" : "LIVE";
+        }
+    };
+    const cameraFrameBuffer = [];
+    const cameraFrameBufferMax = 60;
     const updateVideoResolution = () => {
         if (!videoPlayer) {
             return;
@@ -576,6 +1088,417 @@ $(function () {
         videoPlayer.addEventListener("loadedmetadata", updateVideoResolution);
         videoPlayer.addEventListener("loadeddata", updateVideoResolution);
         videoPlayer.addEventListener("resize", updateVideoResolution);
+    }
+
+    const updateCameraRewindUI = () => {
+        if (!rewindControls || !rewindSlider || !rewindLabel) {
+            return;
+        }
+        const available = Math.max(0, Math.min(cameraFrameBufferMax, cameraFrameBuffer.length - 1));
+        rewindControls.hidden = available < 1;
+        rewindSlider.max = Math.max(1, available);
+        if (rewindSlider.value > available) {
+            rewindSlider.value = 0;
+        }
+        if (Number(rewindSlider.value) === 0) {
+            rewindLabel.textContent = "Live";
+        }
+    };
+
+    const restoreLiveCameraView = () => {
+        if (rewindOverlay) {
+            rewindOverlay.classList.remove("is-visible");
+            if (rewindClearTimer) {
+                clearTimeout(rewindClearTimer);
+                rewindClearTimer = null;
+            }
+            const clear = () => {
+                rewindOverlay.hidden = true;
+                rewindOverlay.removeAttribute("src");
+                rewindClearTimer = null;
+            };
+            // Let the crossfade finish before hiding, unless reduced-motion.
+            if (rewindReduceMotion) {
+                clear();
+            } else {
+                rewindClearTimer = window.setTimeout(clear, 250);
+            }
+        }
+        setRewinding(false);
+        if (rewindSlider) {
+            rewindSlider.value = 0;
+        }
+        if (rewindLabel) {
+            rewindLabel.textContent = "Live";
+        }
+    };
+
+    const pushCameraFrameBuffer = (dataUrl) => {
+        if (!dataUrl) {
+            return;
+        }
+        cameraFrameBuffer.push({ at: Date.now(), src: dataUrl });
+        while (cameraFrameBuffer.length > cameraFrameBufferMax) {
+            cameraFrameBuffer.shift();
+        }
+        updateCameraRewindUI();
+    };
+
+    const captureFrameFromElement = (element) => {
+        if (!element) {
+            return "";
+        }
+        const width = element.videoWidth || element.naturalWidth || element.clientWidth || 0;
+        const height = element.videoHeight || element.naturalHeight || element.clientHeight || 0;
+        if (!width || !height) {
+            return "";
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+            return "";
+        }
+        ctx.drawImage(element, 0, 0, width, height);
+        return canvas.toDataURL("image/jpeg", 0.75);
+    };
+
+    const sampleCameraBuffer = () => {
+        if (externalCameraPlayer && externalCameraPlayer.complete && externalCameraPlayer.naturalWidth > 0) {
+            pushCameraFrameBuffer(captureFrameFromElement(externalCameraPlayer));
+            return;
+        }
+        if (videoPlayer && videoPlayer.readyState >= 2 && videoPlayer.videoWidth > 0 && videoPlayer.videoHeight > 0) {
+            pushCameraFrameBuffer(captureFrameFromElement(videoPlayer));
+        }
+    };
+
+    if (rewindSlider) {
+        rewindSlider.addEventListener("input", () => {
+            const offset = parseInt(rewindSlider.value, 10) || 0;
+            if (offset <= 0 || cameraFrameBuffer.length === 0) {
+                restoreLiveCameraView();
+                return;
+            }
+            const index = Math.max(0, cameraFrameBuffer.length - 1 - offset);
+            const frame = cameraFrameBuffer[index];
+            if (!frame || !rewindOverlay) {
+                restoreLiveCameraView();
+                return;
+            }
+            if (rewindClearTimer) {
+                clearTimeout(rewindClearTimer);
+                rewindClearTimer = null;
+            }
+            rewindOverlay.src = frame.src;
+            rewindOverlay.hidden = false;
+            void rewindOverlay.offsetWidth; // reflow so the crossfade runs from opacity 0
+            rewindOverlay.classList.add("is-visible");
+            setRewinding(true);
+            rewindLabel.textContent = `-${offset}s`;
+        });
+        ["change", "mouseup", "touchend", "pointerup", "keyup"].forEach((eventName) => {
+            rewindSlider.addEventListener(eventName, () => {
+                window.setTimeout(restoreLiveCameraView, 30);
+            });
+        });
+    }
+    window.setInterval(sampleCameraBuffer, 1000);
+
+    const externalCameraPlayer = document.getElementById("external-camera-player");
+    if (externalCameraPlayer) {
+        const externalCameraFrame = externalCameraPlayer.closest(".camera-frame-shell");
+        const frameSrc = externalCameraPlayer.dataset.frameSrc || "/api/camera/frame";
+        const refreshSec = Math.max(1, parseInt(externalCameraPlayer.dataset.refreshSec || "3", 10) || 3);
+        const cameraFrameTimeoutMs = Math.max(10000, (refreshSec * 1000) + 4000);
+        let cameraRefreshInFlight = false;
+        let cameraRefreshTimer = null;
+        let cameraErrorCount = 0;
+        let refreshExternalCamera;
+
+        const frameURL = () => `${frameSrc}${frameSrc.includes("?") ? "&" : "?"}t=${Date.now()}`;
+        const cameraBackoffMs = () => Math.min(30000, (refreshSec * 1000) * Math.pow(2, Math.min(cameraErrorCount, 3)));
+        const scheduleExternalCameraRefresh = (delayMs) => {
+            if (cameraRefreshTimer) {
+                window.clearTimeout(cameraRefreshTimer);
+            }
+            cameraRefreshTimer = window.setTimeout(() => {
+                refreshExternalCamera();
+            }, delayMs);
+        };
+        const markCameraLoaded = () => {
+            cameraErrorCount = 0;
+            externalCameraPlayer.classList.add("is-loaded");
+            externalCameraPlayer.classList.remove("is-fading");
+            if (externalCameraFrame) {
+                externalCameraFrame.classList.remove("is-loading", "is-error", "is-refreshing");
+                externalCameraFrame.setAttribute("aria-busy", "false");
+            }
+            noteCameraStatus("frame ok", "good");
+        };
+        const markCameraError = () => {
+            cameraErrorCount += 1;
+            externalCameraPlayer.classList.remove("is-fading");
+            if (externalCameraFrame) {
+                externalCameraFrame.classList.remove("is-loading", "is-refreshing");
+                externalCameraFrame.classList.add("is-error");
+                externalCameraFrame.setAttribute("aria-busy", "false");
+            }
+            noteCameraStatus(`frame failed (retry ${Math.min(cameraErrorCount, 4)})`, "warn");
+        };
+
+        externalCameraPlayer.addEventListener("load", markCameraLoaded);
+        externalCameraPlayer.addEventListener("error", markCameraError);
+        if (externalCameraPlayer.complete && externalCameraPlayer.naturalWidth > 0) {
+            markCameraLoaded();
+        } else if (externalCameraFrame) {
+            externalCameraFrame.classList.add("is-loading");
+            externalCameraFrame.setAttribute("aria-busy", "true");
+            window.setTimeout(() => {
+                if (!externalCameraPlayer.classList.contains("is-loaded")) {
+                    markCameraError();
+                }
+            }, cameraFrameTimeoutMs);
+        }
+
+        const swapExternalCameraFrame = (url) => {
+            externalCameraPlayer.classList.add("is-fading");
+            window.setTimeout(() => {
+                externalCameraPlayer.src = url;
+                window.requestAnimationFrame(markCameraLoaded);
+            }, 90);
+        };
+        refreshExternalCamera = async () => {
+            if (uploadActive || cameraRefreshInFlight) {
+                scheduleExternalCameraRefresh(refreshSec * 1000);
+                return;
+            }
+            cameraRefreshInFlight = true;
+            if (externalCameraFrame && externalCameraPlayer.classList.contains("is-loaded")) {
+                externalCameraFrame.classList.add("is-refreshing");
+            }
+
+            const url = frameURL();
+            const nextFrame = new Image();
+            let settled = false;
+            const failTimer = window.setTimeout(() => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                cameraRefreshInFlight = false;
+                nextFrame.onload = null;
+                nextFrame.onerror = null;
+                nextFrame.src = "";
+                markCameraError();
+                scheduleExternalCameraRefresh(cameraBackoffMs());
+            }, cameraFrameTimeoutMs);
+            nextFrame.onload = async () => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                window.clearTimeout(failTimer);
+                try {
+                    if (nextFrame.decode) {
+                        await nextFrame.decode();
+                    }
+                } catch (err) {
+                    // Browser decode can reject for already-decoded cached images; the load event is enough.
+                }
+                swapExternalCameraFrame(url);
+                cameraRefreshInFlight = false;
+                scheduleExternalCameraRefresh(refreshSec * 1000);
+            };
+            nextFrame.onerror = () => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                window.clearTimeout(failTimer);
+                cameraRefreshInFlight = false;
+                markCameraError();
+                scheduleExternalCameraRefresh(cameraBackoffMs());
+            };
+            nextFrame.src = url;
+        };
+        scheduleExternalCameraRefresh(refreshSec * 1000);
+    }
+
+    const powerStrip = document.getElementById("printer-power-strip");
+    if (powerStrip) {
+        const powerStripFields = {
+            stateTile: document.getElementById("printer-socket-state-tile"),
+            state: document.getElementById("printer-socket-state"),
+            stateDetail: document.getElementById("printer-socket-state-detail"),
+            wattsTile: document.getElementById("printer-socket-watts-tile"),
+            watts: document.getElementById("printer-socket-watts"),
+            wattsDetail: document.getElementById("printer-socket-watts-detail"),
+            uptimeTile: document.getElementById("printer-socket-uptime-tile"),
+            uptime: document.getElementById("printer-socket-uptime"),
+            uptimeDetail: document.getElementById("printer-socket-uptime-detail"),
+            saveTile: document.getElementById("printer-power-save-tile"),
+            save: document.getElementById("printer-power-save"),
+            saveDetail: document.getElementById("printer-power-save-detail"),
+        };
+        const powerTileClasses = ["status-good", "status-info", "status-warn", "status-bad", "status-muted"];
+        let latestPowerState = null;
+
+        const setPowerTileStatus = (tile, status) => {
+            if (!tile) return;
+            tile.classList.remove(...powerTileClasses);
+            tile.classList.add(`status-${status}`);
+        };
+        const setPowerText = (field, value) => {
+            if (field) field.textContent = value;
+        };
+        const parseTime = (value) => {
+            if (!value) return null;
+            const time = new Date(value);
+            return Number.isNaN(time.getTime()) ? null : time;
+        };
+        const formatClock = (value) => {
+            const time = parseTime(value);
+            return time ? time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "--";
+        };
+        const formatDuration = (seconds) => {
+            if (!Number.isFinite(seconds)) return "--";
+            seconds = Math.max(0, Math.floor(seconds));
+            const days = Math.floor(seconds / 86400);
+            const hours = Math.floor((seconds % 86400) / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            const secs = seconds % 60;
+            if (days > 0) return `${days}d ${hours}h`;
+            if (hours > 0) return `${hours}h ${String(minutes).padStart(2, "0")}m`;
+            if (minutes > 0) return `${minutes}m ${String(secs).padStart(2, "0")}s`;
+            return `${secs}s`;
+        };
+        const secondsSince = (value) => {
+            const time = parseTime(value);
+            return time ? (Date.now() - time.getTime()) / 1000 : NaN;
+        };
+        const secondsUntil = (value) => {
+            const time = parseTime(value);
+            return time ? (time.getTime() - Date.now()) / 1000 : NaN;
+        };
+        const renderUnavailablePowerStrip = (detail) => {
+            powerStrip.hidden = false;
+            setPowerTileStatus(powerStripFields.stateTile, "bad");
+            setPowerText(powerStripFields.state, "Unavailable");
+            setPowerText(powerStripFields.stateDetail, detail || "Socket not configured");
+            for (const tile of [powerStripFields.wattsTile, powerStripFields.uptimeTile, powerStripFields.saveTile]) {
+                setPowerTileStatus(tile, "muted");
+            }
+            setPowerText(powerStripFields.watts, "--");
+            setPowerText(powerStripFields.wattsDetail, "No reading");
+            setPowerText(powerStripFields.uptime, "--");
+            setPowerText(powerStripFields.uptimeDetail, "No timestamp");
+            setPowerText(powerStripFields.save, "--");
+            setPowerText(powerStripFields.saveDetail, "No power state");
+        };
+        const renderPrinterPowerStrip = () => {
+            const data = latestPowerState;
+            if (!data) return;
+            if (!data.available) {
+                renderUnavailablePowerStrip(data.error);
+                return;
+            }
+
+            powerStrip.hidden = false;
+            const state = String(data.state || "unknown").toLowerCase();
+            const isOn = state === "on";
+            const stateLabel = state === "unknown" ? "Unknown" : state.charAt(0).toUpperCase() + state.slice(1);
+            setPowerTileStatus(powerStripFields.stateTile, isOn ? "good" : state === "off" ? "bad" : "warn");
+            setPowerText(powerStripFields.state, stateLabel);
+            setPowerText(powerStripFields.stateDetail, data.switch_last_changed ? `Changed ${formatClock(data.switch_last_changed)}` : "Waiting for HA");
+
+            const power = Number.parseFloat(data.power);
+            const unit = data.power_unit || "W";
+            if (Number.isFinite(power)) {
+                const precision = Math.abs(power) < 10 ? 1 : 0;
+                setPowerTileStatus(powerStripFields.wattsTile, power > 25 ? "info" : isOn ? "good" : "muted");
+                setPowerText(powerStripFields.watts, `${power.toFixed(precision)} ${unit}`);
+                setPowerText(powerStripFields.wattsDetail, isOn ? "Live draw" : "Socket off");
+            } else {
+                setPowerTileStatus(powerStripFields.wattsTile, "muted");
+                setPowerText(powerStripFields.watts, "--");
+                setPowerText(powerStripFields.wattsDetail, "No power sensor");
+            }
+
+            if (data.switch_last_changed) {
+                const duration = formatDuration(secondsSince(data.switch_last_changed));
+                setPowerTileStatus(powerStripFields.uptimeTile, isOn ? "info" : "muted");
+                setPowerText(powerStripFields.uptime, isOn ? duration : "Off");
+                setPowerText(powerStripFields.uptimeDetail, isOn ? `Since ${formatClock(data.switch_last_changed)}` : `For ${duration}`);
+            } else {
+                setPowerTileStatus(powerStripFields.uptimeTile, "muted");
+                setPowerText(powerStripFields.uptime, "--");
+                setPowerText(powerStripFields.uptimeDetail, "No timestamp");
+            }
+
+            const ps = data.power_saving || {};
+            if (ps.last_error) {
+                setPowerTileStatus(powerStripFields.saveTile, "bad");
+                setPowerText(powerStripFields.save, "Error");
+                setPowerText(powerStripFields.saveDetail, ps.last_error);
+            } else if (!ps.configured) {
+                setPowerTileStatus(powerStripFields.saveTile, "muted");
+                setPowerText(powerStripFields.save, "Not set");
+                setPowerText(powerStripFields.saveDetail, "Socket setup needed");
+            } else if (!ps.enabled) {
+                setPowerTileStatus(powerStripFields.saveTile, "muted");
+                setPowerText(powerStripFields.save, "Disabled");
+                setPowerText(powerStripFields.saveDetail, "Manual socket control");
+            } else if (ps.print_active) {
+                setPowerTileStatus(powerStripFields.saveTile, "good");
+                setPowerText(powerStripFields.save, "Print active");
+                setPowerText(powerStripFields.saveDetail, "Socket held on");
+            } else if (!isOn) {
+                setPowerTileStatus(powerStripFields.saveTile, "good");
+                setPowerText(powerStripFields.save, "Powered down");
+                setPowerText(powerStripFields.saveDetail, "Power saved");
+            } else {
+                const idleOffSeconds = secondsUntil(ps.idle_off_at);
+                const wakeSeconds = secondsUntil(ps.awake_until);
+                if (Number.isFinite(idleOffSeconds)) {
+                    setPowerTileStatus(powerStripFields.saveTile, idleOffSeconds <= 120 ? "warn" : "info");
+                    setPowerText(powerStripFields.save, idleOffSeconds <= 0 ? "Cooling down" : `Off in ${formatDuration(idleOffSeconds)}`);
+                    setPowerText(
+                        powerStripFields.saveDetail,
+                        Number.isFinite(wakeSeconds) && wakeSeconds > 0 ? `Wake hold ${formatDuration(wakeSeconds)}` : "Idle cooldown"
+                    );
+                } else if (Number.isFinite(wakeSeconds) && wakeSeconds > 0) {
+                    setPowerTileStatus(powerStripFields.saveTile, "info");
+                    setPowerText(powerStripFields.save, `Wake ${formatDuration(wakeSeconds)}`);
+                    setPowerText(powerStripFields.saveDetail, "Waiting for idle timer");
+                } else {
+                    setPowerTileStatus(powerStripFields.saveTile, "warn");
+                    setPowerText(powerStripFields.save, "Idle");
+                    setPowerText(powerStripFields.saveDetail, ps.last_action || "Awaiting cooldown");
+                }
+            }
+        };
+        const loadPrinterPowerStrip = async () => {
+            try {
+                const resp = await fetch(`/api/smart-socket/state?t=${Date.now()}`, { cache: "no-store" });
+                if (!resp.ok) {
+                    latestPowerState = { available: false, error: resp.statusText || `HTTP ${resp.status}` };
+                    renderPrinterPowerStrip();
+                    return;
+                }
+                latestPowerState = await resp.json();
+                renderPrinterPowerStrip();
+            } catch (err) {
+                console.error("Failed to load printer power strip:", err);
+                latestPowerState = { available: false, error: "State fetch failed" };
+                renderPrinterPowerStrip();
+            }
+        };
+
+        loadPrinterPowerStrip();
+        setInterval(loadPrinterPowerStrip, 10000);
+        setInterval(renderPrinterPowerStrip, 1000);
     }
 
     sockets.ctrl = new AutoWebSocket({
@@ -616,6 +1539,7 @@ $(function () {
             } else if (data.status === "dormant") {
                 $(this.badge).removeClass("text-bg-success text-bg-danger text-bg-warning").addClass("text-bg-secondary");
             }
+            notePPPPStatus(data.status);
         },
     });
 
@@ -640,11 +1564,19 @@ $(function () {
                 uploadSize = data.size;
             }
             if (data.status === "start") {
+                setUploadCardVisible(true);
+                setUploadActive(true);
+                if (uploadResetTimer) {
+                    clearTimeout(uploadResetTimer);
+                    uploadResetTimer = null;
+                }
                 uploadBar.removeClass("bg-danger");
                 setUploadProgress(0);
                 const sizeText = uploadSize ? ` (${formatBytes(uploadSize)})` : "";
                 uploadMeta.text(uploadName ? `Starting upload: ${uploadName}${sizeText}` : "Starting upload");
+                startDashboardUpload(uploadName, uploadSize);
             } else if (data.status === "progress") {
+                setUploadActive(true);
                 const total = data.size || uploadSize;
                 const sent = data.sent || 0;
                 const percent = total ? Math.round((sent / total) * 100) : 0;
@@ -652,21 +1584,32 @@ $(function () {
                 const metaName = uploadName ? `Uploading ${uploadName}` : "Uploading";
                 const metaSize = total ? ` (${formatBytes(sent)} / ${formatBytes(total)})` : "";
                 uploadMeta.text(`${metaName}${metaSize}`);
+                progressDashboardUpload(percent, sent, total);
             } else if (data.status === "done") {
+                setUploadCardVisible(false);
+                setUploadActive(false);
                 uploadBar.removeClass("bg-danger");
                 setUploadProgress(100);
                 const total = data.size || uploadSize;
                 const sizeText = total ? ` (${formatBytes(total)})` : "";
-                uploadMeta.text(uploadName ? `Upload complete: ${uploadName}${sizeText}` : "Upload complete");
+                const currentPrint = ($("#print-name").text() || "").trim();
+                uploadMeta.text(currentPrint ? `Printing: ${currentPrint}` : (uploadName ? `Upload complete: ${uploadName}${sizeText}` : "Upload complete"));
+                completeDashboardUpload(uploadName, total, currentPrint);
+                uploadResetTimer = setTimeout(() => resetUploadProgress(currentPrint ? `Printing: ${currentPrint}` : "Idle"), 3500);
             } else if (data.status === "error") {
+                setUploadCardVisible(false);
+                setUploadActive(false);
                 uploadBar.addClass("bg-danger");
                 setUploadProgress(0);
                 const errorText = data.error ? `: ${data.error}` : "";
                 uploadMeta.text(`Upload failed${errorText}`);
+                failDashboardUpload(data.error || "Upload failed");
             }
         },
         close: function () {
-            resetUploadProgress("Idle");
+            if (!uploadActive) {
+                resetUploadProgress("Idle");
+            }
         },
     });
 
@@ -753,7 +1696,11 @@ $(function () {
     if (appriseForm.length) {
         const appriseFields = {
             enabled: $("#apprise-enabled"),
+            mode: $("input[name='apprise-mode']"),
+            modePanels: $(".apprise-mode-panel"),
+            effectiveUrl: $("#apprise-effective-url"),
             serverUrl: $("#apprise-server-url"),
+            webhookUrl: $("#apprise-webhook-url"),
             key: $("#apprise-key"),
             tag: $("#apprise-tag"),
             progressInterval: $("#apprise-progress-interval"),
@@ -761,6 +1708,26 @@ $(function () {
             snapshotFallback: $("#apprise-snapshot-fallback"),
             snapshotLight: $("#apprise-snapshot-light"),
             progressIncludeImage: $("#apprise-progress-image"),
+            rawBodyTemplate: $("#apprise-raw-body-template"),
+            rawContentType: $("#apprise-raw-content-type"),
+            smtp: {
+                host: $("#apprise-smtp-host"),
+                port: $("#apprise-smtp-port"),
+                user: $("#apprise-smtp-user"),
+                password: $("#apprise-smtp-password"),
+                from: $("#apprise-smtp-from"),
+                to: $("#apprise-smtp-to"),
+                security: $("#apprise-smtp-security"),
+            },
+            announcement: {
+                enabled: $("#announcement-enabled"),
+                baseUrl: $("#announcement-base-url"),
+                token: $("#announcement-token"),
+                ttsEntity: $("#announcement-tts-entity"),
+                mediaPlayer: $("#announcement-media-player"),
+                language: $("#announcement-language"),
+                template: $("#announcement-template"),
+            },
             events: {
                 print_started: $("#apprise-event-print-started"),
                 print_finished: $("#apprise-event-print-finished"),
@@ -779,14 +1746,86 @@ $(function () {
             appriseButtons.test.prop("disabled", busy);
         };
 
+        // ── Delivery-method helpers ────────────────────────────────────────
+        // The backend stores a single canonical Apprise `server_url`; its scheme
+        // selects the transport (mailto[s]:// = SMTP, json[s]:// = direct webhook,
+        // http[s]:// + key = Apprise notify API). These helpers let the UI present
+        // friendly per-method fields while composing/parsing that one URL.
+        const getAppriseMode = () =>
+            appriseFields.mode.filter(":checked").val() || "smtp";
+
+        const showAppriseMode = (mode) => {
+            appriseFields.modePanels.each(function () {
+                $(this).toggleClass("d-none", $(this).data("apprise-mode") !== mode);
+            });
+        };
+
+        const setAppriseMode = (mode) => {
+            appriseFields.mode.filter(`[value='${mode}']`).prop("checked", true);
+            showAppriseMode(mode);
+            updateEffectiveUrl();
+        };
+
+        const composeSmtpUrl = () => {
+            const host = appriseFields.smtp.host.val().trim();
+            if (!host) return "";
+            const security = appriseFields.smtp.security.val() || "starttls";
+            const scheme = security === "ssl" ? "mailtos" : "mailto";
+            const user = appriseFields.smtp.user.val().trim();
+            const pass = appriseFields.smtp.password.val();
+            const port = parseInt(appriseFields.smtp.port.val(), 10);
+            let auth = "";
+            if (user) {
+                auth = encodeURIComponent(user);
+                if (pass) auth += `:${encodeURIComponent(pass)}`;
+                auth += "@";
+            }
+            let url = `${scheme}://${auth}${host}`;
+            if (Number.isFinite(port) && port > 0) url += `:${port}`;
+            const params = new URLSearchParams();
+            const from = appriseFields.smtp.from.val().trim();
+            const to = appriseFields.smtp.to.val().trim();
+            if (from) params.set("from", from);
+            if (to) params.set("to", to);
+            params.set("tls", security);
+            return `${url}/?${params.toString()}`;
+        };
+
+        // Map a friendly http(s) webhook URL to the json[s]:// scheme the backend
+        // recognises as a direct JSON POST. Pass through anything already schemed.
+        const composeWebhookUrl = () => {
+            const raw = appriseFields.webhookUrl.val().trim();
+            if (!raw) return "";
+            if (/^https:\/\//i.test(raw)) return `jsons://${raw.slice(8)}`;
+            if (/^http:\/\//i.test(raw)) return `json://${raw.slice(7)}`;
+            return raw;
+        };
+
+        const composeServerUrl = (mode) => {
+            switch (mode || getAppriseMode()) {
+                case "smtp": return composeSmtpUrl();
+                case "webhook": return composeWebhookUrl();
+                default: return appriseFields.serverUrl.val().trim();
+            }
+        };
+
+        const updateEffectiveUrl = () => {
+            if (!appriseFields.effectiveUrl.length) return;
+            // Mask any password embedded in the authority before displaying.
+            const masked = composeServerUrl().replace(/(\/\/[^:@/]+:)[^@/]+(@)/, "$1•••$2");
+            appriseFields.effectiveUrl.val(masked);
+        };
+
         const buildAppriseConfig = () => {
             const interval = parseInt(appriseFields.progressInterval.val(), 10);
             const snapshotQuality = appriseFields.snapshotQuality.val().trim().toLowerCase();
-            return {
+            const mode = getAppriseMode();
+            const config = {
                 enabled: appriseFields.enabled.is(":checked"),
-                server_url: appriseFields.serverUrl.val().trim(),
-                key: appriseFields.key.val().trim(),
-                tag: appriseFields.tag.val().trim(),
+                server_url: composeServerUrl(mode),
+                tag: mode === "server" ? appriseFields.tag.val().trim() : "",
+                raw_body_template: mode === "webhook" ? appriseFields.rawBodyTemplate.val().trim() : "",
+                raw_content_type: appriseFields.rawContentType.val().trim() || "application/json",
                 events: {
                     print_started: appriseFields.events.print_started.is(":checked"),
                     print_finished: appriseFields.events.print_finished.is(":checked"),
@@ -802,16 +1841,65 @@ $(function () {
                     snapshot_light: appriseFields.snapshotLight.is(":checked"),
                 },
             };
+            if (mode === "server") addSecretIfEntered(config, "key", appriseFields.key);
+            const announcement = {
+                enabled: appriseFields.announcement.enabled.is(":checked"),
+                base_url: appriseFields.announcement.baseUrl.val().trim(),
+                tts_entity_id: appriseFields.announcement.ttsEntity.val().trim(),
+                media_player_entity_id: appriseFields.announcement.mediaPlayer.val().trim(),
+                language: appriseFields.announcement.language.val().trim(),
+                template: appriseFields.announcement.template.val().trim() || "{body}",
+                events: config.events,
+            };
+            addSecretIfEntered(announcement, "token", appriseFields.announcement.token);
+            return { apprise: config, announcement };
         };
 
-        const applyAppriseSettings = (apprise) => {
+        // Parse a stored Apprise server_url into the friendly per-method fields
+        // and select the matching delivery mode. Inverse of composeServerUrl().
+        const applyServerUrlToFields = (rawUrl) => {
+            const raw = (rawUrl || "").trim();
+            appriseFields.webhookUrl.val("");
+            appriseFields.serverUrl.val("");
+
+            if (/^mailtos?:\/\//i.test(raw)) {
+                try {
+                    const u = new URL(raw);
+                    appriseFields.smtp.host.val(u.hostname || "");
+                    appriseFields.smtp.port.val(u.port || "");
+                    appriseFields.smtp.user.val(u.username ? decodeURIComponent(u.username) : "");
+                    appriseFields.smtp.password.val(u.password ? decodeURIComponent(u.password) : "");
+                    appriseFields.smtp.from.val(u.searchParams.get("from") || "");
+                    appriseFields.smtp.to.val(u.searchParams.getAll("to").join(", "));
+                    const tls = u.searchParams.get("tls") || (/^mailtos:/i.test(raw) ? "ssl" : "starttls");
+                    appriseFields.smtp.security.val(tls);
+                } catch (e) {
+                    appriseFields.smtp.host.val("");
+                }
+                setAppriseMode("smtp");
+            } else if (/^jsons?:\/\//i.test(raw)) {
+                const https = /^jsons:\/\//i.test(raw);
+                appriseFields.webhookUrl.val((https ? "https://" : "http://") + raw.replace(/^jsons?:\/\//i, ""));
+                setAppriseMode("webhook");
+            } else if (raw) {
+                appriseFields.serverUrl.val(raw);
+                setAppriseMode("server");
+            } else {
+                // Unconfigured — default to the simplest method.
+                setAppriseMode("smtp");
+            }
+        };
+
+        const applyAppriseSettings = (apprise, announcement) => {
             const settings = apprise || {};
             const events = settings.events || {};
             const progress = settings.progress || {};
             appriseFields.enabled.prop("checked", Boolean(settings.enabled));
-            appriseFields.serverUrl.val(settings.server_url || "");
-            appriseFields.key.val(settings.key || "");
+            markSavedSecret(appriseFields.key, Boolean(settings.key), "key");
             appriseFields.tag.val(settings.tag || "");
+            // Parse the canonical server_url back into the friendly per-method
+            // fields and select the matching delivery mode.
+            applyServerUrlToFields(settings.server_url || "");
             appriseFields.events.print_started.prop("checked", Boolean(events.print_started));
             appriseFields.events.print_finished.prop("checked", Boolean(events.print_finished));
             appriseFields.events.print_failed.prop("checked", Boolean(events.print_failed));
@@ -826,6 +1914,17 @@ $(function () {
             appriseFields.snapshotQuality.val(progress.snapshot_quality || "hd");
             appriseFields.snapshotFallback.prop("checked", progress.snapshot_fallback !== false);
             appriseFields.snapshotLight.prop("checked", Boolean(progress.snapshot_light));
+            appriseFields.rawBodyTemplate.val(settings.raw_body_template || "");
+            appriseFields.rawContentType.val(settings.raw_content_type || "application/json");
+
+            const ann = announcement || {};
+            appriseFields.announcement.enabled.prop("checked", Boolean(ann.enabled));
+            appriseFields.announcement.baseUrl.val(ann.base_url || "");
+            markSavedSecret(appriseFields.announcement.token, Boolean(ann.token), "token");
+            appriseFields.announcement.ttsEntity.val(ann.tts_entity_id || "");
+            appriseFields.announcement.mediaPlayer.val(ann.media_player_entity_id || "");
+            appriseFields.announcement.language.val(ann.language || "");
+            appriseFields.announcement.template.val(ann.template || "{body}");
         };
 
         const loadAppriseSettings = async () => {
@@ -834,7 +1933,7 @@ $(function () {
                 const resp = await fetch("/api/notifications/settings");
                 if (resp.ok) {
                     const data = await resp.json();
-                    applyAppriseSettings(data.apprise || {});
+                    applyAppriseSettings(data.apprise || {}, data.announcement || {});
                 } else {
                     const data = await resp.json().catch(() => ({}));
                     const msg = data.error ? data.error : `HTTP ${resp.status}`;
@@ -849,7 +1948,7 @@ $(function () {
 
         appriseButtons.save.on("click", async function () {
             setAppriseBusy(true);
-            const payload = { apprise: buildAppriseConfig() };
+            const payload = buildAppriseConfig();
             try {
                 const resp = await fetch("/api/notifications/settings", {
                     method: "POST",
@@ -859,7 +1958,7 @@ $(function () {
                 if (resp.ok) {
                     const data = await resp.json().catch(() => ({}));
                     if (data.apprise) {
-                        applyAppriseSettings(data.apprise);
+                        applyAppriseSettings(data.apprise, data.announcement || {});
                     }
                     flash_message("Notification settings saved", "success");
                 } else {
@@ -876,7 +1975,7 @@ $(function () {
 
         appriseButtons.test.on("click", async function () {
             setAppriseBusy(true);
-            const payload = { apprise: buildAppriseConfig() };
+            const payload = buildAppriseConfig();
             try {
                 const resp = await fetch("/api/notifications/test", {
                     method: "POST",
@@ -896,6 +1995,18 @@ $(function () {
                 setAppriseBusy(false);
             }
         });
+
+        // Switching delivery method reveals the matching panel; editing any
+        // connection field refreshes the effective-URL preview.
+        appriseFields.mode.on("change", function () {
+            showAppriseMode(getAppriseMode());
+            updateEffectiveUrl();
+        });
+        appriseForm.on("input change",
+            "#apprise-webhook-url, #apprise-server-url, " +
+            "#apprise-smtp-host, #apprise-smtp-port, #apprise-smtp-user, " +
+            "#apprise-smtp-password, #apprise-smtp-from, #apprise-smtp-to, #apprise-smtp-security",
+            updateEffectiveUrl);
 
         loadAppriseSettings();
     }
@@ -986,6 +2097,84 @@ $(function () {
         })();
     });
 
+    const tempOverrideForm = $("#temperature-overrides-form");
+    if (tempOverrideForm.length) {
+        const tempOverrideFields = {
+            enabled: $("#temp-override-enabled"),
+            nozzle: $("#temp-override-nozzle"),
+            bed: $("#temp-override-bed"),
+            save: $("#temperature-overrides-save"),
+            status: $("#temperature-overrides-status"),
+        };
+
+        const clampInputInt = (field, fallback) => {
+            const raw = parseInt(field.val(), 10);
+            if (isNaN(raw)) {
+                return fallback;
+            }
+            const min = parseInt(field.attr("min"), 10);
+            const max = parseInt(field.attr("max"), 10);
+            return Math.max(min, Math.min(max, raw));
+        };
+
+        const loadTemperatureOverrides = async () => {
+            try {
+                const resp = await fetch("/api/settings/temperature-overrides");
+                if (!resp.ok) {
+                    return;
+                }
+                const data = await resp.json();
+                const cfg = data.temperature_overrides || {};
+                tempOverrideFields.enabled.prop("checked", Boolean(cfg.enabled));
+                tempOverrideFields.nozzle.val(cfg.nozzle_min_temp_c || 0);
+                tempOverrideFields.bed.val(cfg.bed_min_temp_c || 0);
+                tempOverrideFields.status.text(data.printer_name ? `Active printer: ${data.printer_name}` : "");
+            } catch (err) {
+                console.error("Failed to load temperature overrides:", err);
+            }
+        };
+
+        tempOverrideFields.save.on("click", async function () {
+            const btn = $(this);
+            btn.prop("disabled", true);
+            const payload = {
+                temperature_overrides: {
+                    enabled: tempOverrideFields.enabled.is(":checked"),
+                    nozzle_min_temp_c: clampInputInt(tempOverrideFields.nozzle, 0),
+                    bed_min_temp_c: clampInputInt(tempOverrideFields.bed, 0),
+                }
+            };
+            tempOverrideFields.nozzle.val(payload.temperature_overrides.nozzle_min_temp_c);
+            tempOverrideFields.bed.val(payload.temperature_overrides.bed_min_temp_c);
+            try {
+                const resp = await fetch("/api/settings/temperature-overrides", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                });
+                if (resp.ok) {
+                    const data = await resp.json().catch(() => ({}));
+                    const cfg = data.temperature_overrides || payload.temperature_overrides;
+                    flash_message("Temperature overrides saved", "success");
+                    tempOverrideFields.status.text(
+                        cfg.enabled
+                            ? `Enabled: nozzle >= ${cfg.nozzle_min_temp_c || 0}°C, bed >= ${cfg.bed_min_temp_c || 0}°C`
+                            : "Disabled",
+                    );
+                } else {
+                    const data = await resp.json().catch(() => ({}));
+                    flash_message(`Failed to save temperature overrides: ${data.error || resp.statusText}`, "danger");
+                }
+            } catch (err) {
+                flash_message(`Error: ${err.message}`, "danger");
+            } finally {
+                btn.prop("disabled", false);
+            }
+        });
+
+        loadTemperatureOverrides();
+    }
+
     $("#printer-lan-search-btn").on("click", async function () {
         const btn = $(this);
         const status = $("#printer-lan-search-result");
@@ -1035,6 +2224,7 @@ $(function () {
     function sendPrinterGCode(gcode) {
         if (!gcode) return;
         console.log("Sending GCode:", gcode);
+        logInstructionLines("gcode", gcode, "info");
         fetch("/api/printer/gcode", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1044,6 +2234,10 @@ $(function () {
 
     function sendPrintControl(value) {
         console.log("Sending Print Control:", value);
+        const label = value === PRINT_CONTROL.PAUSE ? "pause" :
+            (value === PRINT_CONTROL.RESUME ? "resume" :
+                (value === PRINT_CONTROL.STOP ? "stop" : String(value)));
+        addCommandFeed(`control: ${label}`, value === PRINT_CONTROL.STOP ? "warn" : "info");
         fetch("/api/printer/control", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1062,19 +2256,48 @@ $(function () {
 
     let _currentPrintState = PRINT_STATE.IDLE;
     let _lastDisplayedProgress = 0;
+    let _maxSeenProgress = 0; // monotonic ceiling; resets when print goes idle
     let _preparing = false; // true between ct=1044 and first real ct=1001 progress
+
+    function setPrintPreparing(preparing) {
+        _preparing = Boolean(preparing);
+        const state = Number.isFinite(Number(_currentPrintState)) ? _currentPrintState : PRINT_STATE.IDLE;
+        _updatePrintControlButtons(state);
+    }
 
     function _updatePrintControlButtons(state) {
         _currentPrintState = state;
         const printing = state === PRINT_STATE.PRINTING;
         const paused = state === PRINT_STATE.PAUSED;
-        const active = printing || paused;
+        const cancelable = printing || paused || _preparing || Date.now() < uploadStateHoldUntil;
         $("#print-pause").toggleClass("d-none", !printing);
         $("#print-resume").toggleClass("d-none", !paused);
-        $("#print-stop").toggleClass("d-none", !active);
+        $("#print-stop").toggleClass("d-none", !cancelable);
+        $("#print-stop").html((_preparing || (!printing && !paused)) ?
+            '<i class="bi-x-circle-fill px-1"></i> Cancel' :
+            '<i class="bi-stop-fill px-1"></i> Stop');
+        _syncPrintGlow();
     }
 
-    const getStepDist = () => $('input[name="step-dist"]:checked').val() || "1";
+    function _syncPrintGlow() {
+        setPrintingGlow(_preparing || _currentPrintState === PRINT_STATE.PRINTING || _currentPrintState === PRINT_STATE.PAUSED);
+    }
+
+    const STEP_DISTANCES = [1, 10, 20, 50];
+    const getStepDist = () => {
+        const slider = document.getElementById("step-dist-slider");
+        if (slider) return String(STEP_DISTANCES[parseInt(slider.value, 10)] || 1);
+        return $('input[name="step-dist"]:checked').val() || "1";
+    };
+    (function () {
+        const slider = document.getElementById("step-dist-slider");
+        const label = document.getElementById("step-dist-label");
+        if (slider && label) {
+            const sync = () => { label.textContent = (STEP_DISTANCES[parseInt(slider.value, 10)] || 1) + " mm"; };
+            slider.addEventListener("input", sync);
+            sync();
+        }
+    })();
 
     $("#move-x-plus").on("click", function () { sendPrinterGCode(`G91\nG0 X${getStepDist()} F3000\nG90`); return false; });
     $("#move-x-minus").on("click", function () { sendPrinterGCode(`G91\nG0 X-${getStepDist()} F3000\nG90`); return false; });
@@ -1086,6 +2309,26 @@ $(function () {
     $("#control-home-xy").on("click", function () { sendPrinterGCode("G28 X Y"); return false; });
     $("#control-home-z").on("click", function () { sendPrinterGCode("G28 Z"); return false; });
     $("#control-home-all").on("click", function () { sendPrinterGCode("G28"); return false; });
+
+    // Emergency stop — cut printer power via the smart socket immediately.
+    $("#emergency-stop").on("click", function () {
+        if (!confirm("EMERGENCY STOP — cut power to the printer NOW? This stops the print immediately.")) return;
+        const btn = $(this);
+        btn.prop("disabled", true);
+        fetch("/api/smart-socket/control", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "off" }),
+        })
+            .then(async (r) => {
+                const d = await r.json().catch(() => ({}));
+                if (r.ok) flash_message("Emergency stop — printer power cut.", "success");
+                else flash_message("E-STOP failed: " + (d.error || r.statusText) + (r.status === 400 ? " (configure the smart socket in Camera & AI)" : ""), "danger");
+            })
+            .catch((e) => flash_message("E-STOP error: " + e.message, "danger"))
+            .finally(() => btn.prop("disabled", false));
+        return false;
+    });
 
     // ------------------------------------------------------------------
     // Bed Level Map — shared rendering utilities
@@ -1362,7 +2605,7 @@ $(function () {
             '<span class="spinner-border spinner-border-sm me-2" role="status"></span>' +
             'Sending M420 V \u2014 waiting for printer response (up to 15 s)...</div>';
         if (gridEl) gridEl.style.display = "none";
-        if (readBtn) readBtn.prop ? $(readBtn).prop("disabled", true) : (readBtn.disabled = true);
+        if (readBtn) readBtn.disabled = true;
 
         try {
             const resp = await fetch("/api/printer/bed-leveling");
@@ -1852,6 +3095,7 @@ $(function () {
             return false;
         }
         gcodeLog(`» ${normalized.replace(/\n/g, " | ")}`);
+        logInstructionLines("console", normalized, "info");
         const resp = await fetch("/api/printer/gcode", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1876,21 +3120,41 @@ $(function () {
         formData.append("print", startPrint ? "true" : "false");
         const action = startPrint ? "Uploading print job" : "Uploading file";
         gcodeLog(`» ${action}: ${file.name} (${formatBytes(file.size)})`);
-        const resp = await fetch("/api/files/local", {
-            method: "POST",
-            body: formData,
-        });
+        setUploadActive(true);
+        startDashboardUpload(file.name, file.size);
+        let resp;
+        try {
+            resp = await fetch("/api/files/local", {
+                method: "POST",
+                body: formData,
+            });
+        } catch (err) {
+            setUploadActive(false);
+            failDashboardUpload(err.message || "Request failed");
+            throw err;
+        }
         if (resp.ok) {
             const data = await resp.json().catch(() => ({}));
             const rate = data.upload_rate_mbps;
             const source = data.upload_rate_source;
             const rateText = rate ? ` using ${rate} Mbps (${source})` : "";
+            const tempOverride = data.temperature_overrides || {};
+            if (tempOverride.applied) {
+                addCommandFeed(
+                    `upload override: nozzle ${tempOverride.nozzle_commands || 0}, bed ${tempOverride.bed_commands || 0}`,
+                    "warn",
+                );
+            }
+            setUploadActive(false);
+            completeDashboardUpload(file.name, file.size, ($("#print-name").text() || "").trim());
             gcodeLog(startPrint
-                ? `✓ Upload started${rateText}, printer should begin after transfer completes`
-                : `✓ Upload started${rateText}`);
+                ? `✓ Upload complete${rateText}, printer start acknowledged`
+                : `✓ Upload complete${rateText}`);
             return true;
         }
+        setUploadActive(false);
         const text = (await resp.text()).trim();
+        failDashboardUpload(text || "Upload failed");
         gcodeLog(`✗ Error ${resp.status}: ${text || "Upload failed"}`);
         return false;
     }
@@ -1961,6 +3225,11 @@ $(function () {
     $("#print-stop").on("click", function () {
         if (confirm("Are you sure you want to stop the print?")) {
             sendPrintControl(PRINT_CONTROL.STOP);
+            updateDashboardState({
+                phase: "Cancel requested",
+                phaseDetail: "Waiting for printer confirmation",
+                phaseTone: "warn",
+            }, "cancel requested", "warn");
             // Do NOT send M104/M140/M106 GCode alongside stop — the printer may interpret
             // incoming GCode during stop-transition as a resume signal, cancelling the stop.
             // The printer will cool down automatically after a confirmed stop.
@@ -2113,16 +3382,71 @@ $(function () {
                 const tbody = $("#history-tbody");
                 if (!append) tbody.empty();
                 if (data.entries.length === 0 && !append) {
-                    tbody.html('<tr><td colspan="4" class="text-center text-muted py-4">No history yet</td></tr>');
+                    tbody.html('<tr><td colspan="6" class="text-center text-muted py-4">No history yet</td></tr>');
                 }
                 data.entries.forEach(e => {
                     const started = e.started_at ? new Date(e.started_at + "Z").toLocaleString() : "-";
                     const safeFilename = escapeHtml(e.filename);
+                    const viewBtn = e.archive_relpath
+                        ? `<button class="btn btn-sm btn-link p-0 ms-1 gcode-view-btn" data-id="${e.id}" data-filename="${safeFilename}" title="View GCode toolpath" aria-label="View GCode toolpath"><i class="bi-bounding-box"></i></button>`
+                        : "";
+                    const latestAI = Array.isArray(e.ai_history) && e.ai_history.length ? e.ai_history[e.ai_history.length - 1] : null;
+                    const latestHook = Array.isArray(e.notification_log) && e.notification_log.length ? e.notification_log[e.notification_log.length - 1] : null;
+                    const aiSummary = latestAI
+                        ? `${latestAI.failing ? "Fail" : "OK"}${latestAI.confidence != null ? ` ${Math.round(latestAI.confidence * 100)}%` : ""}`
+                        : "-";
+                    const hookSummary = latestHook
+                        ? `${latestHook.ok ? "OK" : "Err"} ${escapeHtml(latestHook.event || latestHook.transport || "")}`
+                        : "-";
+                    const aiDetails = (e.ai_history || []).slice().reverse().map((item) => {
+                        const parts = [];
+                        parts.push(`<strong>${item.failing ? "Fail" : "OK"}</strong>`);
+                        if (item.animal_detected) {
+                            const animal = item.animal ? ` ${escapeHtml(item.animal)}` : "";
+                            parts.push(`<span class="badge bg-danger"><i class="bi-exclamation-octagon-fill"></i> Animal — E-STOP${animal}</span>`);
+                        }
+                        if (item.confidence != null) parts.push(`${Math.round(item.confidence * 100)}%`);
+                        if (item.reason) parts.push(escapeHtml(item.reason));
+                        if (item.raw_response) parts.push(`<details><summary>AI reply</summary><pre class="small mb-0">${escapeHtml(item.raw_response)}</pre></details>`);
+                        // Evidence image: the backend gives a ready-made same-origin route URL
+                        // (and only sets it while the archived frame is still on disk / unexpired).
+                        // Show it inline as a thumbnail rather than a bare text link.
+                        let imgHtml = "";
+                        const src = safeHttpURL(item.evidence_url);
+                        if (item.evidence_url && src) {
+                            imgHtml = `<div class="mt-1"><a href="${escapeHtml(src)}" target="_blank" rel="noopener"><img src="${escapeHtml(src)}" alt="AI evidence" loading="lazy" class="history-ai-evidence rounded" onerror="this.closest('a').remove()"></a></div>`;
+                        } else if (item.evidence_expires_at && new Date(item.evidence_expires_at) < new Date()) {
+                            parts.push('<span class="text-body-secondary">image expired</span>');
+                        }
+                        return `<div class="mb-2"><div class="small text-body-secondary">${item.at ? new Date(item.at).toLocaleString() : ""}</div>${parts.join(" · ")}${imgHtml}</div>`;
+                    }).join("");
+                    const hookDetails = (e.notification_log || []).slice().reverse().map((item) => {
+                        const parts = [];
+                        parts.push(`<strong>${item.ok ? "OK" : "Err"}</strong>`);
+                        if (item.event) parts.push(escapeHtml(item.event));
+                        if (item.transport) parts.push(escapeHtml(item.transport));
+                        if (item.message) parts.push(escapeHtml(item.message));
+                        if (item.response_raw) parts.push(`<details><summary>Webhook reply</summary><pre class="small mb-0">${escapeHtml(item.response_raw)}</pre></details>`);
+                        return `<div class="mb-2"><div class="small text-body-secondary">${item.at ? new Date(item.at).toLocaleString() : ""}</div>${parts.join(" · ")}</div>`;
+                    }).join("");
                     const row = `<tr>
-                        <td class="text-truncate" style="max-width:200px;" title="${safeFilename}">${safeFilename}</td>
+                        <td style="max-width:220px;">
+                            <div class="d-flex align-items-center">
+                                <span class="text-truncate" title="${safeFilename}">${safeFilename}</span>
+                                ${viewBtn}
+                            </div>
+                        </td>
                         <td>${statusBadge(e.status)}</td>
                         <td class="small">${started}</td>
                         <td>${formatDuration(e.duration_sec)}</td>
+                        <td class="small">${aiSummary}</td>
+                        <td class="small">${hookSummary}</td>
+                    </tr>
+                    <tr class="history-detail-row">
+                        <td colspan="6" class="small bg-body-tertiary">
+                            ${aiDetails ? `<div class="mb-3"><div class="text-body-secondary text-uppercase small mb-1">AI checks</div>${aiDetails}</div>` : ""}
+                            ${hookDetails ? `<div><div class="text-body-secondary text-uppercase small mb-1">Webhook replies</div>${hookDetails}</div>` : ""}
+                        </td>
                     </tr>`;
                     tbody.append(row);
                 });
@@ -2160,6 +3484,172 @@ $(function () {
                 loadHistory(false);
             });
     });
+
+    // ── GCode toolpath viewer ───────────────────────────────────────────
+    // Opens a history row's archived GCode and draws a cheap 2D top-down
+    // toolpath on a <canvas> (zero external deps). The layer slider scrubs
+    // depth; "Travel" overlays non-extruding moves. Read-only.
+    (function () {
+        const modalEl = document.getElementById("gcode-viewer-modal");
+        const canvas = document.getElementById("gcode-canvas");
+        if (!modalEl || !canvas || typeof bootstrap === "undefined") return;
+        const slider = document.getElementById("gcode-layer-slider");
+        const layerLabel = document.getElementById("gcode-layer-label");
+        const travelToggle = document.getElementById("gcode-show-travel");
+        const statusEl = document.getElementById("gcode-viewer-status");
+        const titleEl = document.getElementById("gcode-viewer-title");
+        const modal = new bootstrap.Modal(modalEl);
+        let parsed = null;
+        let reqId = 0;
+
+        const setStatus = (msg) => {
+            if (!statusEl) return;
+            if (msg) { statusEl.textContent = msg; statusEl.hidden = false; }
+            else { statusEl.hidden = true; }
+        };
+
+        // Single-pass parse → layers of [x0,y0,x1,y1,extruding] segments.
+        // Honours G90/G91 (absolute/relative) and M82/M83 (extruder mode);
+        // starts a new layer whenever Z rises. Capped for very large files.
+        const parseGcode = (text) => {
+            const MAX_LINES = 2000000;
+            const lines = text.split("\n");
+            const count = Math.min(lines.length, MAX_LINES);
+            const layers = [];
+            let cur = null;
+            const startLayer = (zVal) => { cur = []; layers.push({ z: zVal, segs: cur }); };
+            startLayer(0);
+            let absolute = true, absExtrude = true;
+            let x = 0, y = 0, z = 0, e = 0;
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (let i = 0; i < count; i++) {
+                let line = lines[i];
+                const semi = line.indexOf(";");
+                if (semi >= 0) line = line.slice(0, semi);
+                line = line.trim();
+                if (!line) continue;
+                const parts = line.split(/\s+/);
+                const cmd = parts[0].toUpperCase();
+                if (cmd === "G90") { absolute = true; continue; }
+                if (cmd === "G91") { absolute = false; continue; }
+                if (cmd === "M82") { absExtrude = true; continue; }
+                if (cmd === "M83") { absExtrude = false; continue; }
+                if (cmd === "G92") {
+                    for (let p = 1; p < parts.length; p++) {
+                        const v = parseFloat(parts[p].slice(1));
+                        if (isNaN(v)) continue;
+                        const c = parts[p][0].toUpperCase();
+                        if (c === "X") x = v; else if (c === "Y") y = v; else if (c === "Z") z = v; else if (c === "E") e = v;
+                    }
+                    continue;
+                }
+                if (cmd !== "G0" && cmd !== "G1") continue;
+                let nx = x, ny = y, nz = z, ne = e, hasE = false;
+                for (let p = 1; p < parts.length; p++) {
+                    const c = parts[p][0].toUpperCase();
+                    const v = parseFloat(parts[p].slice(1));
+                    if (isNaN(v)) continue;
+                    if (c === "X") nx = absolute ? v : x + v;
+                    else if (c === "Y") ny = absolute ? v : y + v;
+                    else if (c === "Z") nz = absolute ? v : z + v;
+                    else if (c === "E") { hasE = true; ne = absExtrude ? v : e + v; }
+                }
+                if (nz > z + 0.0001) startLayer(nz);
+                const extruding = hasE && (ne - e) > 0.0001 && (nx !== x || ny !== y);
+                if (nx !== x || ny !== y) {
+                    cur.push([x, y, nx, ny, extruding ? 1 : 0]);
+                    if (extruding) {
+                        if (x < minX) minX = x; if (x > maxX) maxX = x;
+                        if (y < minY) minY = y; if (y > maxY) maxY = y;
+                        if (nx < minX) minX = nx; if (nx > maxX) maxX = nx;
+                        if (ny < minY) minY = ny; if (ny > maxY) maxY = ny;
+                    }
+                }
+                x = nx; y = ny; z = nz; if (hasE) e = ne;
+            }
+            if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 200; maxY = 200; }
+            return { layers, bbox: { minX, minY, maxX, maxY }, truncated: lines.length > MAX_LINES };
+        };
+
+        const draw = () => {
+            if (!parsed) return;
+            const ctx = canvas.getContext("2d");
+            const W = canvas.width, H = canvas.height;
+            ctx.fillStyle = "#0d1117";
+            ctx.fillRect(0, 0, W, H);
+            const b = parsed.bbox;
+            const bw = Math.max(1, b.maxX - b.minX), bh = Math.max(1, b.maxY - b.minY);
+            const pad = 14;
+            const scale = Math.min((W - 2 * pad) / bw, (H - 2 * pad) / bh);
+            const ox = (W - bw * scale) / 2, oy = (H - bh * scale) / 2;
+            const tx = (px) => ox + (px - b.minX) * scale;
+            const ty = (py) => H - (oy + (py - b.minY) * scale); // flip Y so it reads like the bed
+            const top = parseInt(slider.value, 10) || 0;
+            const showTravel = travelToggle.checked;
+            for (let li = 0; li <= top && li < parsed.layers.length; li++) {
+                const isTop = li === top;
+                const segs = parsed.layers[li].segs;
+                if (showTravel) {
+                    ctx.strokeStyle = "rgba(120,160,255,0.22)";
+                    ctx.lineWidth = 0.5;
+                    ctx.beginPath();
+                    for (const s of segs) { if (!s[4]) { ctx.moveTo(tx(s[0]), ty(s[1])); ctx.lineTo(tx(s[2]), ty(s[3])); } }
+                    ctx.stroke();
+                }
+                ctx.strokeStyle = isTop ? "#88f387" : "rgba(136,243,135,0.32)";
+                ctx.lineWidth = isTop ? 1.3 : 0.7;
+                ctx.beginPath();
+                for (const s of segs) { if (s[4]) { ctx.moveTo(tx(s[0]), ty(s[1])); ctx.lineTo(tx(s[2]), ty(s[3])); } }
+                ctx.stroke();
+            }
+        };
+
+        slider.addEventListener("input", () => {
+            if (parsed) layerLabel.textContent = `${(parseInt(slider.value, 10) || 0) + 1} / ${parsed.layers.length}`;
+            draw();
+        });
+        travelToggle.addEventListener("change", draw);
+
+        window.openGcodeViewer = async (id, filename) => {
+            const my = ++reqId;
+            parsed = null;
+            titleEl.textContent = filename || "GCode preview";
+            slider.disabled = true; slider.value = 0; slider.max = 0;
+            layerLabel.textContent = "–";
+            const ctx = canvas.getContext("2d");
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            setStatus("Loading…");
+            modal.show();
+            try {
+                const resp = await fetch(`/api/history/${id}/gcode`);
+                if (my !== reqId) return;
+                if (!resp.ok) {
+                    setStatus(resp.status === 404 ? "No archived GCode for this print." : `Failed to load (HTTP ${resp.status}).`);
+                    return;
+                }
+                const text = await resp.text();
+                if (my !== reqId) return;
+                parsed = parseGcode(text);
+                if (!parsed.layers.some((l) => l.segs.length)) {
+                    parsed = null;
+                    setStatus("No toolpath moves found.");
+                    return;
+                }
+                slider.max = parsed.layers.length - 1;
+                slider.value = parsed.layers.length - 1;
+                slider.disabled = false;
+                layerLabel.textContent = `${parsed.layers.length} / ${parsed.layers.length}`;
+                draw();
+                setStatus(parsed.truncated ? "Large file — preview truncated." : "");
+            } catch (err) {
+                if (my === reqId) setStatus(`Error: ${err.message}`);
+            }
+        };
+
+        $("#history-tbody").on("click", ".gcode-view-btn", function () {
+            window.openGcodeViewer($(this).data("id"), $(this).data("filename"));
+        });
+    })();
 
     /**
      * Timelapse — list + player layout
@@ -2234,7 +3724,7 @@ $(function () {
     }
 
     // Load on tab show; auto-refresh every 15 s while active.
-    const timelapseTabBtn = document.querySelector('button[data-bs-target="#timelapse"]');
+    const timelapseTabBtn = document.querySelector('button[data-bs-target="#timelapse"]') || historyTabBtn;
     let _timelapseInterval = null;
     if (timelapseTabBtn) {
         timelapseTabBtn.addEventListener("shown.bs.tab", function () {
@@ -2269,6 +3759,573 @@ $(function () {
                 loadTimelapses();
             });
     });
+
+    /**
+     * Camera, AI print monitor, and smart socket settings
+     */
+    const cameraForm = $("#camera-form");
+    if (cameraForm.length) {
+        const cameraFields = {
+            source: $("#camera-source"),
+            kind: $("#camera-kind"),
+            externalWrap: $("#camera-external-wrap"),
+            presetFields: $(".camera-preset-fields"),
+            kindHelp: $("#camera-kind-help"),
+            resolvedStream: $("#camera-resolved-stream"),
+            resolvedSnapshot: $("#camera-resolved-snapshot"),
+            name: $("#camera-name"),
+            refresh: $("#camera-refresh"),
+            haEnabled: $("#ha-camera-enabled"),
+            haFields: $("#camera-ha-fields"),
+            haBaseURL: $("#ha-camera-base-url"),
+            haToken: $("#ha-camera-token"),
+            haEntity: $("#ha-camera-entity"),
+            detail: $("#camera-detail"),
+        };
+
+        const camKindHelp = {
+            mjpeg: "A single MJPEG stream URL that a browser <img> can display directly.",
+            octoprint: "Just the base URL of your OctoPrint / mjpg-streamer host.",
+            frigate: "Frigate base URL and the camera name as defined in your Frigate config.",
+            go2rtc: "go2rtc / MediaMTX base URL and the stream name. Serves a browser-friendly MJPEG feed.",
+            reolink: "Reolink host plus credentials. Uses the camera's FLV stream and snapshot CGI.",
+            rtsp: "Raw RTSP — usable for snapshots only. For live view, restream via go2rtc/MediaMTX.",
+            custom: "Enter the stream and snapshot URLs by hand.",
+        };
+
+        const trimSlash = (s) => (s || "").trim().replace(/\/+$/, "");
+
+        // Mirror of model.DeriveExternalCameraURLs (internal/model/defaults.go).
+        // Keep the two in sync: the server re-derives non-custom kinds on save.
+        const deriveCameraUrls = (kind, f) => {
+            switch (kind) {
+                case "mjpeg":
+                    return { stream: (f.stream_url || "").trim(), snapshot: "" };
+                case "rtsp":
+                    return { stream: (f.stream_url || "").trim(), snapshot: "" };
+                case "octoprint": {
+                    const base = trimSlash(f.base_url);
+                    if (!base) return { stream: "", snapshot: "" };
+                    return { stream: base + "/webcam/?action=stream", snapshot: base + "/webcam/?action=snapshot" };
+                }
+                case "frigate": {
+                    const base = trimSlash(f.base_url);
+                    const cam = (f.camera || "").trim();
+                    if (!base || !cam) return { stream: "", snapshot: "" };
+                    return { stream: base + "/api/" + cam, snapshot: base + "/api/" + cam + "/latest.jpg" };
+                }
+                case "go2rtc": {
+                    const base = trimSlash(f.base_url);
+                    const stream = (f.stream || "").trim();
+                    if (!base || !stream) return { stream: "", snapshot: "" };
+                    return { stream: base + "/api/stream.mjpeg?src=" + stream, snapshot: base + "/api/frame.jpeg?src=" + stream };
+                }
+                case "reolink": {
+                    let host = trimSlash(f.host);
+                    if (!host) return { stream: "", snapshot: "" };
+                    if (!host.includes("://")) host = "http://" + host;
+                    const channel = (f.channel || "").trim() || "0";
+                    const user = (f.user || "").trim();
+                    const pass = (f.password || "");
+                    const cred = user ? "&user=" + user + "&password=" + pass : "";
+                    return {
+                        stream: host + "/flv?port=1935&app=bcs&stream=channel" + channel + "_main.bcs" + cred,
+                        snapshot: host + "/cgi-bin/api.cgi?cmd=Snap&channel=" + channel + "&rs=ankerctl" + cred,
+                    };
+                }
+                default: // custom
+                    return { stream: "", snapshot: "" };
+            }
+        };
+
+        const collectCameraFields = (kind) => {
+            switch (kind) {
+                case "mjpeg": return { stream_url: $("#camera-mjpeg-stream").val() };
+                case "rtsp": return { stream_url: $("#camera-rtsp-stream").val() };
+                case "octoprint": return { base_url: $("#camera-octoprint-base").val() };
+                case "frigate": return { base_url: $("#camera-frigate-base").val(), camera: $("#camera-frigate-camera").val() };
+                case "go2rtc": return { base_url: $("#camera-go2rtc-base").val(), stream: $("#camera-go2rtc-stream").val() };
+                case "reolink": return {
+                    host: $("#camera-reolink-host").val(),
+                    user: $("#camera-reolink-user").val(),
+                    password: $("#camera-reolink-password").val(),
+                    channel: $("#camera-reolink-channel").val(),
+                };
+                default: return {}; // custom uses the direct URL fields
+            }
+        };
+
+        // Toggle the preset block vs the Home Assistant proxy fields, and refresh
+        // the resolved-URL preview. Presets are only relevant for an external feed
+        // that is not proxied through Home Assistant.
+        const refreshCameraUi = () => {
+            const isExternal = cameraFields.source.val() === "external";
+            const usingHA = cameraFields.haEnabled.is(":checked");
+            cameraFields.externalWrap.toggleClass("d-none", !(isExternal && !usingHA));
+            cameraFields.haFields.toggleClass("d-none", !usingHA);
+            if (!isExternal || usingHA) return;
+            const kind = cameraFields.kind.val();
+            cameraFields.kindHelp.text(camKindHelp[kind] || "");
+            cameraFields.presetFields.each(function () {
+                $(this).toggleClass("d-none", $(this).data("kind") !== kind);
+            });
+            let stream = "", snapshot = "";
+            if (kind === "custom") {
+                stream = ($("#camera-custom-stream").val() || "").trim();
+                snapshot = ($("#camera-custom-snapshot").val() || "").trim();
+            } else {
+                const d = deriveCameraUrls(kind, collectCameraFields(kind));
+                stream = d.stream;
+                snapshot = d.snapshot;
+            }
+            cameraFields.resolvedStream.text(stream || "—");
+            cameraFields.resolvedSnapshot.text(snapshot || "—");
+        };
+
+        const applyCameraSettings = (cfg) => {
+            const ext = cfg.external || {};
+            const ha = ext.home_assistant || {};
+            cameraFields.source.val(cfg.configured_source || cfg.source || "printer");
+            cameraFields.name.val(ext.name || "");
+            cameraFields.refresh.val(ext.refresh_sec || 1);
+
+            const kind = ext.kind || (ext.stream_url || ext.snapshot_url ? "custom" : "mjpeg");
+            cameraFields.kind.val(kind);
+            const f = ext.fields || {};
+            $("#camera-mjpeg-stream").val(f.stream_url || (kind === "mjpeg" ? ext.stream_url : "") || "");
+            $("#camera-rtsp-stream").val(f.stream_url || (kind === "rtsp" ? ext.stream_url : "") || "");
+            $("#camera-octoprint-base").val(f.base_url || "");
+            $("#camera-frigate-base").val(f.base_url || "");
+            $("#camera-frigate-camera").val(f.camera || "");
+            $("#camera-go2rtc-base").val(f.base_url || "");
+            $("#camera-go2rtc-stream").val(f.stream || "");
+            $("#camera-reolink-host").val(f.host || "");
+            $("#camera-reolink-user").val(f.user || "");
+            $("#camera-reolink-password").val(f.password || "");
+            $("#camera-reolink-channel").val(f.channel || "");
+            $("#camera-custom-stream").val(kind === "custom" ? (ext.stream_url || "") : "");
+            $("#camera-custom-snapshot").val(kind === "custom" ? (ext.snapshot_url || "") : "");
+
+            cameraFields.haEnabled.prop("checked", Boolean(ha.enabled));
+            cameraFields.haBaseURL.val(ha.base_url || "");
+            markSavedSecret(cameraFields.haToken, Boolean(ha.token_configured || ha.token), "token");
+            cameraFields.haEntity.val(ha.camera_entity_id || "");
+            cameraFields.detail.text(cfg.detail || "");
+            refreshCameraUi();
+        };
+
+        const loadCameraSettings = async () => {
+            try {
+                const resp = await fetch("/api/settings/camera");
+                if (!resp.ok) return;
+                const data = await resp.json();
+                applyCameraSettings(data.camera || {});
+            } catch (err) {
+                console.error("Failed to load camera settings:", err);
+            }
+        };
+
+        $("#camera-save").on("click", async function () {
+            const btn = $(this);
+            btn.prop("disabled", true);
+            const source = cameraFields.source.val() === "external" ? "external" : "printer";
+            const haEnabled = cameraFields.haEnabled.is(":checked");
+            const haSettings = {
+                enabled: haEnabled,
+                base_url: cameraFields.haBaseURL.val().trim(),
+                camera_entity_id: cameraFields.haEntity.val().trim(),
+            };
+            addSecretIfEntered(haSettings, "token", cameraFields.haToken);
+            const external = {
+                name: cameraFields.name.val().trim(),
+                refresh_sec: parseInt(cameraFields.refresh.val(), 10) || 1,
+                home_assistant: haSettings,
+            };
+            if (source === "external" && !haEnabled) {
+                const kind = cameraFields.kind.val();
+                external.kind = kind;
+                if (kind === "custom") {
+                    external.stream_url = ($("#camera-custom-stream").val() || "").trim();
+                    external.snapshot_url = ($("#camera-custom-snapshot").val() || "").trim();
+                    external.fields = {};
+                } else {
+                    const fields = collectCameraFields(kind);
+                    external.fields = fields;
+                    const d = deriveCameraUrls(kind, fields);
+                    external.stream_url = d.stream;
+                    external.snapshot_url = d.snapshot;
+                }
+            }
+            const payload = { camera: { source, external } };
+            try {
+                const resp = await fetch("/api/settings/camera", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                });
+                if (resp.ok) {
+                    flash_message("Camera settings saved", "success");
+                    loadCameraSettings();
+                } else {
+                    const data = await resp.json().catch(() => ({}));
+                    flash_message(`Failed to save camera: ${data.error || resp.statusText}`, "danger");
+                }
+            } catch (err) {
+                flash_message(`Error: ${err.message}`, "danger");
+            } finally {
+                btn.prop("disabled", false);
+            }
+        });
+
+        cameraForm.on("change input", "select, input", refreshCameraUi);
+        loadCameraSettings();
+    }
+
+    const pmForm = $("#print-monitor-form");
+    if (pmForm.length) {
+        const pmDefaults = {
+            url: "https://api.kilo.ai/api/gateway",
+            model: "kilo-auto/balanced",
+        };
+        const pmFields = {
+            enabled: $("#print-monitor-enabled"),
+            animalStop: $("#print-monitor-animal-stop"),
+            interval: $("#print-monitor-interval"),
+            frameCount: $("#print-monitor-frame-count"),
+            spacing: $("#print-monitor-spacing"),
+            confidenceThreshold: $("#print-monitor-confidence-threshold"),
+            confidenceLabel: $("#print-monitor-confidence-label"),
+            url: $("#print-monitor-url"),
+            model: $("#print-monitor-model"),
+            key: $("#print-monitor-key"),
+            prompt: $("#print-monitor-prompt"),
+            status: $("#print-monitor-status"),
+            debug: $("#print-monitor-debug"),
+            debugImage: $("#print-monitor-debug-image"),
+            debugRequest: $("#print-monitor-debug-request"),
+            debugResponse: $("#print-monitor-debug-response"),
+        };
+        const pmButtons = {
+            save: $("#print-monitor-save"),
+            check: $("#print-monitor-check"),
+        };
+
+        const printMonitorMinutes = (seconds) => {
+            const value = parseInt(seconds, 10);
+            return Math.max(1, Math.round((Number.isFinite(value) && value > 0 ? value : 300) / 60));
+        };
+
+        const setPrintMonitorBusy = (busy) => {
+            pmButtons.save.prop("disabled", busy);
+            pmButtons.check.prop("disabled", busy);
+        };
+
+        const renderConfidenceLabel = () => {
+            const value = parseFloat(pmFields.confidenceThreshold.val());
+            const percent = Math.round((Number.isFinite(value) ? value : 0.7) * 100);
+            pmFields.confidenceLabel.text(`${percent}%`);
+        };
+
+        const applyPrintMonitorConfig = (cfg) => {
+            const settings = cfg || {};
+            pmFields.enabled.prop("checked", Boolean(settings.enabled));
+            pmFields.animalStop.prop("checked", Boolean(settings.emergency_stop_on_animal));
+            pmFields.interval.val(printMonitorMinutes(settings.interval_sec || 300));
+            pmFields.frameCount.val(settings.frame_count || 5);
+            pmFields.spacing.val(settings.frame_spacing_sec || 1);
+            pmFields.confidenceThreshold.val(settings.confidence_threshold || 0.7);
+            pmFields.url.val(settings.openrouter_url || pmDefaults.url);
+            pmFields.model.val(settings.model || pmDefaults.model);
+            markSavedSecret(pmFields.key, Boolean(settings.openrouter_key), "API key");
+            pmFields.prompt.val(settings.prompt || "");
+            renderConfidenceLabel();
+        };
+
+        const buildPrintMonitorPayload = () => {
+            const minutes = parseInt(pmFields.interval.val(), 10);
+            const cfg = {
+                enabled: pmFields.enabled.is(":checked"),
+                emergency_stop_on_animal: pmFields.animalStop.is(":checked"),
+                interval_sec: (Number.isFinite(minutes) && minutes > 0 ? minutes : 5) * 60,
+                frame_count: parseInt(pmFields.frameCount.val(), 10) || 5,
+                frame_spacing_sec: parseInt(pmFields.spacing.val(), 10) || 1,
+                confidence_threshold: parseFloat(pmFields.confidenceThreshold.val()) || 0.7,
+                openrouter_url: pmFields.url.val().trim() || pmDefaults.url,
+                model: pmFields.model.val().trim() || pmDefaults.model,
+                prompt: pmFields.prompt.val().trim(),
+            };
+            addSecretIfEntered(cfg, "openrouter_key", pmFields.key);
+            return { print_monitor: cfg };
+        };
+
+        const renderPrintMonitorDebug = (result) => {
+            if (!result) {
+                pmFields.debug.prop("hidden", true);
+                return;
+            }
+            if (result.contact_sheet) {
+                pmFields.debugImage.attr("src", result.contact_sheet);
+                pmFields.debugImage.closest(".col-lg-6").show();
+            } else {
+                pmFields.debugImage.attr("src", "");
+                pmFields.debugImage.closest(".col-lg-6").hide();
+            }
+            const request = {
+                provider_url: result.provider_url || pmFields.url.val().trim() || pmDefaults.url,
+                model: result.model || pmFields.model.val().trim() || pmDefaults.model,
+                prompt: result.prompt || pmFields.prompt.val().trim(),
+                images: {
+                    contact_sheet: Boolean(result.contact_sheet),
+                    reference_image: Boolean(result.reference_image),
+                    frame_count: result.frame_count || parseInt(pmFields.frameCount.val(), 10) || 5,
+                    frame_spacing_sec: result.frame_spacing_sec || parseInt(pmFields.spacing.val(), 10) || 1,
+                },
+                metadata: result.metadata || {},
+                confidence_threshold: result.confidence_threshold || parseFloat(pmFields.confidenceThreshold.val()) || 0.7,
+            };
+            const response = {
+                http_status: result.http_status || null,
+                raw_response: result.raw_response || "",
+                parsed: {
+                    model_failing: Boolean(result.model_failing),
+                    failing: Boolean(result.failing),
+                    confidence: result.confidence || 0,
+                    threshold_passed: result.threshold_passed !== false,
+                    reason: result.reason || "",
+                },
+                error: result.error || "",
+                checked_at: result.at || null,
+            };
+            pmFields.debugRequest.text(JSON.stringify(request, null, 2));
+            pmFields.debugResponse.text(JSON.stringify(response, null, 2));
+            pmFields.debug.prop("hidden", false);
+        };
+
+        const renderPrintMonitorStatus = (status) => {
+            if (!status || !status.available) {
+                pmFields.status.text("Monitor service unavailable.");
+                return;
+            }
+            const s = status.status || {};
+            const last = s.last_result;
+            let text = `Active: ${s.active ? "yes" : "no"}; running: ${s.running ? "yes" : "no"}`;
+            if (s.next_check) text += `; next: ${new Date(s.next_check).toLocaleString()}`;
+            if (last) {
+                text += `; last: ${last.failing ? "failing" : "ok"}`;
+                if (last.confidence) text += ` (${Math.round(last.confidence * 100)}%)`;
+                if (last.confidence_threshold) text += ` threshold ${Math.round(last.confidence_threshold * 100)}%`;
+                if (last.reason) text += ` - ${last.reason}`;
+                if (last.error) text += ` - ${last.error}`;
+                renderPrintMonitorDebug(last);
+            }
+            pmFields.status.text(text);
+        };
+
+        pmFields.confidenceThreshold.on("input change", renderConfidenceLabel);
+
+        const loadPrintMonitorSettings = async () => {
+            try {
+                const resp = await fetch("/api/settings/print-monitor");
+                if (resp.ok) {
+                    const data = await resp.json();
+                    applyPrintMonitorConfig(data.print_monitor || {});
+                }
+                const statusResp = await fetch("/api/print-monitor/status");
+                if (statusResp.ok) renderPrintMonitorStatus(await statusResp.json());
+            } catch (err) {
+                console.error("Failed to load print monitor settings:", err);
+            }
+        };
+
+        const savePrintMonitorSettings = async (quiet) => {
+            const payload = buildPrintMonitorPayload();
+            const resp = await fetch("/api/settings/print-monitor", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+            });
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok) {
+                throw new Error(data.error || resp.statusText);
+            }
+            if (data.print_monitor) {
+                applyPrintMonitorConfig(data.print_monitor);
+            }
+            if (!quiet) {
+                flash_message("Print monitor settings saved", "success");
+            }
+            return data;
+        };
+
+        pmButtons.save.on("click", async function () {
+            setPrintMonitorBusy(true);
+            try {
+                await savePrintMonitorSettings(false);
+                await loadPrintMonitorSettings();
+            } catch (err) {
+                flash_message(`Error: ${err.message}`, "danger");
+            } finally {
+                setPrintMonitorBusy(false);
+            }
+        });
+
+        pmButtons.check.on("click", async function () {
+            setPrintMonitorBusy(true);
+            pmFields.debug.prop("hidden", true);
+            pmFields.status.text("Saving settings, capturing frames, and waiting for AI response...");
+            try {
+                await savePrintMonitorSettings(true);
+                const resp = await fetch("/api/print-monitor/check", { method: "POST" });
+                const data = await resp.json().catch(() => ({}));
+                if (data.result) {
+                    renderPrintMonitorDebug(data.result);
+                }
+                if (resp.ok) {
+                    const result = data.result || {};
+                    const verdict = result.error ? `error - ${result.error}` : result.failing ? "failing" : "ok";
+                    pmFields.status.text(`Manual check result: ${verdict}${result.reason ? ` - ${result.reason}` : ""}`);
+                    flash_message("Print monitor check completed", "success");
+                } else {
+                    const msg = data.error || (data.result && data.result.error) || `HTTP ${resp.status}`;
+                    pmFields.status.text(`Manual check failed: ${msg}`);
+                    flash_message(`Print monitor check failed: ${msg}`, "danger");
+                }
+                await loadPrintMonitorSettings();
+            } catch (err) {
+                pmFields.status.text(`Manual check failed: ${err.message}`);
+                flash_message(`Print monitor check failed: ${err.message}`, "danger");
+            } finally {
+                setPrintMonitorBusy(false);
+            }
+        });
+
+        loadPrintMonitorSettings();
+        setInterval(async () => {
+            try {
+                const resp = await fetch("/api/print-monitor/status");
+                if (resp.ok) renderPrintMonitorStatus(await resp.json());
+            } catch (_) {}
+        }, 10000);
+    }
+
+    const ssForm = $("#smart-socket-form");
+    if (ssForm.length) {
+        const ssFields = {
+            enabled: $("#smart-socket-enabled"),
+            baseURL: $("#smart-socket-base-url"),
+            token: $("#smart-socket-token"),
+            switchEntity: $("#smart-socket-switch"),
+            powerEntity: $("#smart-socket-power"),
+            autoOff: $("#smart-socket-auto-off"),
+            powerSaving: $("#smart-socket-power-saving"),
+            wakeSec: $("#smart-socket-wake-sec"),
+            idleSec: $("#smart-socket-idle-sec"),
+            status: $("#smart-socket-status"),
+        };
+
+        const loadSmartSocketState = async () => {
+            try {
+                const resp = await fetch("/api/smart-socket/state");
+                if (!resp.ok) return;
+                const data = await resp.json();
+                if (!data.available) {
+                    ssFields.status.text(data.error || "Socket not configured");
+                    return;
+                }
+                const power = data.power ? `, ${data.power} ${data.power_unit || "W"}` : "";
+                const ps = data.power_saving || {};
+                let powerSavingText = "";
+                if (ps.enabled) {
+                    powerSavingText = ps.awake_until ? `, awake until ${new Date(ps.awake_until).toLocaleTimeString()}` : ", power saving idle";
+                    if (ps.print_active) powerSavingText = ", print active";
+                }
+                ssFields.status.text(`${data.state}${power}${powerSavingText}`);
+            } catch (err) {
+                console.error("Failed to load smart socket state:", err);
+            }
+        };
+
+        const loadSmartSocketSettings = async () => {
+            try {
+                const resp = await fetch("/api/settings/smart-socket");
+                if (resp.ok) {
+                    const data = await resp.json();
+                    const cfg = data.smart_socket || {};
+                    ssFields.enabled.prop("checked", Boolean(cfg.enabled));
+                    ssFields.baseURL.val(cfg.base_url || "");
+                    markSavedSecret(ssFields.token, Boolean(cfg.token), "token");
+                    ssFields.switchEntity.val(cfg.switch_entity || "");
+                    ssFields.powerEntity.val(cfg.power_entity || "");
+                    ssFields.autoOff.prop("checked", Boolean(cfg.auto_off_on_fail));
+                    ssFields.powerSaving.prop("checked", Boolean(cfg.power_saving_enabled));
+                    ssFields.wakeSec.val(cfg.power_saving_dashboard_wake_sec || 600);
+                    ssFields.idleSec.val(cfg.power_saving_idle_off_sec || 1800);
+                }
+                loadSmartSocketState();
+            } catch (err) {
+                console.error("Failed to load smart socket settings:", err);
+            }
+        };
+
+        $("#smart-socket-save").on("click", async function () {
+            const btn = $(this);
+            btn.prop("disabled", true);
+            const payload = {
+                smart_socket: {
+                    enabled: ssFields.enabled.is(":checked"),
+                    base_url: ssFields.baseURL.val().trim(),
+                    switch_entity: ssFields.switchEntity.val().trim(),
+                    power_entity: ssFields.powerEntity.val().trim(),
+                    auto_off_on_fail: ssFields.autoOff.is(":checked"),
+                    power_saving_enabled: ssFields.powerSaving.is(":checked"),
+                    power_saving_dashboard_wake_sec: parseInt(ssFields.wakeSec.val(), 10) || 600,
+                    power_saving_idle_off_sec: parseInt(ssFields.idleSec.val(), 10) || 1800,
+                },
+            };
+            addSecretIfEntered(payload.smart_socket, "token", ssFields.token);
+            try {
+                const resp = await fetch("/api/settings/smart-socket", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                });
+                if (resp.ok) {
+                    flash_message("Smart socket settings saved", "success");
+                    loadSmartSocketSettings();
+                } else {
+                    const data = await resp.json().catch(() => ({}));
+                    flash_message(`Failed to save socket: ${data.error || resp.statusText}`, "danger");
+                }
+            } catch (err) {
+                flash_message(`Error: ${err.message}`, "danger");
+            } finally {
+                btn.prop("disabled", false);
+            }
+        });
+
+        const controlSocket = async (action) => {
+            const resp = await fetch("/api/smart-socket/control", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action }),
+            });
+            if (!resp.ok) {
+                const data = await resp.json().catch(() => ({}));
+                flash_message(`Socket ${action} failed: ${data.error || resp.statusText}`, "danger");
+                return;
+            }
+            flash_message(`Socket turned ${action}`, "success");
+            setTimeout(loadSmartSocketState, 1000);
+        };
+
+        $("#smart-socket-on").on("click", () => controlSocket("on"));
+        $("#smart-socket-off").on("click", () => {
+            if (confirm("Turn off the printer socket?")) controlSocket("off");
+        });
+
+        loadSmartSocketSettings();
+        setInterval(loadSmartSocketState, 10000);
+    }
 
     /**
      * Timelapse Settings
@@ -2362,7 +4419,7 @@ $(function () {
                     mqttFields.host.val(cfg.mqtt_host || "");
                     mqttFields.port.val(cfg.mqtt_port || 1883);
                     mqttFields.user.val(cfg.mqtt_username || "");
-                    mqttFields.password.val(cfg.mqtt_password || "");
+                    markSavedSecret(mqttFields.password, Boolean(cfg.mqtt_password), "password");
                     mqttFields.prefix.val(cfg.discovery_prefix || "homeassistant");
                 }
             } catch (err) {
@@ -2379,10 +4436,10 @@ $(function () {
                     mqtt_host: mqttFields.host.val().trim(),
                     mqtt_port: parseInt(mqttFields.port.val(), 10) || 1883,
                     mqtt_username: mqttFields.user.val().trim(),
-                    mqtt_password: mqttFields.password.val().trim(),
                     discovery_prefix: mqttFields.prefix.val().trim(),
                 }
             };
+            addSecretIfEntered(payload.home_assistant, "mqtt_password", mqttFields.password);
             try {
                 const resp = await fetch("/api/settings/mqtt", {
                     method: "POST",
@@ -3572,6 +5629,51 @@ $(function () {
     const filamentSearch = document.getElementById("filament-search");
     if (filamentSearch) {
         filamentSearch.addEventListener("input", function () { _renderFilaments(); });
+    }
+
+    // Detect filament colour from the camera (vision model) and suggest the
+    // closest profile in the library.
+    const hexRGB = (h) => { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+    const filamentClosestColor = (hex) => {
+        const [r, g, b] = hexRGB(hex);
+        let best = null, bestD = Infinity;
+        (_filamentAllProfiles || []).forEach((p) => {
+            const c = (p.color || "").trim();
+            if (!/^#?[0-9a-fA-F]{6}$/.test(c)) return;
+            const [pr, pg, pb] = hexRGB(c[0] === "#" ? c : "#" + c);
+            const d = (r - pr) ** 2 + (g - pg) ** 2 + (b - pb) ** 2;
+            if (d < bestD) { bestD = d; best = p; }
+        });
+        return best;
+    };
+    const filamentDetectBtn = document.getElementById("filament-detect-color");
+    if (filamentDetectBtn) {
+        filamentDetectBtn.addEventListener("click", async function () {
+            const result = document.getElementById("filament-detect-result");
+            filamentDetectBtn.disabled = true;
+            result.textContent = "Capturing camera…";
+            try {
+                const frame = await fetch("/api/camera/frame");
+                if (!frame.ok) throw new Error("camera frame unavailable");
+                const blob = await frame.blob();
+                const dataUri = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = rej; fr.readAsDataURL(blob); });
+                result.textContent = "Detecting colour…";
+                const resp = await fetch("/api/filament/detect-color", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: dataUri }) });
+                const d = await resp.json().catch(() => ({}));
+                if (d.skipped) { result.textContent = "AI not configured (set it up under Camera & AI)."; return; }
+                let hex = (d.hex || "").trim();
+                if (!/^#?[0-9a-fA-F]{6}$/.test(hex)) { result.textContent = "Could not determine a colour from the camera."; return; }
+                if (hex[0] !== "#") hex = "#" + hex;
+                document.getElementById("filament-color").value = hex;
+                const match = filamentClosestColor(hex);
+                result.innerHTML = `Detected <span style="display:inline-block;width:0.8em;height:0.8em;vertical-align:-1px;border:1px solid #888;background:${escapeHtml(hex)}"></span> ${escapeHtml(hex)}` +
+                    (match ? ` · closest in library: <strong>${escapeHtml(match.name)}</strong>` : "");
+            } catch (err) {
+                result.textContent = "Detect failed: " + (err && err.message ? err.message : err);
+            } finally {
+                filamentDetectBtn.disabled = false;
+            }
+        });
     }
 
     // Filament service: profile select sync

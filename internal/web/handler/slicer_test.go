@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/django1982/ankerctl/internal/config"
@@ -44,10 +45,12 @@ func (s *stubService) Tap(_ func(any)) func()            { return func() {} }
 type stubUploader struct {
 	uploadErr error
 	called    bool
+	payload   []byte
 }
 
-func (u *stubUploader) Upload(_ context.Context, _ service.UploadInfo, _ []byte, _ func(int64, int64)) error {
+func (u *stubUploader) Upload(_ context.Context, _ service.UploadInfo, payload []byte, _ func(int64, int64)) error {
 	u.called = true
+	u.payload = append([]byte(nil), payload...)
 	return u.uploadErr
 }
 
@@ -349,6 +352,59 @@ func TestSlicerUpload(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestSlicerUpload_AppliesTemperatureOverrides(t *testing.T) {
+	uploader := &stubUploader{}
+	h := newSlicerTestHandler(t, uploader)
+	err := h.cfg.Modify(func(cfg *model.Config) (*model.Config, error) {
+		cfg.TemperatureOverrides = model.DefaultTemperatureOverridesConfig()
+		cfg.TemperatureOverrides.PerPrinter["SN1"] = model.TemperatureOverrideEntry{
+			Enabled:        true,
+			NozzleMinTempC: 210,
+			BedMinTempC:    60,
+		}
+		return cfg, nil
+	})
+	if err != nil {
+		t.Fatalf("Modify config: %v", err)
+	}
+
+	req := makeMultipartRequest(t, "temp.gcode", []byte(strings.Join([]string{
+		"M104 S150",
+		"M109 S150",
+		"M104 S0",
+		"M140 S55",
+		"M140 S0",
+		"",
+	}, "\n")), map[string]string{"print": "true"})
+	w := httptest.NewRecorder()
+
+	h.SlicerUpload(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	got := string(uploader.payload)
+	for _, want := range []string{"M104 S210", "M109 S210", "M104 S0", "M140 S60", "M140 S0"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("uploaded payload missing %q in %q", want, got)
+		}
+	}
+
+	var resp struct {
+		TemperatureOverrides struct {
+			Applied        bool `json:"applied"`
+			NozzleCommands int  `json:"nozzle_commands"`
+			BedCommands    int  `json:"bed_commands"`
+		} `json:"temperature_overrides"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !resp.TemperatureOverrides.Applied || resp.TemperatureOverrides.NozzleCommands != 2 || resp.TemperatureOverrides.BedCommands != 1 {
+		t.Fatalf("temperature override response = %+v", resp.TemperatureOverrides)
 	}
 }
 

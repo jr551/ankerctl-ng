@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/django1982/ankerctl/internal/db"
 	"github.com/django1982/ankerctl/internal/model"
 	"github.com/django1982/ankerctl/internal/service"
 )
@@ -44,6 +46,7 @@ type NotificationService struct {
 	service.BaseWorker
 
 	cfg      ConfigLoader
+	history  *db.DB
 	mqtt     EventTapSource
 	snapshot SnapshotCapturer
 
@@ -67,6 +70,11 @@ func NewNotificationService(cfg ConfigLoader, mqtt EventTapSource, snapshot Snap
 		lastProgressNotified: -1,
 	}
 	s.BindHooks(s)
+	return s
+}
+
+func (s *NotificationService) WithHistory(history *db.DB) *NotificationService {
+	s.history = history
 	return s
 }
 
@@ -109,8 +117,18 @@ func SendTestNotification(ctx context.Context, apprise model.AppriseConfig, snap
 	if !client.IsConfigured() {
 		return false, "Apprise server URL or key missing"
 	}
-	attachments := maybeSnapshotAttachment(ctx, snapshot)
+	want := resolved.Progress.IncludeImage || envBool("APPRISE_ATTACH")
+	attachments := maybeSnapshotAttachment(ctx, snapshot, want)
 	return client.Post(ctx, "Ankerctl Test", "Test notification sent from ankerctl settings page.", "info", attachments)
+}
+
+func SendTestAnnouncement(ctx context.Context, cfg model.HomeAnnouncementConfig) (bool, string) {
+	payload := map[string]any{
+		"filename": "test.gcode",
+		"body":     "Test announcement sent from ankerctl settings page.",
+	}
+	res := SendHomeAnnouncement(ctx, cfg, EventPrintFinished, payload)
+	return res.OK, res.Message
 }
 
 func (s *NotificationService) handleEvent(ctx context.Context, evt any) {
@@ -257,12 +275,39 @@ func (s *NotificationService) handleStateTransition(ctx context.Context, state i
 }
 
 func (s *NotificationService) send(ctx context.Context, event string, payload map[string]any) {
-	client := s.currentClient()
-	if client == nil {
-		return
+	if client := s.currentClient(); client != nil {
+		// Attach a snapshot when the user enabled "include image" (or the
+		// APPRISE_ATTACH env override). This is what puts a photo of the
+		// finished print in the notification / email.
+		want := client.settings.Progress.IncludeImage || envBool("APPRISE_ATTACH")
+		attachments := maybeSnapshotAttachment(ctx, s.snapshot, want)
+		result := client.SendEventDetailed(ctx, event, payload, attachments)
+		s.recordDelivery(extractFilename(payload), event, result)
 	}
-	attachments := maybeSnapshotAttachment(ctx, s.snapshot)
-	_, _ = client.SendEvent(ctx, event, payload, attachments)
+	if announcement := s.currentAnnouncement(); announcement != nil && announcement.Enabled {
+		result := SendHomeAnnouncement(ctx, *announcement, event, payload)
+		s.recordDelivery(extractFilename(payload), event, result)
+	}
+}
+
+// sendWithAttachments delivers a notification with explicit attachments,
+// bypassing the "include image" gate the periodic snapshot path uses.
+func (s *NotificationService) sendWithAttachments(ctx context.Context, event string, payload map[string]any, attachments []string) {
+	if client := s.currentClient(); client != nil {
+		result := client.SendEventDetailed(ctx, event, payload, attachments)
+		s.recordDelivery(extractFilename(payload), event, result)
+	}
+	if announcement := s.currentAnnouncement(); announcement != nil && announcement.Enabled {
+		result := SendHomeAnnouncement(ctx, *announcement, event, payload)
+		s.recordDelivery(extractFilename(payload), event, result)
+	}
+}
+
+// NotifyAnimalEmergencyStop sends a safety alert (with the camera frame attached)
+// when the AI monitor's animal-detection emergency stop fires. It is delivered as
+// a print-failed event so it rides existing notification routing/opt-in.
+func (s *NotificationService) NotifyAnimalEmergencyStop(ctx context.Context, payload map[string]any, attachments []string) {
+	s.sendWithAttachments(ctx, EventPrintFailed, payload, attachments)
 }
 
 func (s *NotificationService) currentClient() *Client {
@@ -277,8 +322,40 @@ func (s *NotificationService) currentClient() *Client {
 	return newClient(resolved)
 }
 
-func maybeSnapshotAttachment(ctx context.Context, snapshot SnapshotCapturer) []string {
-	if !envBool("APPRISE_ATTACH") || snapshot == nil {
+func (s *NotificationService) currentAnnouncement() *model.HomeAnnouncementConfig {
+	if s.cfg == nil {
+		return nil
+	}
+	cfg, err := s.cfg.Load()
+	if err != nil || cfg == nil {
+		return nil
+	}
+	announcement := cfg.Notifications.Announcement
+	return &announcement
+}
+
+func (s *NotificationService) recordDelivery(filename, event string, result DeliveryResult) {
+	if s.history == nil {
+		return
+	}
+	entry := db.HistoryNotificationResult{
+		At:          result.At,
+		Event:       event,
+		OK:          result.OK,
+		Message:     result.Message,
+		Transport:   result.Transport,
+		Target:      result.Target,
+		StatusCode:  result.StatusCode,
+		Title:       result.Title,
+		ResponseRaw: result.ResponseRaw,
+	}
+	if err := s.history.AppendNotificationResult(filename, "", entry); err != nil {
+		slog.Warn("failed to append notification result to history", "filename", filename, "event", event, "err", err)
+	}
+}
+
+func maybeSnapshotAttachment(ctx context.Context, snapshot SnapshotCapturer, want bool) []string {
+	if !want || snapshot == nil {
 		return nil
 	}
 	tmp, err := os.CreateTemp("", "apprise-*.jpg")

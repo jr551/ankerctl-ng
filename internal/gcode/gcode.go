@@ -10,6 +10,8 @@ import (
 var (
 	estimatedTimePattern = regexp.MustCompile(`(?i);\s*estimated printing time[^=]*=\s*(.*)`) // slicer header
 	timeTokenPattern     = regexp.MustCompile(`(?i)(\d+)\s*([dhms])`)
+	gcodeCommandPattern  = regexp.MustCompile(`(?i)^\s*([A-Z]+\d+)`)
+	tempParamPattern     = regexp.MustCompile(`(?i)(^|[ \t])S[ \t]*([-+]?[0-9]+(?:\.[0-9]+)?)`)
 	layerCountPatterns   = []*regexp.Regexp{
 		regexp.MustCompile(`(?i)^;LAYER_COUNT:(\d+)`),
 		regexp.MustCompile(`(?i)^;\s*total layer(?:s)?\s*(?:number|count)?\s*[=:]\s*(\d+)`),
@@ -21,6 +23,19 @@ var timeUnits = map[string]int{
 	"h": 3600,
 	"m": 60,
 	"s": 1,
+}
+
+// TemperatureOverrides raises non-zero GCode temperature targets below the
+// configured floor. Zero targets are left alone so cooldown commands still work.
+type TemperatureOverrides struct {
+	NozzleMinTempC int
+	BedMinTempC    int
+}
+
+// TemperatureOverrideStats reports how many commands were changed.
+type TemperatureOverrideStats struct {
+	NozzleCommands int
+	BedCommands    int
 }
 
 // PatchGCodeTime inserts a ;TIME:<seconds> marker before the first G28 if missing.
@@ -66,6 +81,95 @@ func PatchGCodeTime(data []byte) []byte {
 	patched = append(patched, insert)
 	patched = append(patched, lines[g28Index:]...)
 	return []byte(strings.Join(patched, ""))
+}
+
+// ApplyTemperatureOverrides raises M104/M109 and M140/M190 S parameters that
+// are below the configured minimums. Comments and cooldown commands are kept.
+func ApplyTemperatureOverrides(data []byte, overrides TemperatureOverrides) ([]byte, TemperatureOverrideStats) {
+	if overrides.NozzleMinTempC <= 0 && overrides.BedMinTempC <= 0 {
+		return data, TemperatureOverrideStats{}
+	}
+	lines := strings.SplitAfter(string(data), "\n")
+	var out strings.Builder
+	out.Grow(len(data))
+	var stats TemperatureOverrideStats
+
+	for _, line := range lines {
+		codePart := line
+		commentPart := ""
+		if idx := strings.Index(codePart, ";"); idx >= 0 {
+			commentPart = codePart[idx:]
+			codePart = codePart[:idx]
+		}
+
+		patched, changed := applyTemperatureOverrideLine(codePart, overrides)
+		if changed {
+			cmd := firstGCodeCommand(codePart)
+			if isNozzleTempCommand(cmd) {
+				stats.NozzleCommands++
+			} else if isBedTempCommand(cmd) {
+				stats.BedCommands++
+			}
+		}
+		out.WriteString(patched)
+		out.WriteString(commentPart)
+	}
+
+	if stats.NozzleCommands == 0 && stats.BedCommands == 0 {
+		return data, stats
+	}
+	return []byte(out.String()), stats
+}
+
+func applyTemperatureOverrideLine(codePart string, overrides TemperatureOverrides) (string, bool) {
+	cmd, restStart := parseGCodeCommand(codePart)
+	minTemp := 0
+	switch {
+	case isNozzleTempCommand(cmd):
+		minTemp = overrides.NozzleMinTempC
+	case isBedTempCommand(cmd):
+		minTemp = overrides.BedMinTempC
+	default:
+		return codePart, false
+	}
+	if minTemp <= 0 {
+		return codePart, false
+	}
+
+	rest := codePart[restStart:]
+	match := tempParamPattern.FindStringSubmatchIndex(rest)
+	if len(match) != 6 {
+		return codePart, false
+	}
+	valueStart := restStart + match[4]
+	valueEnd := restStart + match[5]
+	rawValue := codePart[valueStart:valueEnd]
+	target, err := strconv.ParseFloat(rawValue, 64)
+	if err != nil || target <= 0 || target >= float64(minTemp) {
+		return codePart, false
+	}
+	return codePart[:valueStart] + strconv.Itoa(minTemp) + codePart[valueEnd:], true
+}
+
+func firstGCodeCommand(codePart string) string {
+	cmd, _ := parseGCodeCommand(codePart)
+	return cmd
+}
+
+func parseGCodeCommand(codePart string) (string, int) {
+	match := gcodeCommandPattern.FindStringSubmatchIndex(codePart)
+	if len(match) != 4 {
+		return "", 0
+	}
+	return strings.ToUpper(codePart[match[2]:match[3]]), match[1]
+}
+
+func isNozzleTempCommand(cmd string) bool {
+	return cmd == "M104" || cmd == "M109"
+}
+
+func isBedTempCommand(cmd string) bool {
+	return cmd == "M140" || cmd == "M190"
 }
 
 // ExtractLayerCount extracts the layer count from slicer comments.

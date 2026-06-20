@@ -3,14 +3,17 @@ package notifications
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
 	"mime/multipart"
 	"net"
 	"net/http"
+	"net/smtp"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -37,6 +40,18 @@ type Client struct {
 	settings   model.AppriseConfig
 	http       *http.Client
 	lookupHost func(host string) ([]string, error) // injectable for tests
+}
+
+type DeliveryResult struct {
+	At          time.Time `json:"at"`
+	Event       string    `json:"event,omitempty"`
+	OK          bool      `json:"ok"`
+	Message     string    `json:"message,omitempty"`
+	Transport   string    `json:"transport,omitempty"`
+	Target      string    `json:"target,omitempty"`
+	StatusCode  int       `json:"status_code,omitempty"`
+	Title       string    `json:"title,omitempty"`
+	ResponseRaw string    `json:"response_raw,omitempty"`
 }
 
 // NewClient builds an Apprise client with a 10-second HTTP timeout.
@@ -140,7 +155,7 @@ func readIntEnv(key string) (int, bool) {
 
 // IsConfigured reports whether URL + key are present.
 func (c *Client) IsConfigured() bool {
-	return c.serverURL() != "" && c.key() != ""
+	return c.directJSONURL() != nil || c.directSMTPURL() != nil || (c.serverURL() != "" && c.key() != "")
 }
 
 // IsEnabled reports whether Apprise is enabled and configured.
@@ -172,28 +187,79 @@ func (c *Client) IsEventEnabled(event string) bool {
 
 // SendEvent renders template/title/type and posts a notification.
 func (c *Client) SendEvent(ctx context.Context, event string, payload map[string]any, attachments []string) (bool, string) {
+	res := c.SendEventDetailed(ctx, event, payload, attachments)
+	return res.OK, res.Message
+}
+
+func (c *Client) SendEventDetailed(ctx context.Context, event string, payload map[string]any, attachments []string) DeliveryResult {
 	if !c.IsEnabled() {
-		return false, "Apprise is disabled or missing required settings"
+		return DeliveryResult{At: time.Now(), Event: event, OK: false, Message: "Apprise is disabled or missing required settings"}
 	}
 	if !c.IsEventEnabled(event) {
-		return false, fmt.Sprintf("Event disabled: %s", event)
+		return DeliveryResult{At: time.Now(), Event: event, OK: false, Message: fmt.Sprintf("Event disabled: %s", event)}
 	}
 
 	tmpl := c.templateForEvent(event)
 	body := RenderTemplate(tmpl, payload)
-	return c.Post(ctx, EventTitle(event), body, EventType(event), attachments)
+	if u := c.directJSONURL(); u != nil && strings.TrimSpace(c.settings.RawBodyTemplate) != "" {
+		renderPayload := clonePayloadMap(payload)
+		renderPayload["event"] = event
+		renderPayload["title"] = EventTitle(event)
+		renderPayload["body"] = body
+		renderPayload["type"] = EventType(event)
+		renderPayload["tag"] = strings.TrimSpace(c.settings.Tag)
+		rendered := RenderTemplate(c.settings.RawBodyTemplate, renderPayload)
+		result := c.postRawDetailed(ctx, u, EventTitle(event), rendered, strings.TrimSpace(c.settings.RawContentType))
+		result.Event = event
+		return result
+	}
+	result := c.postDetailed(ctx, EventTitle(event), body, EventType(event), attachments)
+	result.Event = event
+	return result
 }
 
 // Post sends a raw notification payload.
 // Attachments that are local file paths are uploaded as multipart/form-data.
 // Other attachments (data URIs, URLs) are sent inline as JSON.
 func (c *Client) Post(ctx context.Context, title, body, typ string, attachments []string) (bool, string) {
-	if !c.IsConfigured() {
-		return false, "Apprise server URL or key missing"
+	res := c.postDetailed(ctx, title, body, typ, attachments)
+	return res.OK, res.Message
+}
+
+func (c *Client) postDetailed(ctx context.Context, title, body, typ string, attachments []string) DeliveryResult {
+	result := DeliveryResult{
+		At:        time.Now(),
+		Title:     title,
+		Transport: "http",
 	}
-	u := c.notifyURL()
+	if !c.IsConfigured() {
+		result.Message = "Apprise server URL or key missing"
+		return result
+	}
+	if u := c.directSMTPURL(); u != nil {
+		return c.postSMTP(ctx, u, title, body, typ, attachments)
+	}
+	u := c.directJSONURL()
 	if u == nil {
-		return false, "Apprise server URL or key missing"
+		u = c.notifyURL()
+	}
+	if u == nil {
+		result.Message = "Apprise server URL or key missing"
+		return result
+	}
+	result.Target = u.String()
+	if c.directJSONURL() != nil {
+		result.Transport = "webhook"
+		if strings.TrimSpace(c.settings.RawBodyTemplate) != "" {
+			renderPayload := map[string]any{
+				"title": title,
+				"body":  body,
+				"type":  typ,
+				"tag":   strings.TrimSpace(c.settings.Tag),
+			}
+			rendered := RenderTemplate(c.settings.RawBodyTemplate, renderPayload)
+			return c.postRawDetailed(ctx, u, title, rendered, strings.TrimSpace(c.settings.RawContentType))
+		}
 	}
 
 	// Separate local file paths from inline attachments (data URIs, URLs).
@@ -213,9 +279,12 @@ func (c *Client) Post(ctx context.Context, title, body, typ string, attachments 
 
 	// If we have local files, try multipart upload first (Python _post_with_attachments).
 	if len(localFiles) > 0 {
-		ok, msg, tried := c.postMultipart(ctx, u, title, body, typ, localFiles)
+		delivery, tried := c.postMultipart(ctx, u, title, body, typ, localFiles)
 		if tried {
-			return ok, msg
+			if delivery.Target == "" {
+				delivery.Target = result.Target
+			}
+			return delivery
 		}
 		// Fall through to JSON if multipart failed to build.
 	}
@@ -235,30 +304,314 @@ func (c *Client) Post(ctx context.Context, title, body, typ string, attachments 
 
 	bodyJSON, err := json.Marshal(payload)
 	if err != nil {
-		return false, fmt.Sprintf("marshal apprise payload: %v", err)
+		result.Message = fmt.Sprintf("marshal apprise payload: %v", err)
+		return result
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(bodyJSON))
 	if err != nil {
-		return false, fmt.Sprintf("build apprise request: %v", err)
+		result.Message = fmt.Sprintf("build apprise request: %v", err)
+		return result
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.http.Do(req) // lgtm[go/request-forgery] - URL validated by notifyURL: scheme allowlist + DNS-based private-IP check
 	if err != nil {
 		if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return false, ctx.Err().Error()
+			result.Message = ctx.Err().Error()
+			return result
 		}
-		return false, err.Error()
+		result.Message = err.Error()
+		return result
 	}
 	defer resp.Body.Close()
 
-	return parseResponse(resp)
+	return parseResponse(resp, result)
+}
+
+func (c *Client) postRawDetailed(ctx context.Context, u *url.URL, title, rawBody, contentType string) DeliveryResult {
+	result := DeliveryResult{
+		At:        time.Now(),
+		Title:     title,
+		Transport: "webhook",
+		Target:    u.String(),
+	}
+	if strings.TrimSpace(contentType) == "" {
+		contentType = "application/json"
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), strings.NewReader(rawBody))
+	if err != nil {
+		result.Message = fmt.Sprintf("build raw webhook request: %v", err)
+		return result
+	}
+	req.Header.Set("Content-Type", contentType)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			result.Message = ctx.Err().Error()
+			return result
+		}
+		result.Message = err.Error()
+		return result
+	}
+	defer resp.Body.Close()
+	return parseResponse(resp, result)
+}
+
+func (c *Client) postSMTP(ctx context.Context, u *url.URL, title, body, typ string, attachments []string) DeliveryResult {
+	result := DeliveryResult{At: time.Now(), Title: title, Transport: "smtp", Target: u.String()}
+	tlsMode := smtpTLSMode(u)
+	host := u.Hostname()
+	if host == "" {
+		result.Message = "SMTP host missing"
+		return result
+	}
+	port := u.Port()
+	if port == "" {
+		if strings.EqualFold(u.Scheme, "mailtos") {
+			port = "465"
+		} else {
+			port = "587"
+		}
+	}
+	from := strings.TrimSpace(u.Query().Get("from"))
+	username := ""
+	password := ""
+	if u.User != nil {
+		username = u.User.Username()
+		password, _ = u.User.Password()
+	}
+	if from == "" {
+		from = username
+	}
+	recipients := smtpRecipients(u)
+	if from == "" {
+		result.Message = "SMTP from address missing"
+		return result
+	}
+	if len(recipients) == 0 {
+		result.Message = "SMTP recipient missing"
+		return result
+	}
+
+	addr := net.JoinHostPort(host, port)
+	dialer := &net.Dialer{Timeout: defaultTimeout}
+	var client *smtp.Client
+	var err error
+	if tlsMode == "ssl" {
+		conn, dialErr := tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12})
+		if dialErr != nil {
+			result.Message = dialErr.Error()
+			return result
+		}
+		client, err = smtp.NewClient(conn, host)
+	} else {
+		conn, dialErr := dialer.DialContext(ctx, "tcp", addr)
+		if dialErr != nil {
+			result.Message = dialErr.Error()
+			return result
+		}
+		client, err = smtp.NewClient(conn, host)
+	}
+	if err != nil {
+		result.Message = err.Error()
+		return result
+	}
+	defer client.Close()
+
+	if tlsMode == "starttls" {
+		if ok, _ := client.Extension("STARTTLS"); !ok {
+			result.Message = "SMTP server does not support STARTTLS"
+			return result
+		}
+		if err := client.StartTLS(&tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}); err != nil {
+			result.Message = err.Error()
+			return result
+		}
+	}
+	if username != "" {
+		if ok, _ := client.Extension("AUTH"); ok {
+			if err := client.Auth(smtp.PlainAuth("", username, password, host)); err != nil {
+				result.Message = err.Error()
+				return result
+			}
+		}
+	}
+	if err := client.Mail(from); err != nil {
+		result.Message = err.Error()
+		return result
+	}
+	for _, rcpt := range recipients {
+		if err := client.Rcpt(rcpt); err != nil {
+			result.Message = err.Error()
+			return result
+		}
+	}
+	w, err := client.Data()
+	if err != nil {
+		result.Message = err.Error()
+		return result
+	}
+	msg := smtpMessage(from, recipients, title, typ, body, attachments)
+	if _, err := io.WriteString(w, msg); err != nil {
+		_ = w.Close()
+		result.Message = err.Error()
+		return result
+	}
+	if err := w.Close(); err != nil {
+		result.Message = err.Error()
+		return result
+	}
+	if err := client.Quit(); err != nil {
+		result.Message = err.Error()
+		return result
+	}
+	result.OK = true
+	result.Message = "SMTP notification sent"
+	return result
+}
+
+func smtpRecipients(u *url.URL) []string {
+	var recipients []string
+	add := func(raw string) {
+		for _, part := range strings.FieldsFunc(raw, func(r rune) bool { return r == ',' || r == ';' || r == ' ' }) {
+			if v := strings.TrimSpace(part); v != "" {
+				recipients = append(recipients, v)
+			}
+		}
+	}
+	for _, raw := range u.Query()["to"] {
+		add(raw)
+	}
+	if path := strings.Trim(u.EscapedPath(), "/"); path != "" {
+		if decoded, err := url.PathUnescape(path); err == nil {
+			add(decoded)
+		}
+	}
+	return recipients
+}
+
+func smtpTLSMode(u *url.URL) string {
+	if v := strings.ToLower(strings.TrimSpace(u.Query().Get("tls"))); v != "" {
+		switch v {
+		case "none", "starttls", "ssl":
+			return v
+		}
+	}
+	if strings.EqualFold(u.Scheme, "mailtos") {
+		return "ssl"
+	}
+	return "starttls"
+}
+
+func smtpMessage(from string, to []string, title, typ, body string, attachments []string) string {
+	subject := mime.QEncoding.Encode("utf-8", cleanSMTPHeader(title))
+	images := decodeImageAttachments(attachments)
+
+	if len(images) == 0 {
+		headers := []string{
+			"From: " + cleanSMTPHeader(from),
+			"To: " + cleanSMTPHeader(strings.Join(to, ", ")),
+			"Subject: " + subject,
+			"MIME-Version: 1.0",
+			"Content-Type: text/plain; charset=UTF-8",
+			"X-Ankerctl-Notification-Type: " + cleanSMTPHeader(typ),
+		}
+		return strings.Join(headers, "\r\n") + "\r\n\r\n" + normalizeSMTPBody(body) + "\r\n"
+	}
+
+	// Multipart message so the snapshot of the print is embedded in the email.
+	const boundary = "==ankerctl-ng-boundary-3f9a1c=="
+	var b strings.Builder
+	b.WriteString("From: " + cleanSMTPHeader(from) + "\r\n")
+	b.WriteString("To: " + cleanSMTPHeader(strings.Join(to, ", ")) + "\r\n")
+	b.WriteString("Subject: " + subject + "\r\n")
+	b.WriteString("MIME-Version: 1.0\r\n")
+	b.WriteString("X-Ankerctl-Notification-Type: " + cleanSMTPHeader(typ) + "\r\n")
+	b.WriteString("Content-Type: multipart/mixed; boundary=\"" + boundary + "\"\r\n\r\n")
+
+	b.WriteString("--" + boundary + "\r\n")
+	b.WriteString("Content-Type: text/plain; charset=UTF-8\r\n\r\n")
+	b.WriteString(normalizeSMTPBody(body) + "\r\n\r\n")
+
+	for i, img := range images {
+		b.WriteString("--" + boundary + "\r\n")
+		b.WriteString("Content-Type: " + img.mimeType + "\r\n")
+		b.WriteString("Content-Transfer-Encoding: base64\r\n")
+		b.WriteString(fmt.Sprintf("Content-Disposition: inline; filename=\"snapshot-%d.%s\"\r\n\r\n", i+1, img.ext))
+		b.WriteString(wrapBase64(img.b64) + "\r\n")
+	}
+	b.WriteString("--" + boundary + "--\r\n")
+	return b.String()
+}
+
+type smtpImage struct {
+	mimeType string
+	ext      string
+	b64      string // already-base64-encoded payload
+}
+
+// decodeImageAttachments extracts data:image/...;base64,<data> attachments,
+// which is how the snapshot is passed through the notification pipeline.
+// Non-data-URI attachments (e.g. plain URLs) cannot be embedded in email and
+// are skipped.
+func decodeImageAttachments(attachments []string) []smtpImage {
+	var out []smtpImage
+	for _, a := range attachments {
+		if !strings.HasPrefix(a, "data:") {
+			continue
+		}
+		comma := strings.IndexByte(a, ',')
+		if comma < 0 {
+			continue
+		}
+		meta := a[len("data:"):comma]
+		if !strings.Contains(meta, "base64") {
+			continue
+		}
+		mimeType := strings.TrimSuffix(meta, ";base64")
+		if mimeType == "" {
+			mimeType = "application/octet-stream"
+		}
+		ext := "bin"
+		if i := strings.IndexByte(mimeType, '/'); i >= 0 {
+			ext = mimeType[i+1:]
+		}
+		out = append(out, smtpImage{mimeType: mimeType, ext: ext, b64: a[comma+1:]})
+	}
+	return out
+}
+
+// wrapBase64 re-wraps a base64 string to 76-character lines per RFC 2045.
+func wrapBase64(s string) string {
+	s = strings.NewReplacer("\r", "", "\n", "").Replace(s)
+	const width = 76
+	var b strings.Builder
+	for len(s) > width {
+		b.WriteString(s[:width])
+		b.WriteString("\r\n")
+		s = s[width:]
+	}
+	b.WriteString(s)
+	return b.String()
+}
+
+func cleanSMTPHeader(v string) string {
+	v = strings.ReplaceAll(v, "\r", " ")
+	v = strings.ReplaceAll(v, "\n", " ")
+	return strings.TrimSpace(v)
+}
+
+func normalizeSMTPBody(v string) string {
+	v = strings.ReplaceAll(v, "\r\n", "\n")
+	v = strings.ReplaceAll(v, "\r", "\n")
+	return strings.ReplaceAll(v, "\n", "\r\n")
 }
 
 // postMultipart uploads local files as multipart/form-data.
 // Returns (ok, msg, tried) where tried=false means the caller should fall through.
-func (c *Client) postMultipart(ctx context.Context, u *url.URL, title, body, typ string, files []string) (bool, string, bool) {
+func (c *Client) postMultipart(ctx context.Context, u *url.URL, title, body, typ string, files []string) (DeliveryResult, bool) {
+	result := DeliveryResult{At: time.Now(), Title: title, Transport: "webhook", Target: u.String()}
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
 
@@ -288,52 +641,66 @@ func (c *Client) postMultipart(ctx context.Context, u *url.URL, title, body, typ
 	}
 
 	if attachCount == 0 {
-		return false, "", false // No files added, fall through to JSON.
+		return DeliveryResult{}, false // No files added, fall through to JSON.
 	}
 
 	_ = writer.Close()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), &buf)
 	if err != nil {
-		return false, fmt.Sprintf("build multipart request: %v", err), true
+		result.Message = fmt.Sprintf("build multipart request: %v", err)
+		return result, true
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	resp, err := c.http.Do(req) // lgtm[go/request-forgery] - URL validated by notifyURL: scheme allowlist + DNS-based private-IP check
 	if err != nil {
 		if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return false, ctx.Err().Error(), true
+			result.Message = ctx.Err().Error()
+			return result, true
 		}
-		return false, err.Error(), true
+		result.Message = err.Error()
+		return result, true
 	}
 	defer resp.Body.Close()
 
-	ok, msg := parseResponse(resp)
-	return ok, msg, true
+	return parseResponse(resp, result), true
 }
 
-func parseResponse(resp *http.Response) (bool, string) {
+func parseResponse(resp *http.Response, result DeliveryResult) DeliveryResult {
+	dataBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
+	result.StatusCode = resp.StatusCode
+	result.ResponseRaw = strings.TrimSpace(string(dataBytes))
+
 	var data map[string]any
-	_ = json.NewDecoder(resp.Body).Decode(&data)
+	_ = json.Unmarshal(dataBytes, &data)
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		if msg := mapMessage(data); msg != "" {
-			return false, msg
+			result.Message = msg
+			return result
 		}
-		return false, fmt.Sprintf("%d %s", resp.StatusCode, resp.Status)
+		result.Message = fmt.Sprintf("%d %s", resp.StatusCode, resp.Status)
+		return result
 	}
 
 	if success, ok := data["success"].(bool); ok && !success {
 		if msg := mapMessage(data); msg != "" {
-			return false, msg
+			result.Message = msg
+			return result
 		}
-		return false, "Apprise error"
+		result.Message = "Apprise error"
+		return result
 	}
 
 	if msg, ok := data["message"].(string); ok && msg != "" {
-		return true, msg
+		result.OK = true
+		result.Message = msg
+		return result
 	}
-	return true, "Notification sent"
+	result.OK = true
+	result.Message = "Notification sent"
+	return result
 }
 
 func mapMessage(data map[string]any) string {
@@ -347,6 +714,17 @@ func mapMessage(data map[string]any) string {
 		return msg
 	}
 	return ""
+}
+
+func clonePayloadMap(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return map[string]any{}
+	}
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 func (c *Client) templateForEvent(event string) string {
@@ -427,6 +805,57 @@ func (c *Client) notifyURL() *url.URL {
 	}
 	if c.isPrivateHost(u) {
 		slog.Warn("Apprise server URL points to private/loopback address, ignoring", "url", full)
+		return nil
+	}
+	return u
+}
+
+func (c *Client) directJSONURL() *url.URL {
+	raw := c.serverURL()
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return nil
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "json":
+		u.Scheme = "http"
+	case "jsons":
+		u.Scheme = "https"
+	default:
+		return nil
+	}
+	if u.Host == "" {
+		return nil
+	}
+	if c.isPrivateHost(u) {
+		slog.Warn("Apprise JSON webhook points to private/loopback address, ignoring", "url", raw)
+		return nil
+	}
+	return u
+}
+
+func (c *Client) directSMTPURL() *url.URL {
+	raw := c.serverURL()
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return nil
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "mailto", "mailtos":
+	default:
+		return nil
+	}
+	if u.Host == "" {
+		return nil
+	}
+	if c.isPrivateHost(u) {
+		slog.Warn("SMTP notification host points to private/loopback address, ignoring", "url", raw)
 		return nil
 	}
 	return u

@@ -79,6 +79,8 @@ type MqttQueue struct {
 	pendingHistory         bool
 	lastFilename           string
 	currentPrinterStat     int
+	finishedAtFull         bool
+	firstLayerNotified     bool
 	lastMessageTime        time.Time
 	stopRequested          bool
 	gcodeLayerCount        int
@@ -110,10 +112,11 @@ type MqttQueue struct {
 
 	homeAssistant eventSink
 	timelapse     eventSink
+	extraSinks    []eventSink
 }
 
 // NewMqttQueue creates a MqttQueue service.
-func NewMqttQueue(cfg *config.Manager, printerIndex int, history *db.DB, ha *HomeAssistantService, timelapse eventSink) *MqttQueue {
+func NewMqttQueue(cfg *config.Manager, printerIndex int, history *db.DB, ha *HomeAssistantService, timelapse eventSink, extraSinks ...eventSink) *MqttQueue {
 	q := &MqttQueue{
 		BaseWorker:             NewBaseWorker("mqttqueue"),
 		log:                    slog.With("service", "mqttqueue"),
@@ -122,6 +125,7 @@ func NewMqttQueue(cfg *config.Manager, printerIndex int, history *db.DB, ha *Hom
 		pollInterval:           100 * time.Millisecond,
 		currentPrinterStat:     -1,
 		timelapse:              timelapse,
+		extraSinks:             extraSinks,
 		bedLevelingGrid:        make(map[string]any),
 		storedFilePreviewCache: make(map[string]string),
 		zAxisRecoupCh:          make(chan struct{}, 1),
@@ -195,6 +199,8 @@ func (q *MqttQueue) resetPrintStateLocked() {
 	q.lastFilename = ""
 	q.stopRequested = false
 	q.currentPrinterStat = -1
+	q.finishedAtFull = false
+	q.firstLayerNotified = false
 	q.lastMessageTime = time.Time{}
 	q.gcodeLayerCount = 0
 	q.lastStatePayload = nil
@@ -212,6 +218,29 @@ func (q *MqttQueue) resetPrintStateLocked() {
 	q.nozzleTempTarget = nil
 	q.bedTemp = nil
 	q.bedTempTarget = nil
+}
+
+// markPrintFinishedLocked clears active-print state and forces the status to
+// idle when a print completes. The AnkerMake M5C stays in the "printing" state
+// at 100% and never reports idle at the end of a model, so completion is
+// inferred from progress reaching 100%. finishedAtFull latches so the printer's
+// continued "printing" reports are ignored until a new print resets progress.
+// Caller must hold q.mu.
+func (q *MqttQueue) markPrintFinishedLocked() {
+	q.printActive = false
+	q.pendingHistory = false
+	q.stopRequested = false
+	q.currentPrinterStat = mqttStateIdle
+	q.finishedAtFull = true
+	q.firstLayerNotified = false
+	q.gcodeLayerCount = 0
+	q.printProgress = nil
+	q.printSpeed = nil
+	q.currentLayer = nil
+	q.totalLayers = nil
+	q.timeElapsed = nil
+	q.timeRemaining = nil
+	q.clearFilamentIssueLocked()
 }
 
 // WorkerInit resets internal state.
@@ -379,8 +408,10 @@ func (q *MqttQueue) handlePayload(obj map[string]any) {
 	}
 
 	normalized := cloneMap(obj)
-	if progress, ok := extractProgress(obj); ok {
-		normalized["progress"] = normalizeProgress(progress)
+	if ct == int(protocol.MqttCmdPrintSchedule) {
+		if progress, ok := extractProgress(obj); ok {
+			normalized["progress"] = normalizeProgress(progress)
+		}
 	}
 
 	// Capture bed leveling grid if present.
@@ -471,12 +502,20 @@ func (q *MqttQueue) handleCT1000(payload map[string]any) {
 	)
 
 	q.mu.Lock()
+	// The M5C keeps reporting "printing" at 100% after a model finishes and never
+	// returns to idle. Once completion has been latched (see markPrintFinishedLocked),
+	// ignore further "printing" reports until a new print resets progress.
+	if state == mqttStatePrinting && q.finishedAtFull {
+		q.mu.Unlock()
+		return
+	}
 	changed = state != q.currentPrinterStat
 	q.currentPrinterStat = state
 	switch state {
 	case mqttStatePrinting:
 		if !q.printActive {
 			q.printActive = true
+			q.firstLayerNotified = false
 			q.pendingStoredFilePath = ""
 			if q.lastFilename != "" {
 				shouldRecord = true
@@ -493,6 +532,7 @@ func (q *MqttQueue) handleCT1000(payload map[string]any) {
 	case mqttStateIdle, mqttStateAborted:
 		q.printActive = false
 		q.pendingHistory = false
+		q.finishedAtFull = false
 		q.stopRequested = false
 		q.gcodeLayerCount = 0
 		q.printProgress = nil
@@ -532,14 +572,27 @@ func (q *MqttQueue) handlePrintSchedule(payload map[string]any) {
 	}
 
 	var (
-		filename     string
-		shouldRecord bool
+		filename       string
+		shouldRecord   bool
+		finished       bool
+		finishFilename string
+		firstLayer     bool
+		firstLayerName string
 	)
 
 	q.mu.Lock()
+	progressComplete := false
+	progressVal := -1
 	if progress, ok := firstInt(msg.Progress, msg.PrintProgress); ok {
 		v := normalizeProgress(progress)
 		q.printProgress = &v
+		progressVal = v
+		progressComplete = v >= 100
+		if v < 100 {
+			// A fresh (or resumed) print clears the completion latch so the next
+			// "printing" status is honoured again.
+			q.finishedAtFull = false
+		}
 	}
 	filename = firstString(msg.Name, msg.FileName, msg.Filename, msg.FileNameAlt, msg.GCode, msg.GCodeName)
 	if filename != "" {
@@ -560,12 +613,51 @@ func (q *MqttQueue) handlePrintSchedule(payload map[string]any) {
 		v := remaining
 		q.timeRemaining = &v
 	}
+	// First detectable progress (material going down) → fire a one-time
+	// first-layer event so the print monitor can run an early bed-adhesion
+	// AI check. The 1..80 window skips the stale high-progress value the printer
+	// briefly re-sends from the previous print at startup.
+	if q.printActive && !q.firstLayerNotified && progressVal >= 1 && progressVal < 80 {
+		q.firstLayerNotified = true
+		firstLayer = true
+		firstLayerName = q.lastFilename
+	}
+	// The M5C reports 100% but stays in the "printing" state and never returns to
+	// idle, so infer completion from progress and force the idle transition once.
+	if progressComplete && q.printActive {
+		finished = true
+		finishFilename = q.lastFilename
+		q.markPrintFinishedLocked()
+	}
 	q.mu.Unlock()
+
+	if firstLayer {
+		evt := map[string]any{"event": "first_layer", "filename": firstLayerName}
+		q.Notify(evt)
+		q.forward(evt)
+		q.log.Info("first layer detected — triggering bed-adhesion check", "filename", firstLayerName)
+	}
 
 	if shouldRecord && q.history != nil {
 		if _, err := q.history.RecordStart(filename, "", "", 0); err != nil {
 			q.log.Warn("history record start failed", "filename", filename, "err", err)
 		}
+	}
+
+	if finished {
+		if q.history != nil {
+			if err := q.history.RecordFinish(finishFilename, 100, ""); err != nil {
+				q.log.Warn("history record finish failed", "filename", finishFilename, "err", err)
+			}
+		}
+		q.log.Info("print finished (progress reached 100%)", "filename", finishFilename)
+		stateEvt := map[string]any{
+			"event":    "print_state",
+			"state":    mqttStateIdle,
+			"filename": finishFilename,
+		}
+		q.Notify(stateEvt)
+		q.forward(stateEvt)
 	}
 }
 
@@ -840,6 +932,11 @@ func (q *MqttQueue) forward(data any) {
 	}
 	if q.timelapse != nil {
 		q.timelapse.Notify(data)
+	}
+	for _, sink := range q.extraSinks {
+		if sink != nil {
+			sink.Notify(data)
+		}
 	}
 }
 

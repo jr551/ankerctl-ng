@@ -13,20 +13,30 @@ import (
 
 // Root serves the web UI placeholder.
 func (h *Handler) Root(w http.ResponseWriter, r *http.Request) {
+	if ps, ok := h.powerSaving(); ok {
+		ps.TouchDashboard()
+	}
+
 	cfg, _ := h.loadConfig()
 	printer, activeIdx, locked := h.activePrinter(cfg)
+	var camera model.ResolvedCameraSettings
+	if cfg != nil {
+		camera = resolveCameraSettings(cfg, activeIdx)
+	}
 
 	host, port := requestHostPort(r)
 	data := TemplateData{
-		ActivePrinterIndex: activeIdx,
-		PrinterIndexLocked: locked,
-		Configure:          cfg != nil && cfg.IsConfigured(),
-		DebugMode:          h.devMode,
-		VideoSupported:     h.videoSupported(),
-		UnsupportedDevice:  h.isUnsupportedDevice(),
-		CountryCodes:       countryCodes,
-		RequestHost:        host,
-		RequestPort:        port,
+		ActivePrinterIndex:    activeIdx,
+		PrinterIndexLocked:    locked,
+		Configure:             cfg != nil && cfg.IsConfigured(),
+		DebugMode:             h.devMode,
+		VideoSupported:        camera.FeatureAvailable || h.videoSupported(),
+		CameraEffectiveSource: camera.EffectiveSource,
+		CameraRefreshSec:      camera.External.RefreshSec,
+		UnsupportedDevice:     h.isUnsupportedDevice(),
+		CountryCodes:          countryCodes,
+		RequestHost:           host,
+		RequestPort:           port,
 	}
 
 	data.UploadRateChoices = model.UploadRateMbpsChoices
@@ -69,6 +79,16 @@ func (h *Handler) Root(w http.ResponseWriter, r *http.Request) {
 		h.log.Error("render root", "error", err)
 		h.writeError(w, http.StatusInternalServerError, "rendering failed")
 	}
+}
+
+func (h *Handler) cameraFeatureAvailable(cfg *model.Config, activeIdx int) bool {
+	if cfg != nil {
+		resolved := resolveCameraSettings(cfg, activeIdx)
+		if resolved.FeatureAvailable {
+			return true
+		}
+	}
+	return h.videoSupported()
 }
 
 // configShow formats a Config as the human-readable text shown in the

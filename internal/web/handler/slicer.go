@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/django1982/ankerctl/internal/gcode"
 	"github.com/django1982/ankerctl/internal/model"
 )
 
@@ -59,10 +60,32 @@ func (h *Handler) SlicerUpload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var overrideStats gcode.TemperatureOverrideStats
+	if startPrint && cfg != nil {
+		if printer, _, _ := h.activePrinter(cfg); printer != nil {
+			override := temperatureOverrideEntryForPrinter(cfg, printer.SN)
+			if override.Enabled {
+				data, overrideStats = gcode.ApplyTemperatureOverrides(data, gcode.TemperatureOverrides{
+					NozzleMinTempC: override.NozzleMinTempC,
+					BedMinTempC:    override.BedMinTempC,
+				})
+				if overrideStats.NozzleCommands > 0 || overrideStats.BedCommands > 0 {
+					h.log.Info("slicer upload: applied temperature overrides",
+						"file", hdr.Filename,
+						"nozzle_min_temp_c", override.NozzleMinTempC,
+						"bed_min_temp_c", override.BedMinTempC,
+						"nozzle_commands", overrideStats.NozzleCommands,
+						"bed_commands", overrideStats.BedCommands)
+				}
+			}
+		}
+	}
+
 	// Borrow ppppservice so it starts and connects before the upload begins.
 	// Python parity: filetransfer.py calls pppp_open() which waits for
 	// StateConnected before sending any data.
 	if _, err := h.svc.Borrow("ppppservice"); err != nil {
+		h.log.Warn("slicer upload: pppp service unavailable", "file", hdr.Filename, "size", len(data), "err", err)
 		h.writeError(w, http.StatusServiceUnavailable, "pppp service unavailable")
 		return
 	}
@@ -70,6 +93,7 @@ func (h *Handler) SlicerUpload(w http.ResponseWriter, r *http.Request) {
 
 	// Borrow filetransfer so its WorkerRun loop is active to process the request.
 	if _, err := h.svc.Borrow("filetransfer"); err != nil {
+		h.log.Warn("slicer upload: file transfer service unavailable", "file", hdr.Filename, "size", len(data), "err", err)
 		h.writeError(w, http.StatusServiceUnavailable, "file transfer service unavailable")
 		return
 	}
@@ -77,6 +101,7 @@ func (h *Handler) SlicerUpload(w http.ResponseWriter, r *http.Request) {
 
 	ft, ok := h.fileTransfer()
 	if !ok {
+		h.log.Warn("slicer upload: file transfer service missing", "file", hdr.Filename, "size", len(data))
 		h.writeError(w, http.StatusServiceUnavailable, "file transfer service unavailable")
 		return
 	}
@@ -100,9 +125,11 @@ func (h *Handler) SlicerUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := ft.SendFile(r.Context(), hdr.Filename, userName, userID, data, rateLimit, startPrint); err != nil {
+		h.log.Warn("slicer upload: file transfer failed", "file", hdr.Filename, "size", len(data), "rate_mbps", rateLimit, "start_print", startPrint, "err", err)
 		h.writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
+	h.log.Info("slicer upload: file transfer completed", "file", hdr.Filename, "size", len(data), "rate_mbps", rateLimit, "start_print", startPrint)
 
 	// If archiving succeeded and we have a DB, back-fill the latest history
 	// row for this file so that reprint works.
@@ -127,5 +154,10 @@ func (h *Handler) SlicerUpload(w http.ResponseWriter, r *http.Request) {
 		"status":             "ok",
 		"upload_rate_mbps":   effectiveRate,
 		"upload_rate_source": rateSource,
+		"temperature_overrides": map[string]any{
+			"applied":         overrideStats.NozzleCommands > 0 || overrideStats.BedCommands > 0,
+			"nozzle_commands": overrideStats.NozzleCommands,
+			"bed_commands":    overrideStats.BedCommands,
+		},
 	})
 }

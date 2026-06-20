@@ -215,6 +215,30 @@ func TestExternalMJPEGCmd(t *testing.T) {
 	}
 }
 
+func TestFFmpegHeadersArg(t *testing.T) {
+	got := ffmpegHeadersArg(map[string]string{
+		"Authorization": "Bearer secret",
+		"User-Agent":    "ankerctl",
+		"Bad:Header":    "ignored",
+		"BadValue":      "ignored\r\nInjected: yes",
+		"Empty":         "",
+	})
+
+	for _, want := range []string{
+		"Authorization: Bearer secret\r\n",
+		"User-Agent: ankerctl\r\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("ffmpegHeadersArg missing %q in %q", want, got)
+		}
+	}
+	for _, bad := range []string{"Bad:Header", "Injected: yes", "Empty:"} {
+		if strings.Contains(got, bad) {
+			t.Fatalf("ffmpegHeadersArg included unsafe header %q in %q", bad, got)
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // ReadMJPEGFrames
 // ---------------------------------------------------------------------------

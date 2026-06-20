@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/django1982/ankerctl/internal/model"
+	"github.com/django1982/ankerctl/internal/service"
 	"github.com/django1982/ankerctl/internal/util"
 )
 
@@ -296,6 +297,9 @@ func (h *Handler) SettingsMQTTUpdate(w http.ResponseWriter, r *http.Request) {
 		if cfg == nil {
 			return cfg, nil
 		}
+		if v, ok := haPayload["mqtt_password"].(string); ok && strings.TrimSpace(v) == "" {
+			delete(haPayload, "mqtt_password")
+		}
 		updated = cfg.HomeAssistant
 		mergeIntoStruct(&updated, haPayload)
 		cfg.HomeAssistant = updated
@@ -356,6 +360,100 @@ func (h *Handler) SettingsAppearanceUpdate(w http.ResponseWriter, r *http.Reques
 	}
 
 	h.writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "appearance": updated})
+}
+
+// SettingsTemperatureOverridesGet returns upload-time temperature overrides for the active printer.
+func (h *Handler) SettingsTemperatureOverridesGet(w http.ResponseWriter, _ *http.Request) {
+	cfg, _ := h.loadConfig()
+	if cfg == nil {
+		h.writeError(w, http.StatusBadRequest, "No printers configured")
+		return
+	}
+	printer, _, _ := h.activePrinter(cfg)
+	if printer == nil {
+		h.writeError(w, http.StatusBadRequest, "No active printer configured")
+		return
+	}
+	entry := temperatureOverrideEntryForPrinter(cfg, printer.SN)
+	h.writeJSON(w, http.StatusOK, map[string]any{
+		"temperature_overrides": entry,
+		"printer_sn":            printer.SN,
+		"printer_name":          printer.Name,
+	})
+}
+
+// SettingsTemperatureOverridesUpdate updates upload-time temperature overrides for the active printer.
+func (h *Handler) SettingsTemperatureOverridesUpdate(w http.ResponseWriter, r *http.Request) {
+	var payload map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		h.writeError(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+	tempPayload := payload
+	if raw, ok := payload["temperature_overrides"]; ok {
+		m, ok := raw.(map[string]any)
+		if !ok {
+			h.writeError(w, http.StatusBadRequest, "Invalid temperature_overrides payload")
+			return
+		}
+		tempPayload = m
+	}
+
+	var updated model.TemperatureOverrideEntry
+	var printerSN, printerName string
+	err := h.cfg.Modify(func(cfg *model.Config) (*model.Config, error) {
+		if cfg == nil {
+			return cfg, nil
+		}
+		printer, _, _ := h.activePrinter(cfg)
+		if printer == nil {
+			return nil, fmt.Errorf("No active printer configured")
+		}
+		printerSN = printer.SN
+		printerName = printer.Name
+		updated = temperatureOverrideEntryForPrinter(cfg, printer.SN)
+		if v, ok := tempPayload["enabled"].(bool); ok {
+			updated.Enabled = v
+		}
+		if v, ok := tempPayload["nozzle_min_temp_c"]; ok {
+			n, ok := intFromAny(v)
+			if !ok {
+				return nil, fmt.Errorf("nozzle_min_temp_c must be an integer")
+			}
+			updated.NozzleMinTempC = n
+		}
+		if v, ok := tempPayload["bed_min_temp_c"]; ok {
+			n, ok := intFromAny(v)
+			if !ok {
+				return nil, fmt.Errorf("bed_min_temp_c must be an integer")
+			}
+			updated.BedMinTempC = n
+		}
+		updated = model.NormalizeTemperatureOverrideEntry(updated)
+		if cfg.TemperatureOverrides.PerPrinter == nil {
+			cfg.TemperatureOverrides.PerPrinter = map[string]model.TemperatureOverrideEntry{}
+		}
+		cfg.TemperatureOverrides.PerPrinter[printer.SN] = updated
+		return cfg, nil
+	})
+	if err != nil {
+		h.writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	h.writeJSON(w, http.StatusOK, map[string]any{
+		"status":                "ok",
+		"temperature_overrides": updated,
+		"printer_sn":            printerSN,
+		"printer_name":          printerName,
+	})
+}
+
+func temperatureOverrideEntryForPrinter(cfg *model.Config, sn string) model.TemperatureOverrideEntry {
+	if cfg == nil || sn == "" || cfg.TemperatureOverrides.PerPrinter == nil {
+		return model.TemperatureOverrideEntry{}
+	}
+	return model.NormalizeTemperatureOverrideEntry(cfg.TemperatureOverrides.PerPrinter[sn])
 }
 
 // SettingsCameraGet returns the resolved camera settings for the active printer.
@@ -420,6 +518,17 @@ func (h *Handler) SettingsCameraUpdate(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		// For preset kinds, re-derive the stream/snapshot URLs server-side from
+		// the raw fields so a hand-edited config (or a client that only sends
+		// kind+fields) still resolves to working URLs. Custom/legacy entries
+		// keep whatever URLs were supplied directly.
+		if entry.External.Kind != "" && entry.External.Kind != model.CameraKindCustom {
+			if s, snap := model.DeriveExternalCameraURLs(entry.External.Kind, entry.External.Fields); s != "" || snap != "" {
+				entry.External.StreamURL = s
+				entry.External.SnapshotURL = snap
+			}
+		}
+
 		if err := util.ValidateExternalURL(entry.External.StreamURL); err != nil {
 			return nil, err
 		}
@@ -462,7 +571,7 @@ func resolveCameraSettings(cfg *model.Config, printerIndex int) model.ResolvedCa
 	entry := cameraEntryForPrinter(cfg, printerSN)
 	source := normalizeCameraSource(entry.Source, model.CameraSourcePrinter)
 	ext := normalizeExternalSettings(entry.External)
-	externalConfigured := ext.StreamURL != "" || ext.SnapshotURL != ""
+	externalConfigured := ext.StreamURL != "" || ext.SnapshotURL != "" || service.HomeAssistantCameraConfigured(ext.HomeAssistant)
 
 	effectiveSource := ""
 	switch {
@@ -483,7 +592,9 @@ func resolveCameraSettings(cfg *model.Config, printerIndex int) model.ResolvedCa
 	case !printerSupported && !externalConfigured:
 		detail = "This printer does not expose a built-in camera. Configure an external feed in Setup -> Camera."
 	case effectiveSource == model.CameraSourceExternal:
-		if ext.StreamURL != "" {
+		if service.HomeAssistantCameraConfigured(ext.HomeAssistant) {
+			detail = "Using Home Assistant camera."
+		} else if ext.StreamURL != "" {
 			detail = "Using external camera live stream."
 		} else {
 			detail = "Using external camera snapshot preview."
@@ -535,10 +646,16 @@ func normalizeCameraSource(val, fallback string) string {
 
 func normalizeExternalSettings(e model.ExternalCameraSettings) model.ExternalCameraSettings {
 	if e.RefreshSec < 1 {
-		e.RefreshSec = 3
+		e.RefreshSec = model.DefaultExternalCameraSettings().RefreshSec
 	}
 	if e.RefreshSec > 30 {
 		e.RefreshSec = 30
+	}
+	e.HomeAssistant = model.NormalizeHomeAssistantCameraSettings(e.HomeAssistant)
+	// Normalize the preset kind. An empty kind (old configs) stays empty so the
+	// JSON shape is unchanged; any non-empty value is coerced to a known kind.
+	if e.Kind != "" {
+		e.Kind = model.NormalizeCameraKind(e.Kind)
 	}
 	return e
 }
@@ -566,6 +683,55 @@ func mergeExternalCamera(dst *model.ExternalCameraSettings, src map[string]json.
 		var n int
 		if json.Unmarshal(v, &n) == nil && n >= 1 && n <= 30 {
 			dst.RefreshSec = n
+		}
+	}
+	if v, ok := src["kind"]; ok {
+		var s string
+		if json.Unmarshal(v, &s) == nil {
+			dst.Kind = model.NormalizeCameraKind(s)
+		}
+	}
+	if v, ok := src["fields"]; ok {
+		var m map[string]string
+		if json.Unmarshal(v, &m) == nil {
+			dst.Fields = m
+		}
+	}
+	if v, ok := src["home_assistant"]; ok {
+		var patch map[string]json.RawMessage
+		if json.Unmarshal(v, &patch) == nil {
+			if dst.HomeAssistant == nil {
+				dst.HomeAssistant = &model.HomeAssistantCameraSettings{}
+			}
+			mergeHomeAssistantCamera(dst.HomeAssistant, patch)
+			dst.HomeAssistant = model.NormalizeHomeAssistantCameraSettings(dst.HomeAssistant)
+		}
+	}
+}
+
+func mergeHomeAssistantCamera(dst *model.HomeAssistantCameraSettings, src map[string]json.RawMessage) {
+	if v, ok := src["enabled"]; ok {
+		var b bool
+		if json.Unmarshal(v, &b) == nil {
+			dst.Enabled = b
+		}
+	}
+	if v, ok := src["base_url"]; ok {
+		var s string
+		if json.Unmarshal(v, &s) == nil {
+			dst.BaseURL = strings.TrimRight(strings.TrimSpace(s), "/")
+		}
+	}
+	if v, ok := src["token"]; ok {
+		var s string
+		if json.Unmarshal(v, &s) == nil && strings.TrimSpace(s) != "" {
+			dst.Token = strings.TrimSpace(s)
+		}
+	}
+	if v, ok := src["camera_entity_id"]; ok {
+		var s string
+		if json.Unmarshal(v, &s) == nil {
+			dst.CameraEntityID = strings.TrimSpace(s)
 		}
 	}
 }

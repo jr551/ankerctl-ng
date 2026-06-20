@@ -1,17 +1,14 @@
 {{define "title"}}
-ankerctl{{if .Printer}} - {{.Printer.Name}}{{end}}
+ankerctl-ng{{if .Printer}} - {{.Printer.Name}}{{end}}
 {{end}}
 
 {{define "contents"}}
 {{if .Configure}}
 {{template "tabs/home.html" .}}
 {{template "tabs/gcode.html" .}}
+{{template "tabs/slice.html" .}}
 {{template "tabs/history.html" .}}
 {{template "tabs/filaments.html" .}}
-{{if .VideoSupported}}
-{{template "tabs/timelapse.html" .}}
-{{end}}
-{{template "tabs/instructions.html" .}}
 {{end}}
 
 {{template "tabs/setup.html" .}}
@@ -31,8 +28,8 @@ ankerctl{{if .Printer}} - {{.Printer.Name}}{{end}}
     </li>
     <li class="nav-item" role="presentation">
         <button class="btn btn-outline-primary nav-link"
-            id="gcode-tab" data-bs-toggle="pill" data-bs-target="#gcode" type="button" role="tab">
-            <i class="bi-terminal px-1"></i>GCode
+            id="slice-tab" data-bs-toggle="pill" data-bs-target="#slice" type="button" role="tab">
+            <i class="bi-box px-1"></i>Slice &amp; Build
         </button>
     </li>
     <li class="nav-item" role="presentation">
@@ -45,20 +42,6 @@ ankerctl{{if .Printer}} - {{.Printer.Name}}{{end}}
         <button class="btn btn-outline-primary nav-link"
             id="filaments-tab" data-bs-toggle="pill" data-bs-target="#filaments" type="button" role="tab">
             <i class="bi-droplet-fill px-1"></i>Filaments
-        </button>
-    </li>
-    {{if .VideoSupported}}
-    <li class="nav-item" role="presentation">
-        <button class="btn btn-outline-primary nav-link"
-            id="timelapse-tab" data-bs-toggle="pill" data-bs-target="#timelapse" type="button" role="tab">
-            <i class="bi-camera-reels px-1"></i>Timelapse
-        </button>
-    </li>
-    {{end}}
-    <li class="nav-item" role="presentation">
-        <button class="btn btn-outline-primary nav-link"
-            id="instructions-tab" data-bs-toggle="pill" data-bs-target="#instructions" type="button" role="tab">
-            <i class="bi-list-check px-1"></i>Instructions
         </button>
     </li>
 {{end}}

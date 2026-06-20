@@ -4,7 +4,7 @@
 <head>
     <meta charset="utf-8" />
     <meta content="width=device-width, initial-scale=1" name="viewport" />
-    <title>{{block "title" .}}ankerctl{{end}}</title>
+    <title>{{block "title" .}}ankerctl-ng{{end}}</title>
     <link rel="icon" href="/static/img/logo.svg">
     <link rel="stylesheet" href="/static/vendor/bootstrap-5.3.0-alpha3-dist/css/bootstrap.min.css" />
     <link rel="stylesheet" href="/static/vendor/bootstrap-icons-1.10.5/font/bootstrap-icons.min.css" />
@@ -17,15 +17,17 @@
     <!-- Header -->
     <div class="bg-dark bg-gradient mb-3">
         <header class="container d-flex align-items-center py-2">
-            <a href="/" class="d-flex me-md-auto text-decoration-none align-items-baseline">
-                <img src="/static/img/logo.svg" class="me-2 align-self-center" alt="logo">
-                <span class="text-body-emphasis fs-4">ankerctl</span>
+            <div class="d-flex me-md-auto align-items-baseline">
+                <a href="/" class="d-flex text-decoration-none align-items-baseline">
+                    <img src="/static/img/logo.svg" class="me-2 align-self-center" alt="logo">
+                    <span class="text-body-emphasis fs-4 d-flex align-items-center flex-wrap">ankerctl-<span class="text-success">ng</span><span class="badge bg-dark text-success border border-success ms-2 fs-6 fw-normal" style="font-family: Georgia, 'Comic Sans MS', cursive; letter-spacing: -0.3px;">now with extra AI goodness!<span class="text-muted ms-1" style="font-size: 0.65rem; letter-spacing: -0.2px;">adapted by jr</span></span></span>
+                </a>
                 <a id="update-badge" href="#" target="_blank" rel="noopener noreferrer nofollow"
                    class="badge bg-success text-decoration-none ms-2 align-self-center"
                    style="display:none" title="A newer version is available">
                     <i class="bi bi-arrow-up-circle-fill me-1"></i><span id="update-badge-version"></span>
                 </a>
-            </a>
+            </div>
             {{if and .PrinterList (eq (len .PrinterList) 1)}}
             {{$p0 := index .PrinterList 0}}
             <span class="text-muted small me-3">
@@ -74,7 +76,7 @@
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-body">
-                    <p>Restarting ankerctl...</p>
+                    <p>Restarting ankerctl-ng...</p>
                     <div class="progress">
                         <div class="progress-bar progress-bar-striped progress-bar-animated w-100" role="progressbar"
                             aria-valuenow="100" aria-valuemin="0" aria-valuemax="100" style="width: 100%">
@@ -127,6 +129,19 @@
     <script src="/static/vendor/jmuxer.min.js"></script>
     <script src="/static/vendor/chart.umd.min.js"></script>
     <script src="/static/ankersrv.js"></script>
+    <!-- In-browser slicer (Slice tab). three/polyslice are dynamically imported
+         on first use, so this importmap only resolves when slicing is invoked. -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "/static/vendor/three/three.module.min.js",
+            "three/examples/jsm/loaders/STLLoader.js": "/static/vendor/three/STLLoader.js",
+            "three/examples/jsm/controls/OrbitControls.js": "/static/vendor/three/OrbitControls.js",
+            "@jgphilpott/polyslice": "/static/vendor/polyslice/index.browser.esm.js"
+        }
+    }
+    </script>
+    <script type="module" src="/static/ankersrv-slice.js"></script>
 </body>
 
 </html>

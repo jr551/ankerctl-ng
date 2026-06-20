@@ -377,6 +377,32 @@ func TestMergeConfigPreferences_PreservesHomeAssistant(t *testing.T) {
 	}
 }
 
+func TestMergeConfigPreferences_PreservesSmartSocketPowerSaving(t *testing.T) {
+	existing := makeTestConfig()
+	existing.SmartSocket.Enabled = true
+	existing.SmartSocket.SwitchEntity = "switch.3d_printer_socket"
+	existing.SmartSocket.PowerSavingEnabled = true
+	existing.SmartSocket.PowerSavingDashboardWakeSec = 900
+	existing.SmartSocket.PowerSavingIdleOffSec = 2700
+
+	newCfg := makeTestConfig()
+	newCfg.SmartSocket = model.DefaultSmartSocketConfig()
+
+	result := MergeConfigPreferences(existing, newCfg)
+	if !result.SmartSocket.Enabled {
+		t.Error("SmartSocket.Enabled = false, want true")
+	}
+	if !result.SmartSocket.PowerSavingEnabled {
+		t.Error("SmartSocket.PowerSavingEnabled = false, want true")
+	}
+	if result.SmartSocket.PowerSavingDashboardWakeSec != 900 {
+		t.Errorf("SmartSocket.PowerSavingDashboardWakeSec = %d, want 900", result.SmartSocket.PowerSavingDashboardWakeSec)
+	}
+	if result.SmartSocket.PowerSavingIdleOffSec != 2700 {
+		t.Errorf("SmartSocket.PowerSavingIdleOffSec = %d, want 2700", result.SmartSocket.PowerSavingIdleOffSec)
+	}
+}
+
 func TestMergeConfigPreferences_PrintersFromNew(t *testing.T) {
 	existing := makeTestConfig()
 	existing.Printers = []model.Printer{{SN: "OLD-SN"}}

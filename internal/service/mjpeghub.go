@@ -95,9 +95,19 @@ func PrinterMJPEGCmd(ctx context.Context, videoURL, apiKey string, fps, quality 
 // open_external_mjpeg_stream(). For RTSP URLs the low-latency input args
 // (rtsp_transport tcp, nobuffer, probesize, analyzeduration) are added.
 func ExternalMJPEGCmd(ctx context.Context, inputURL string, scale MJPEGScale) *exec.Cmd {
+	return ExternalMJPEGCmdWithHeaders(ctx, inputURL, nil, scale)
+}
+
+// ExternalMJPEGCmdWithHeaders builds an external camera transcoder with optional
+// HTTP input headers. Header values are passed to ffmpeg via -headers and are
+// not embedded in the input URL.
+func ExternalMJPEGCmdWithHeaders(ctx context.Context, inputURL string, headers map[string]string, scale MJPEGScale) *exec.Cmd {
 	args := []string{
 		"-loglevel", "error",
 		"-nostdin",
+	}
+	if headerArg := ffmpegHeadersArg(headers); headerArg != "" {
+		args = append(args, "-headers", headerArg)
 	}
 	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(inputURL)), "rtsp://") {
 		args = append(args, "-rtsp_transport", "tcp")
@@ -118,6 +128,25 @@ func ExternalMJPEGCmd(ctx context.Context, inputURL string, scale MJPEGScale) *e
 	)
 
 	return exec.CommandContext(ctx, "ffmpeg", args...)
+}
+
+func ffmpegHeadersArg(headers map[string]string) string {
+	if len(headers) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for k, v := range headers {
+		k = strings.TrimSpace(k)
+		v = strings.TrimSpace(v)
+		if k == "" || v == "" || strings.ContainsAny(k, "\r\n:") || strings.ContainsAny(v, "\r\n") {
+			continue
+		}
+		b.WriteString(k)
+		b.WriteString(": ")
+		b.WriteString(v)
+		b.WriteString("\r\n")
+	}
+	return b.String()
 }
 
 // ReadMJPEGFrames starts cmd and returns a channel that receives complete JPEG
@@ -239,8 +268,18 @@ func ReadMJPEGFrames(ctx context.Context, cmd *exec.Cmd) (<-chan []byte, error) 
 // optional RTSP low-latency args). Returns an error with credential-scrubbed
 // stderr on failure.
 func SnapshotExternal(ctx context.Context, inputURL, outputPath string) error {
+	return SnapshotExternalWithHeaders(ctx, inputURL, nil, outputPath)
+}
+
+// SnapshotExternalWithHeaders grabs a single JPEG from inputURL using ffmpeg
+// with optional HTTP input headers. Headers are passed via ffmpeg -headers so
+// credentials are not embedded in URLs or error strings.
+func SnapshotExternalWithHeaders(ctx context.Context, inputURL string, headers map[string]string, outputPath string) error {
 	rtsp := strings.HasPrefix(strings.ToLower(strings.TrimSpace(inputURL)), "rtsp://")
 	args := []string{"-loglevel", "error", "-nostdin", "-y"}
+	if headerArg := ffmpegHeadersArg(headers); headerArg != "" {
+		args = append(args, "-headers", headerArg)
+	}
 	if rtsp {
 		args = append(args, "-rtsp_transport", "tcp")
 		args = append(args, rtspLowLatencyArgs...)

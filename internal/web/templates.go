@@ -46,6 +46,7 @@ func newTemplates() (*Templates, error) {
 		"static/tabs/home.html",
 		"static/tabs/instructions.html",
 		"static/tabs/setup.html",
+		"static/tabs/slice.html",
 		"static/tabs/timelapse.html",
 	}
 

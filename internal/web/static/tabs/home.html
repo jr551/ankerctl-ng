@@ -5,28 +5,80 @@
             <div class="col-md-12 col-lg-6 col-xl-8">
                 {{if .VideoSupported}}
                 <!-- Video Container -->
-                <div id="vplayer" style="display: none;">
+                {{if eq .CameraEffectiveSource "external"}}
+                <div id="vplayer" class="mb-3 camera-frame-shell is-loading" aria-busy="true">
+                    <img class="w-100 d-block camera-frame-image bg-body-tertiary" id="external-camera-player"
+                        src="/api/camera/frame" data-frame-src="/api/camera/frame"
+                        data-refresh-sec="{{.CameraRefreshSec}}" alt="Camera feed" />
+                    <img class="camera-rewind-image" id="camera-rewind-image" alt="Buffered camera frame" hidden />
+                    <div class="rewind-vignette" aria-hidden="true"></div>
+                    <div class="rewind-status is-live" aria-hidden="true"><span class="rewind-dot"></span><span class="rewind-status-text">LIVE</span></div>
+                    <div class="camera-frame-overlay" aria-hidden="true">
+                        <div class="spinner-border text-light" role="status">
+                            <span class="visually-hidden">Loading camera</span>
+                        </div>
+                    </div>
+                </div>
+                {{else}}
+                <div id="vplayer" class="camera-frame-shell mb-3" style="display: none;">
                     <video class="w-100 d-block rounded-3 bg-body-tertiary" playsinline autoplay muted id="player"
                         poster="/static/img/load-screen.svg">
                     </video>
+                    <img class="camera-rewind-image" id="camera-rewind-image" alt="Buffered camera frame" hidden />
+                    <div class="rewind-vignette" aria-hidden="true"></div>
+                    <div class="rewind-status is-live" aria-hidden="true"><span class="rewind-dot"></span><span class="rewind-status-text">LIVE</span></div>
                 </div>
                 <div id="video-toggle-container" class="text-center mb-3">
                     <button class="btn btn-primary" id="video-toggle">
                         <i class="bi-camera-video px-1"></i> Enable Video
                     </button>
                 </div>
+                {{end}}
+                <div class="camera-rewind-controls mb-3" id="camera-rewind-controls" hidden>
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <span class="small text-body-secondary">Live preview rewind</span>
+                        <span class="small text-body-secondary" id="camera-rewind-label">Live</span>
+                    </div>
+                    <input type="range" class="form-range" id="camera-rewind-slider" min="0" max="60" step="1" value="0" />
+                </div>
 
                 <!-- Printer Control Card -->
                 <div class="card mb-3">
                     <div class="card-header d-flex align-items-center justify-content-between">
                         <span class="fs-6">Printer Control</span>
-                        <div>
+                        <div class="d-flex gap-2">
                             <button class="btn btn-sm btn-outline-danger" id="control-home-all" title="Home All">
                                 <i class="bi-house-fill px-1"></i> Home All
+                            </button>
+                            <button class="btn btn-sm btn-danger fw-bold estop-btn" id="emergency-stop"
+                                title="Cut power to the printer immediately">
+                                <i class="bi-power"></i> E-STOP
                             </button>
                         </div>
                     </div>
                     <div class="card-body">
+                        <div class="printer-power-strip mb-3" id="printer-power-strip" aria-live="polite" hidden>
+                            <div class="printer-power-tile" id="printer-socket-state-tile">
+                                <span class="printer-power-label"><i class="bi-power"></i> Socket</span>
+                                <span class="printer-power-value" id="printer-socket-state">--</span>
+                                <span class="printer-power-detail" id="printer-socket-state-detail">--</span>
+                            </div>
+                            <div class="printer-power-tile" id="printer-socket-watts-tile">
+                                <span class="printer-power-label"><i class="bi-lightning-charge"></i> Power</span>
+                                <span class="printer-power-value" id="printer-socket-watts">--</span>
+                                <span class="printer-power-detail" id="printer-socket-watts-detail">--</span>
+                            </div>
+                            <div class="printer-power-tile" id="printer-socket-uptime-tile">
+                                <span class="printer-power-label"><i class="bi-clock-history"></i> On Time</span>
+                                <span class="printer-power-value" id="printer-socket-uptime">--</span>
+                                <span class="printer-power-detail" id="printer-socket-uptime-detail">--</span>
+                            </div>
+                            <div class="printer-power-tile" id="printer-power-save-tile">
+                                <span class="printer-power-label"><i class="bi-moon-stars"></i> Power Save</span>
+                                <span class="printer-power-value" id="printer-power-save">--</span>
+                                <span class="printer-power-detail" id="printer-power-save-detail">--</span>
+                            </div>
+                        </div>
                         <div class="row g-3">
                             <!-- XY Control -->
                             <div class="col-md-6 text-center">
@@ -85,20 +137,16 @@
                                 </div>
                             </div>
                         </div>
-                        <!-- Step Distance Selector -->
-                        <div class="row mt-4">
-                            <div class="col-12">
-                                <div class="btn-group w-100" role="group" aria-label="Step Distance">
-                                    <input type="radio" class="btn-check" name="step-dist" id="step-1" value="1"
-                                        checked>
-                                    <label class="btn btn-outline-primary" for="step-1">1mm</label>
-                                    <input type="radio" class="btn-check" name="step-dist" id="step-10" value="10">
-                                    <label class="btn btn-outline-primary" for="step-10">10mm</label>
-                                    <input type="radio" class="btn-check" name="step-dist" id="step-20" value="20">
-                                    <label class="btn btn-outline-primary" for="step-20">20mm</label>
-                                    <input type="radio" class="btn-check" name="step-dist" id="step-50" value="50">
-                                    <label class="btn btn-outline-primary" for="step-50">50mm</label>
-                                </div>
+                        <!-- Step distance — fancy snap slider -->
+                        <div class="jog-step mt-4">
+                            <div class="d-flex align-items-center gap-3">
+                                <span class="small text-muted text-nowrap"><i class="bi-rulers px-1"></i>Step</span>
+                                <input type="range" class="form-range jog-step-slider" id="step-dist-slider" min="0"
+                                    max="3" step="1" value="0" aria-label="Jog step distance" />
+                                <span class="badge jog-step-badge" id="step-dist-label">1 mm</span>
+                            </div>
+                            <div class="d-flex justify-content-between jog-step-ticks small text-muted px-1 mt-1">
+                                <span>1</span><span>10</span><span>20</span><span>50</span>
                             </div>
                         </div>
                     </div>
@@ -152,15 +200,19 @@
                         </div>
                         <span id="badge-mqtt" class="badge">MQTT</span>
                         <span id="badge-pppp" class="badge text-bg-secondary">PPPP</span>
-                        {{if .VideoSupported}}
+                        {{if eq .CameraEffectiveSource "external"}}
+                        <span class="badge text-bg-success">CAMERA</span>
+                        {{else if .VideoSupported}}
                         <span id="badge-video" class="badge">VIDEO</span>
                         {{end}}
                         <span id="badge-ctrl" class="badge">CTRL</span>
                     </div>
                     {{end}}
+                    <div id="upload-card-wrapper">
                     <div class="card-header d-flex align-items-center justify-content-between">
                         <span class="fs-6">Upload Progress</span>
                         <button class="btn btn-sm btn-outline-secondary collapse-toggle" type="button"
+                            aria-label="Toggle upload progress"
                             data-bs-toggle="collapse" data-bs-target="#upload-progress-section" aria-expanded="true"
                             aria-controls="upload-progress-section">
                             <i class="bi-chevron-down"></i>
@@ -184,10 +236,43 @@
                             </div>
                         </div>
                     </div>
-                    {{if .VideoSupported}}
+                    </div><!-- upload-card-wrapper -->
+                    <div class="card-header fs-6">Current State</div>
+                    <div class="card-body py-3">
+                        <div class="state-strip mb-3" id="printer-state-strip">
+                            <div class="state-tile state-primary">
+                                <span class="state-label">Phase</span>
+                                <span class="state-value" id="printer-state-phase">Idle</span>
+                                <span class="state-detail" id="printer-state-detail">Waiting for upload</span>
+                            </div>
+                            <div class="state-tile">
+                                <span class="state-label">Upload</span>
+                                <span class="state-value" id="printer-state-upload">Idle</span>
+                                <span class="state-detail" id="printer-state-upload-detail">No active transfer</span>
+                            </div>
+                            <div class="state-tile">
+                                <span class="state-label">Nozzle</span>
+                                <span class="state-value" id="printer-state-nozzle">-- / --°C</span>
+                                <span class="state-detail" id="printer-state-nozzle-detail">current / target</span>
+                            </div>
+                            <div class="state-tile">
+                                <span class="state-label">Bed</span>
+                                <span class="state-value" id="printer-state-bed">-- / --°C</span>
+                                <span class="state-detail" id="printer-state-bed-detail">current / target</span>
+                            </div>
+                        </div>
+                        <div class="state-debug-feed" id="printer-debug-feed" aria-live="polite">
+                            <div class="state-debug-line muted">Waiting for live events...</div>
+                        </div>
+                        <div class="state-command-feed mt-2" id="printer-command-feed" aria-live="polite">
+                            <div class="state-debug-line muted">Waiting for commands...</div>
+                        </div>
+                    </div>
+                    {{if and .VideoSupported (ne .CameraEffectiveSource "external")}}
                     <div class="card-header d-flex align-items-center justify-content-between">
                         <span class="fs-6">Video Controls</span>
                         <button class="btn btn-sm btn-outline-secondary collapse-toggle" type="button"
+                            aria-label="Toggle video controls"
                             data-bs-toggle="collapse" data-bs-target="#video-controls-section" aria-expanded="true"
                             aria-controls="video-controls-section">
                             <i class="bi-chevron-down"></i>
@@ -254,7 +339,7 @@
                                     <div class="input-group-text d-none d-sm-block">
                                         <i class="icon icon-hotend"></i>
                                     </div>
-                                    <span id="nozzle-temp" class="form-control text-center bg-body-tertiary px-1"
+                                    <span id="nozzle-temp" class="form-control text-center bg-body-tertiary px-1 temp-live"
                                         title="Current Nozzle">
                                         0°C
                                     </span>
@@ -268,7 +353,7 @@
                                     <div class="input-group-text d-none d-sm-block">
                                         <i class="icon icon-bed"></i>
                                     </div>
-                                    <span id="bed-temp" class="form-control text-center bg-body-tertiary px-1"
+                                    <span id="bed-temp" class="form-control text-center bg-body-tertiary px-1 temp-live"
                                         title="Current Bed">
                                         0°C
                                     </span>

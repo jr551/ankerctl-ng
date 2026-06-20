@@ -21,7 +21,12 @@ var protectedGETPaths = map[string]bool{
 	"/api/settings/filament-service":          true,
 	"/api/settings/filament-service/advanced": true,
 	"/api/settings/timelapse":                 true,
+	"/api/settings/temperature-overrides":     true,
 	"/api/settings/camera":                    true,
+	"/api/settings/print-monitor":             true,
+	"/api/settings/smart-socket":              true,
+	"/api/print-monitor/status":               true,
+	"/api/smart-socket/state":                 true,
 	"/api/notifications/settings":             true,
 	"/api/printers":                           true,
 	"/api/printer/bed-leveling":               true,
@@ -44,6 +49,7 @@ var protectedGETPaths = map[string]bool{
 // protectedGETPrefixes covers dynamic path segments that require auth on all sub-paths.
 var protectedGETPrefixes = []string{
 	"/api/debug/",
+	"/api/history/",
 	"/api/timelapse/",
 	"/api/timelapse-snapshot/",
 }

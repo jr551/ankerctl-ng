@@ -26,6 +26,10 @@ type fakePPPPConn struct {
 	runDelay time.Duration
 	// channelErr, if set, is returned from Channel() for all indices.
 	channelErr error
+	// healthyOverride, if non-nil, overrides the default Healthy() result
+	// (which returns true when state == StateConnected). Used to simulate
+	// stale sessions in tests.
+	healthyOverride *bool
 }
 
 func newFakePPPPConn() *fakePPPPConn {
@@ -76,6 +80,16 @@ func (f *fakePPPPConn) Channel(index int) (*protocol.Channel, error) {
 		return nil, errors.New("index out of range")
 	}
 	return f.chans[index], nil
+}
+func (f *fakePPPPConn) Healthy() bool {
+	// Test fake is always healthy when connected; tests that need to
+	// simulate staleness can override healthyOverride.
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.healthyOverride != nil {
+		return *f.healthyOverride
+	}
+	return f.state == ppppclient.StateConnected
 }
 
 func TestPPPPService_ConnectionResetTriggersRestart(t *testing.T) {
@@ -218,6 +232,168 @@ func TestPPPPService_HandshakeConnectTimeout(t *testing.T) {
 	// connectTimeout is 10s; verify we didn't wait the full ctx timeout (15s).
 	if elapsed > 12*time.Second {
 		t.Fatalf("took %v to timeout, expected ~10s (connectTimeout)", elapsed)
+	}
+}
+
+func TestDirectedBroadcastForTarget(t *testing.T) {
+	target := net.IPv4(192, 168, 69, 33)
+	got, ok := directedBroadcastForTargetWithInterfaces(target, []net.Interface{
+		{Flags: net.FlagUp},
+	}, func(_ net.Interface) ([]net.Addr, error) {
+		return []net.Addr{
+			&net.IPNet{IP: net.IPv4(192, 168, 69, 201), Mask: net.CIDRMask(22, 32)},
+		}, nil
+	})
+	if !ok {
+		t.Fatal("expected directed broadcast match")
+	}
+	want := net.IPv4(192, 168, 71, 255)
+	if !got.Equal(want) {
+		t.Fatalf("broadcast=%v, want %v", got, want)
+	}
+}
+
+func TestDirectedBroadcastForTargetIPv4MappedMask(t *testing.T) {
+	target := net.IPv4(192, 168, 69, 33)
+	mask := net.IPMask(append(make([]byte, 12), 255, 255, 252, 0))
+	got, ok := directedBroadcastForTargetWithInterfaces(target, []net.Interface{
+		{Flags: net.FlagUp},
+	}, func(_ net.Interface) ([]net.Addr, error) {
+		return []net.Addr{
+			&net.IPNet{IP: net.ParseIP("192.168.69.201"), Mask: mask},
+		}, nil
+	})
+	if !ok {
+		t.Fatal("expected directed broadcast match")
+	}
+	want := net.IPv4(192, 168, 71, 255)
+	if !got.Equal(want) {
+		t.Fatalf("broadcast=%v, want %v", got, want)
+	}
+}
+
+func TestHandshakeTargetForKnownIP(t *testing.T) {
+	tests := []struct {
+		name    string
+		knownIP string
+		wantIP  net.IP
+		wantOK  bool
+	}{
+		{
+			name:    "valid printer IP",
+			knownIP: "192.168.69.33",
+			wantIP:  net.IPv4(192, 168, 69, 33),
+			wantOK:  true,
+		},
+		{
+			name:    "trim whitespace",
+			knownIP: " 192.168.69.33\n",
+			wantIP:  net.IPv4(192, 168, 69, 33),
+			wantOK:  true,
+		},
+		{
+			name:    "empty falls back to broadcast",
+			knownIP: "",
+			wantOK:  false,
+		},
+		{
+			name:    "global broadcast rejected",
+			knownIP: "255.255.255.255",
+			wantOK:  false,
+		},
+		{
+			name:    "loopback rejected",
+			knownIP: "127.0.0.1",
+			wantOK:  false,
+		},
+		{
+			name:    "invalid rejected",
+			knownIP: "not-an-ip",
+			wantOK:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotIP, gotOK := handshakeTargetForKnownIP(tt.knownIP)
+			if gotOK != tt.wantOK {
+				t.Fatalf("ok=%v, want %v", gotOK, tt.wantOK)
+			}
+			if tt.wantOK && !gotIP.Equal(tt.wantIP) {
+				t.Fatalf("ip=%v, want %v", gotIP, tt.wantIP)
+			}
+		})
+	}
+}
+
+func TestHandshakeAddressForKnownIPPrefersUnicast(t *testing.T) {
+	tests := []struct {
+		name    string
+		knownIP string
+		wantIP  net.IP
+		wantOK  bool
+	}{
+		{
+			name:    "nas vlan printer",
+			knownIP: "192.168.69.33",
+			wantIP:  net.IPv4(192, 168, 69, 33),
+			wantOK:  true,
+		},
+		{
+			name:    "missing ip uses broadcast fallback",
+			knownIP: "",
+			wantOK:  false,
+		},
+		{
+			name:    "invalid ip uses broadcast fallback",
+			knownIP: "255.255.255.255",
+			wantOK:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotIP, gotOK := handshakeAddressForKnownIP(tt.knownIP)
+			if gotOK != tt.wantOK {
+				t.Fatalf("ok=%v, want %v", gotOK, tt.wantOK)
+			}
+			if tt.wantOK && !gotIP.Equal(tt.wantIP) {
+				t.Fatalf("ip=%v, want %v", gotIP, tt.wantIP)
+			}
+		})
+	}
+}
+
+func TestHandshakeAddressesForKnownIPIncludesFallbacks(t *testing.T) {
+	got := handshakeAddressesForKnownIP("192.168.69.33")
+	if len(got) < 3 {
+		t.Fatalf("targets len = %d, want at least 3: %v", len(got), got)
+	}
+	wantPrefix := []net.IP{
+		net.IPv4(192, 168, 69, 33),
+		net.IPv4(192, 168, 69, 255),
+	}
+	for i, want := range wantPrefix {
+		if !got[i].Equal(want) {
+			t.Fatalf("target[%d] = %v, want %v (all targets %v)", i, got[i], want, got)
+		}
+	}
+	if !got[len(got)-1].Equal(net.IPv4bcast) {
+		t.Fatalf("last target = %v, want %v (all targets %v)", got[len(got)-1], net.IPv4bcast, got)
+	}
+}
+
+func TestDirectedBroadcastForTargetNoMatch(t *testing.T) {
+	target := net.IPv4(192, 168, 69, 33)
+	_, ok := directedBroadcastForTargetWithInterfaces(target, []net.Interface{
+		{Flags: net.FlagUp},
+	}, func(_ net.Interface) ([]net.Addr, error) {
+		return []net.Addr{
+			&net.IPNet{IP: net.IPv4(192, 168, 16, 16), Mask: net.CIDRMask(24, 32)},
+		}, nil
+	})
+	if ok {
+		t.Fatal("expected no directed broadcast match")
 	}
 }
 
