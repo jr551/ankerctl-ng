@@ -2283,7 +2283,21 @@ $(function () {
         setPrintingGlow(_preparing || _currentPrintState === PRINT_STATE.PRINTING || _currentPrintState === PRINT_STATE.PAUSED);
     }
 
-    const getStepDist = () => $('input[name="step-dist"]:checked').val() || "1";
+    const STEP_DISTANCES = [1, 10, 20, 50];
+    const getStepDist = () => {
+        const slider = document.getElementById("step-dist-slider");
+        if (slider) return String(STEP_DISTANCES[parseInt(slider.value, 10)] || 1);
+        return $('input[name="step-dist"]:checked').val() || "1";
+    };
+    (function () {
+        const slider = document.getElementById("step-dist-slider");
+        const label = document.getElementById("step-dist-label");
+        if (slider && label) {
+            const sync = () => { label.textContent = (STEP_DISTANCES[parseInt(slider.value, 10)] || 1) + " mm"; };
+            slider.addEventListener("input", sync);
+            sync();
+        }
+    })();
 
     $("#move-x-plus").on("click", function () { sendPrinterGCode(`G91\nG0 X${getStepDist()} F3000\nG90`); return false; });
     $("#move-x-minus").on("click", function () { sendPrinterGCode(`G91\nG0 X-${getStepDist()} F3000\nG90`); return false; });

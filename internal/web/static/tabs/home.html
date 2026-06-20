@@ -133,20 +133,16 @@
                                 </div>
                             </div>
                         </div>
-                        <!-- Step Distance Selector -->
-                        <div class="row mt-4">
-                            <div class="col-12">
-                                <div class="btn-group w-100" role="group" aria-label="Step Distance">
-                                    <input type="radio" class="btn-check" name="step-dist" id="step-1" value="1"
-                                        checked>
-                                    <label class="btn btn-outline-primary" for="step-1">1mm</label>
-                                    <input type="radio" class="btn-check" name="step-dist" id="step-10" value="10">
-                                    <label class="btn btn-outline-primary" for="step-10">10mm</label>
-                                    <input type="radio" class="btn-check" name="step-dist" id="step-20" value="20">
-                                    <label class="btn btn-outline-primary" for="step-20">20mm</label>
-                                    <input type="radio" class="btn-check" name="step-dist" id="step-50" value="50">
-                                    <label class="btn btn-outline-primary" for="step-50">50mm</label>
-                                </div>
+                        <!-- Step distance — fancy snap slider -->
+                        <div class="jog-step mt-4">
+                            <div class="d-flex align-items-center gap-3">
+                                <span class="small text-muted text-nowrap"><i class="bi-rulers px-1"></i>Step</span>
+                                <input type="range" class="form-range jog-step-slider" id="step-dist-slider" min="0"
+                                    max="3" step="1" value="0" aria-label="Jog step distance" />
+                                <span class="badge jog-step-badge" id="step-dist-label">1 mm</span>
+                            </div>
+                            <div class="d-flex justify-content-between jog-step-ticks small text-muted px-1 mt-1">
+                                <span>1</span><span>10</span><span>20</span><span>50</span>
                             </div>
                         </div>
                     </div>
