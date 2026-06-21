@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>History · ankerctl-ng mockup</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <div id="app">
+
+    <!-- Filter bar -->
+    <div class="card mb-2">
+      <div class="card-body" style="padding:14px">
+        <div class="row wrap gap-sm" style="align-items:center">
+          <div class="segmented">
+            <button class="active">All <span class="muted tiny">·24</span></button>
+            <button>Completed <span class="muted tiny">·19</span></button>
+            <button>Failed <span class="muted tiny">·2</span></button>
+            <button>Cancelled <span class="muted tiny">·3</span></button>
+          </div>
+          <div style="position:relative;min-width:240px;flex:1;max-width:340px">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);width:16px;color:var(--text-muted)"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+            <input type="text" class="input" placeholder="Search by file name…" style="padding-left:32px;background:var(--bg-1)">
+          </div>
+          <span class="badge violet dot" style="margin-left:auto">showing prints with AI evidence</span>
+          <button class="btn sm ghost"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>Clear all</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Table -->
+    <div class="card mb-2">
+      <div class="card-head">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        <span class="title">Print History</span>
+        <span class="sub">last 30 days</span>
+      </div>
+      <div class="card-body" style="padding:0">
+        <table class="table">
+          <thead>
+            <tr>
+              <th style="width:60px"></th>
+              <th>File</th>
+              <th>Status</th>
+              <th>Started</th>
+              <th>Duration</th>
+              <th>Filament</th>
+              <th>AI Verdict</th>
+              <th>Hooks</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- Row: completed, with AI evidence -->
+            <tr>
+              <td><div class="thumb" style="background:linear-gradient(135deg,#88f387,#36d77c)"></div></td>
+              <td>
+                <div style="font-weight:600">dragon_vase.scad</div>
+                <div class="tiny muted mono">14.2 m · 38 g</div>
+              </td>
+              <td><span class="badge success dot">Completed</span></td>
+              <td class="mono tiny">Today 14:02</td>
+              <td class="mono">2h 33m</td>
+              <td class="tiny"><span style="color:#fff">●</span> PLA White</td>
+              <td>
+                <div class="row gap-sm" style="align-items:center">
+                  <span class="badge success">nominal</span>
+                  <span class="tiny muted">38s ago</span>
+                </div>
+              </td>
+              <td class="tiny muted">SMTP · HA</td>
+              <td class="right">
+                <button class="icon-btn" title="View gcode" style="width:30px;height:30px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                <button class="icon-btn" title="Reprint" style="width:30px;height:30px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></button>
+              </td>
+            </tr>
+
+            <!-- Row: failed with AI detection -->
+            <tr>
+              <td><div class="thumb" style="background:linear-gradient(135deg,#ff5d6c,#7a2030)"></div></td>
+              <td>
+                <div style="font-weight:600">benchy_mk3.gcode</div>
+                <div class="tiny muted mono">5.1 m · 14 g · stopped at 38%</div>
+              </td>
+              <td><span class="badge danger dot">Failed</span></td>
+              <td class="mono tiny">Yesterday 19:45</td>
+              <td class="mono">0h 54m</td>
+              <td class="tiny"><span style="color:#0af">●</span> PETG Blue</td>
+              <td>
+                <div class="row gap-sm" style="align-items:center">
+                  <span class="badge danger">spaghetti</span>
+                  <span class="tiny muted">evidence saved</span>
+                </div>
+              </td>
+              <td class="tiny muted">Apprise · E-STOP</td>
+              <td class="right">
+                <button class="icon-btn" title="View evidence" style="width:30px;height:30px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                <button class="icon-btn" title="Reprint" style="width:30px;height:30px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></button>
+              </td>
+            </tr>
+
+            <!-- Row: animal safety stop -->
+            <tr>
+              <td><div class="thumb" style="background:linear-gradient(135deg,#b78bff,#3a1c5a)"></div></td>
+              <td>
+                <div style="font-weight:600">cat_tag_COLLAR.scad</div>
+                <div class="tiny muted mono">0.8 m · 2 g · power cut at 91%</div>
+              </td>
+              <td><span class="badge violet dot">Safety stop</span></td>
+              <td class="mono tiny">2 days ago</td>
+              <td class="mono">0h 22m</td>
+              <td class="tiny"><span style="color:#f44">●</span> ABS Red</td>
+              <td>
+                <div class="row gap-sm" style="align-items:center">
+                  <span class="badge violet">🐾 cat detected</span>
+                  <span class="tiny muted">auto-cut power</span>
+                </div>
+              </td>
+              <td class="tiny muted">SMTP · Webhook</td>
+              <td class="right">
+                <button class="icon-btn" title="View evidence" style="width:30px;height:30px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                <button class="icon-btn" title="Reprint" style="width:30px;height:30px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></button>
+              </td>
+            </tr>
+
+            <!-- Row: completed -->
+            <tr>
+              <td><div class="thumb" style="background:linear-gradient(135deg,#ffb340,#7a4a00)"></div></td>
+              <td>
+                <div style="font-weight:600">phone_stand.gcode</div>
+                <div class="tiny muted mono">8.4 m · 23 g</div>
+              </td>
+              <td><span class="badge success dot">Completed</span></td>
+              <td class="mono tiny">3 days ago</td>
+              <td class="mono">1h 48m</td>
+              <td class="tiny"><span style="color:#0f0">●</span> PLA Green</td>
+              <td>
+                <div class="row gap-sm" style="align-items:center">
+                  <span class="badge success">nominal</span>
+                  <span class="tiny muted">no events</span>
+                </div>
+              </td>
+              <td class="tiny muted">—</td>
+              <td class="right">
+                <button class="icon-btn" title="View gcode" style="width:30px;height:30px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                <button class="icon-btn" title="Reprint" style="width:30px;height:30px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></button>
+              </td>
+            </tr>
+
+            <!-- Row: cancelled -->
+            <tr>
+              <td><div class="thumb" style="background:linear-gradient(135deg,#4dc4ff,#0a3a5a)"></div></td>
+              <td>
+                <div style="font-weight:600"> articulated_arm.stl</div>
+                <div class="tiny muted mono">cancelled at 12%</div>
+              </td>
+              <td><span class="badge warn dot">Cancelled</span></td>
+              <td class="mono tiny">5 days ago</td>
+              <td class="mono">0h 09m</td>
+              <td class="tiny"><span style="color:#fff">●</span> PLA White</td>
+              <td class="tiny muted">—</td>
+              <td class="tiny muted">—</td>
+              <td class="right">
+                <button class="icon-btn" title="Reprint" style="width:30px;height:30px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></button>
+              </td>
+            </tr>
+
+            <!-- Row: completed -->
+            <tr>
+              <td><div class="thumb" style="background:linear-gradient(135deg,#88f387,#36d77c)"></div></td>
+              <td>
+                <div style="font-weight:600">name_tag_SAM.scad</div>
+                <div class="tiny muted mono">1.2 m · 3 g</div>
+              </td>
+              <td><span class="badge success dot">Completed</span></td>
+              <td class="mono tiny">1 wk ago</td>
+              <td class="mono">0h 18m</td>
+              <td class="tiny"><span style="color:#ff0">●</span> PLA Yellow</td>
+              <td>
+                <div class="row gap-sm" style="align-items:center">
+                  <span class="badge success">nominal</span>
+                  <span class="tiny muted">first layer clean</span>
+                </div>
+              </td>
+              <td class="tiny muted">HA</td>
+              <td class="right">
+                <button class="icon-btn" title="View gcode" style="width:30px;height:30px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                <button class="icon-btn" title="Reprint" style="width:30px;height:30px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></button>
+              </td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+      <div class="card-foot row" style="justify-content:space-between">
+        <span>6 of 24 prints shown</span>
+        <button class="btn sm ghost">Load more</button>
+      </div>
+    </div>
+
+    <!-- AI evidence detail -->
+    <div class="card">
+      <div class="card-head">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+        <span class="title">AI Evidence · benchy_mk3.gcode</span>
+        <span class="badge danger dot">spaghetti detected @ 38%</span>
+      </div>
+      <div class="card-body">
+        <div class="grid" style="grid-template-columns:repeat(4,1fr);gap:10px">
+          <!-- 4 evidence thumbnails -->
+          <div style="position:relative">
+            <div class="thumb" style="width:100%;height:90px;background:linear-gradient(135deg,#1a2333,#0c1119);border:1px solid var(--border)"></div>
+            <div class="tiny mono muted center">frame 0x1a4c · T-30s</div>
+          </div>
+          <div style="position:relative">
+            <div class="thumb" style="width:100%;height:90px;background:linear-gradient(135deg,#1a2333,#0c1119);border:1px solid var(--border)"></div>
+            <div class="tiny mono muted center">frame 0x2b8f · T-15s</div>
+          </div>
+          <div style="position:relative">
+            <div class="thumb" style="width:100%;height:90px;background:linear-gradient(135deg,#3a1420,#1a0a0f);border:1px solid var(--danger)">
+              <div style="position:absolute;inset:0;display:grid;place-items:center;color:var(--danger);font-weight:800;font-size:11px">SPAGHETTI</div>
+            </div>
+            <div class="tiny mono center" style="color:var(--danger)">frame 0x3c20 · trigger</div>
+          </div>
+          <div style="position:relative">
+            <div class="thumb" style="width:100%;height:90px;background:linear-gradient(135deg,#1a2333,#0c1119);border:1px solid var(--border)"></div>
+            <div class="tiny mono muted center">frame 0x4a2f · post-stop</div>
+          </div>
+        </div>
+        <div class="ai-panel mt-2">
+          <div class="head">
+            <svg class="sparkle" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5Z"/></svg>
+            Model reasoning
+          </div>
+          <div style="font-size:13px;line-height:1.6">
+            Print has lost adhesion on the right side of the hull. Strands of filament are dragging on the nozzle
+            (classic spaghetti). Recommend checking bed leveling and re-running with a brim. PETG was at 240/80 °C.
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="assets/nav.js"></script>
+  <script>init({ active: "history", title: "History" });</script>
+</body>
+</html>

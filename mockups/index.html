@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dashboard · ankerctl-ng mockup</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <div id="app">
+
+    <!-- ===== Row 1: Camera + Current Print ===== -->
+    <div class="grid" style="grid-template-columns: 2fr 1fr;">
+
+      <!-- Camera -->
+      <div class="card">
+        <div class="card-head">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7a2 2 0 0 1 2-2h3l2-2h6l2 2h3a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7Z"/><circle cx="12" cy="13" r="4"/></svg>
+          <span class="title">Live Camera</span>
+          <span class="badge success dot">Streaming · HD</span>
+          <span class="sub">Office M5C</span>
+        </div>
+        <div class="card-body">
+          <div class="camera">
+            <div class="bed-grid"></div>
+            <div class="print-ghost"></div>
+            <div class="scan"></div>
+            <div class="live"><span class="dot"></span>LIVE</div>
+            <div class="ai-chip">
+              <svg class="ic" style="width:13px" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5Z"/></svg>
+              AI · animal watch armed
+            </div>
+            <div class="camera-overlay-controls">
+              <button class="cam-btn" title="Light on"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18h6M10 21h4M12 2a7 7 0 0 0-4 12.7c.6.4 1 1.1 1 1.8h6c0-.7.4-1.4 1-1.8A7 7 0 0 0 12 2Z"/></svg></button>
+              <button class="cam-btn" title="Snapshot"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2Z"/><circle cx="12" cy="13" r="4"/></svg></button>
+              <button class="cam-btn" title="Quality"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 12h2M15 12h2M11 10v4"/></svg></button>
+              <div style="flex:1"></div>
+              <span class="pill" style="background:rgba(0,0,0,.55);border-color:rgba(255,255,255,.12);color:white">1280×720 · 24fps</span>
+            </div>
+          </div>
+          <!-- rewind -->
+          <div class="mt-2" style="display:flex;align-items:center;gap:12px;">
+            <span class="tiny muted nowrap">Rewind</span>
+            <input type="range" class="range" min="0" max="60" value="0" />
+            <span class="tiny mono muted">LIVE · 60s buffer</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Current Print -->
+      <div class="card">
+        <div class="card-head">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V3h12v6"/><rect x="6" y="13" width="12" height="8" rx="1"/></svg>
+          <span class="title">Current Print</span>
+          <span class="badge info dot">Printing</span>
+        </div>
+        <div class="card-body center" style="display:flex;flex-direction:column;align-items:center;gap:14px;">
+          <!-- circular progress (67%) -->
+          <div class="gauge" style="width:150px;height:150px;">
+            <svg width="150" height="150">
+              <circle cx="75" cy="75" r="64" stroke-width="10" fill="none" class="track" />
+              <circle cx="75" cy="75" r="64" stroke-width="10" fill="none" class="fill"
+                stroke-dasharray="402" stroke-dashoffset="133" />
+            </svg>
+            <div class="center">
+              <div class="pct">67<span style="font-size:13px">%</span></div>
+              <div class="lab">layer 134/200</div>
+            </div>
+          </div>
+          <div style="width:100%">
+            <div class="tiny muted" style="margin-bottom:4px">FILE</div>
+            <div style="font-weight:600;font-size:13px" class="nowrap">dragon_vase.scad</div>
+          </div>
+          <div class="grid" style="grid-template-columns:1fr 1fr;width:100%;gap:8px;">
+            <div class="tile" style="padding:10px">
+              <div class="lbl">Elapsed</div>
+              <div class="val" style="font-size:16px">01:42:18</div>
+            </div>
+            <div class="tile" style="padding:10px">
+              <div class="lbl">Remaining</div>
+              <div class="val" style="font-size:16px;color:var(--accent)">00:50:24</div>
+            </div>
+          </div>
+          <div class="row gap-sm" style="width:100%">
+            <button class="btn warning" style="flex:1">
+              <svg class="ic" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg> Pause
+            </button>
+            <button class="btn danger" style="flex:1">
+              <svg class="ic" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12"/></svg> Stop
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Row 2: Status tiles ===== -->
+    <div class="tiles mt-2">
+      <div class="tile accent">
+        <div class="lbl">Phase</div>
+        <div class="val" style="font-size:16px">Printing</div>
+        <div class="det">layer 134 of 200</div>
+      </div>
+      <div class="tile">
+        <div class="lbl">Nozzle</div>
+        <div class="val" style="font-size:16px">215<span class="muted" style="font-size:12px">/220°C</span></div>
+        <div class="det">heating · 97%</div>
+      </div>
+      <div class="tile">
+        <div class="lbl">Bed</div>
+        <div class="val" style="font-size:16px">60<span class="muted" style="font-size:12px">/60°C</span></div>
+        <div class="det">stable</div>
+      </div>
+      <div class="tile">
+        <div class="lbl">Speed</div>
+        <div class="val" style="font-size:16px">142<span class="muted" style="font-size:12px">mm/s</span></div>
+        <div class="det">100% flow</div>
+      </div>
+      <div class="tile">
+        <div class="lbl">Z Height</div>
+        <div class="val" style="font-size:16px">13.4<span class="muted" style="font-size:12px">mm</span></div>
+        <div class="det">0.10 mm layers</div>
+      </div>
+    </div>
+
+    <!-- ===== Row 3: Printer Control + Temperatures ===== -->
+    <div class="grid mt-2" style="grid-template-columns:1fr 1fr;">
+
+      <!-- Printer Control -->
+      <div class="card">
+        <div class="card-head">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V3h12v6"/><rect x="6" y="13" width="12" height="8" rx="1"/><path d="M6 17H4a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-2"/></svg>
+          <span class="title">Printer Control</span>
+          <button class="btn sm ghost">Home All</button>
+        </div>
+        <div class="card-body">
+          <div class="row" style="align-items:center;">
+            <div class="col center">
+              <div class="tiny muted mb-1"><strong>XY</strong> · bed / extruder</div>
+              <div class="jog">
+                <button class="y-plus" title="Y+"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 15 6-6 6 6"/></svg></button>
+                <button class="y-minus" title="Y-"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+                <button class="x-minus" title="X-"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
+                <button class="x-plus" title="X+"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></button>
+                <button class="home-xy home" title="Home XY"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h5v-6h4v6h5V9.5"/></svg></button>
+              </div>
+            </div>
+            <div class="col center">
+              <div class="tiny muted mb-1"><strong>Z</strong> · height</div>
+              <div class="jog-z">
+                <button title="Z+"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 15 6-6 6 6"/><path d="m6 21 6-6 6 6"/></svg></button>
+                <button class="home" title="Home Z"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h5v-6h4v6h5V9.5"/></svg></button>
+                <button title="Z-"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/><path d="m6 3 6 6 6-6"/></svg></button>
+              </div>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <span class="tiny muted nowrap">Step distance</span>
+            <input type="range" class="range" min="0" max="3" value="1" style="flex:1" />
+            <span class="badge" style="background:var(--accent-soft);color:var(--accent)">10 mm</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:6px" class="tiny muted">
+            <span>1</span><span>10</span><span>20</span><span>50</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Temperatures -->
+      <div class="card">
+        <div class="card-head">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0Z"/></svg>
+          <span class="title">Temperatures</span>
+        </div>
+        <div class="card-body">
+          <div class="row" style="align-items:center;justify-content:space-around;">
+            <!-- hotend ring 215/220 -->
+            <div style="text-align:center">
+              <div class="temp-ring hot">
+                <svg width="92" height="92">
+                  <circle cx="46" cy="46" r="38" stroke-width="7" class="track" />
+                  <circle cx="46" cy="46" r="38" stroke-width="7" class="fill"
+                    stroke-dasharray="238.7" stroke-dashoffset="7.5" />
+                </svg>
+                <div class="center">
+                  <div class="cur">215°</div>
+                  <div class="tgt">/ 220°</div>
+                </div>
+              </div>
+              <div class="tiny muted mt-1"><strong style="color:var(--danger)">●</strong> Nozzle</div>
+            </div>
+            <!-- bed ring 60/60 -->
+            <div style="text-align:center">
+              <div class="temp-ring bed">
+                <svg width="92" height="92">
+                  <circle cx="46" cy="46" r="38" stroke-width="7" class="track" />
+                  <circle cx="46" cy="46" r="38" stroke-width="7" class="fill"
+                    stroke-dasharray="238.7" stroke-dashoffset="0" />
+                </svg>
+                <div class="center">
+                  <div class="cur">60°</div>
+                  <div class="tgt">/ 60°</div>
+                </div>
+              </div>
+              <div class="tiny muted mt-1"><strong style="color:var(--warning)">●</strong> Bed</div>
+            </div>
+            <!-- mini chart -->
+            <div style="flex:1;min-width:0;align-self:stretch">
+              <div class="chart" style="height:100%;min-height:120px">
+                <svg viewBox="0 0 200 110" preserveAspectRatio="none">
+                  <line x1="0" y1="27" x2="200" y2="27" class="grid-line" />
+                  <line x1="0" y1="55" x2="200" y2="55" class="grid-line" />
+                  <line x1="0" y1="82" x2="200" y2="82" class="grid-line" />
+                  <!-- hotend line (rising, settling at 215) -->
+                  <path class="line" stroke="#ff5d6c" d="M0,100 L20,95 L35,80 L50,55 L70,35 L90,28 L110,25 L130,26 L150,24 L180,25 L200,25" />
+                  <path class="area" fill="#ff5d6c" d="M0,100 L20,95 L35,80 L50,55 L70,35 L90,28 L110,25 L130,26 L150,24 L180,25 L200,25 L200,110 L0,110 Z" />
+                  <!-- bed line (rising to 60, slower) -->
+                  <path class="line" stroke="#ffb340" d="M0,100 L25,98 L45,85 L70,70 L100,58 L130,55 L160,55 L200,55" />
+                </svg>
+              </div>
+              <div class="tiny muted center mono">last 5 min</div>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <div class="label">Preheat presets</div>
+          <div class="row gap-sm wrap">
+            <button class="btn sm"><span style="color:var(--info)">●</span> PLA · 200/60</button>
+            <button class="btn sm"><span style="color:var(--warning)">●</span> PETG · 240/80</button>
+            <button class="btn sm"><span style="color:var(--danger)">●</span> ABS · 250/100</button>
+            <button class="btn sm"><span style="color:var(--violet)">●</span> TPU · 230/50</button>
+            <button class="btn sm ghost">Cooldown</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Row 4: Temperature Graph + Power + AI ===== -->
+    <div class="grid mt-2" style="grid-template-columns:2fr 1fr;">
+
+      <!-- Temp graph -->
+      <div class="card">
+        <div class="card-head">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 3-4 3 2 4-6"/></svg>
+          <span class="title">Temperature History</span>
+          <div class="segmented">
+            <button class="active">5m</button>
+            <button>15m</button>
+            <button>30m</button>
+            <button>1h</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="chart" style="height:220px">
+            <svg viewBox="0 0 600 220" preserveAspectRatio="none">
+              <!-- grid -->
+              <g>
+                <line x1="0" y1="55"  x2="600" y2="55"  class="grid-line" />
+                <line x1="0" y1="110" x2="600" y2="110" class="grid-line" />
+                <line x1="0" y1="165" x2="600" y2="165" class="grid-line" />
+              </g>
+              <!-- hotend (red) — heat-up curve then steady at ~215 -->
+              <path class="line" stroke="#ff5d6c" stroke-width="2.5"
+                d="M0,210 L40,205 L80,180 L120,120 L160,75 L200,52 L240,45 L300,46 L360,44 L420,45 L480,43 L540,44 L600,45" />
+              <path class="area" fill="#ff5d6c"
+                d="M0,210 L40,205 L80,180 L120,120 L160,75 L200,52 L240,45 L300,46 L360,44 L420,45 L480,43 L540,44 L600,45 L600,220 L0,220 Z" />
+              <!-- target hotend (dashed) -->
+              <path class="line" stroke="#ff5d6c" stroke-width="1.5" stroke-dasharray="4 4" opacity="0.45"
+                d="M0,80 L600,40" />
+              <!-- bed (orange) -->
+              <path class="line" stroke="#ffb340" stroke-width="2.5"
+                d="M0,210 L60,208 L120,190 L200,160 L280,140 L360,135 L440,135 L520,135 L600,135" />
+              <path class="area" fill="#ffb340"
+                d="M0,210 L60,208 L120,190 L200,160 L280,140 L360,135 L440,135 L520,135 L600,135 L600,220 L0,220 Z" />
+            </svg>
+          </div>
+          <div class="row gap-sm mt-1 tiny muted">
+            <span><span style="color:#ff5d6c">●</span> Nozzle actual</span>
+            <span><span style="color:#ff5d6c;opacity:.5">┄</span> Nozzle target</span>
+            <span><span style="color:#ffb340">●</span> Bed actual</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Power strip + AI monitor stacked -->
+      <div class="grid" style="grid-template-columns:1fr;">
+
+        <!-- Power strip -->
+        <div class="card">
+          <div class="card-head">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></svg>
+            <span class="title">Smart Socket</span>
+            <span class="badge success dot">ON</span>
+          </div>
+          <div class="card-body" style="padding:14px">
+            <div class="tiles" style="grid-template-columns:1fr 1fr;gap:8px">
+              <div class="tile" style="padding:10px">
+                <div class="lbl">Draw</div>
+                <div class="val" style="font-size:17px;color:var(--warning)">218 W</div>
+              </div>
+              <div class="tile" style="padding:10px">
+                <div class="lbl">Session</div>
+                <div class="val" style="font-size:17px">2h 14m</div>
+              </div>
+              <div class="tile" style="padding:10px">
+                <div class="lbl">kWh</div>
+                <div class="val" style="font-size:17px">0.48</div>
+              </div>
+              <div class="tile" style="padding:10px">
+                <div class="lbl">Save</div>
+                <div class="val" style="font-size:17px;color:var(--accent)">auto</div>
+              </div>
+            </div>
+            <button class="btn danger block sm mt-1">Power cycle socket</button>
+          </div>
+        </div>
+
+        <!-- AI monitor -->
+        <div class="ai-panel">
+          <div class="head">
+            <svg class="sparkle" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5Z"/></svg>
+            AI Print Monitor
+          </div>
+          <div style="font-size:13px">
+            <strong style="color:var(--accent)">All nominal.</strong>
+            Last check 38s ago on frame <span class="mono">0x4a2f</span>.
+          </div>
+          <div class="row gap-sm wrap mt-1 tiny muted">
+            <span class="badge success dot">no defects</span>
+            <span class="badge success dot">no spaghetti</span>
+            <span class="badge violet dot">animal watch armed</span>
+          </div>
+          <div class="divider" style="margin:12px 0"></div>
+          <div class="tiny muted mb-1">Recent AI events</div>
+          <div style="font-size:12px;color:var(--text-soft)">
+            <div class="row" style="justify-content:space-between"><span>Print looks nominal</span><span class="mono muted">38s ago</span></div>
+            <div class="row" style="justify-content:space-between"><span>Layer adhesion good</span><span class="mono muted">2m ago</span></div>
+            <div class="row" style="justify-content:space-between"><span>First layer clean</span><span class="mono muted">14m ago</span></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ===== Row 5: Upload progress (when active) ===== -->
+    <div class="card mt-2">
+      <div class="card-head">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5-5 5 5"/><path d="M12 5v12"/></svg>
+        <span class="title">PPPP Upload</span>
+        <span class="sub">dragon_vase.gcode · 4.2 MB</span>
+        <span class="badge success dot">Idle · self-heal armed</span>
+      </div>
+      <div class="card-body">
+        <div class="progress striped"><div class="bar" style="width:100%"></div></div>
+        <div class="row gap-sm mt-1 tiny muted" style="justify-content:space-between">
+          <span>Transferred 4.2 MB of 4.2 MB</span>
+          <span class="mono">2.1 MB/s · 4 keepalives</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="assets/nav.js"></script>
+  <script>init({ active: "dashboard", title: "Dashboard" });</script>
+</body>
+</html>

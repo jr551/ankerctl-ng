@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Basic Mode · ankerctl-ng mockup</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+  <style>
+    /* Basic Mode suppresses most chrome — narrow sidebar, lighter nav */
+    .app.basic .sidebar .nav-item:not(.basic-show) { display: none; }
+    .app.basic .sidebar .nav-section { display: none; }
+    .app.basic .sidebar { width: 72px; }
+    .app.basic { grid-template-columns: 72px 1fr; }
+
+    /* Big "Basic Mode" banner across the top of content */
+    .basic-banner {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: linear-gradient(90deg, var(--accent-soft), transparent);
+      border: 1px solid var(--accent-soft);
+      border-radius: var(--radius);
+      padding: 12px 16px;
+      margin-bottom: 18px;
+    }
+    .basic-banner .ic-wrap {
+      width: 36px; height: 36px;
+      border-radius: 10px;
+      background: var(--accent);
+      color: #08160a;
+      display: grid; place-items: center;
+      flex-shrink: 0;
+    }
+    .basic-banner .txt { flex: 1; }
+    .basic-banner .txt strong { font-size: 14px; }
+    .basic-banner .txt .sub { font-size: 12px; color: var(--text-muted); }
+
+    /* Collapsed sidebar only shows icons */
+    .sidebar.collapsed .brand-name,
+    .sidebar.collapsed .brand-tag,
+    .sidebar.collapsed .printer-select .meta,
+    .sidebar.collapsed .printer-select .caret,
+    .sidebar.collapsed .nav-item span,
+    .sidebar.collapsed .nav-item .badge,
+    .sidebar.collapsed .sidebar-footer { display: none; }
+    .sidebar.collapsed { padding: 18px 10px; align-items: center; }
+    .sidebar.collapsed .brand { padding: 0; margin: 0 0 14px; border: none; justify-content: center; }
+    .sidebar.collapsed .brand-mark { margin: 0; }
+    .sidebar.collapsed .printer-select { padding: 8px; justify-content: center; }
+    .sidebar.collapsed .nav-item { justify-content: center; padding: 11px 8px; }
+
+    /* Hero camera in basic mode is big */
+    .basic-hero { display: grid; grid-template-columns: 2fr 1fr; gap: 18px; }
+    @media (max-width: 980px) { .basic-hero { grid-template-columns: 1fr; } }
+
+    .big-controls { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+    .big-btn {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 12px;
+      text-align: center;
+      color: var(--text);
+      font-weight: 700;
+      font-size: 14px;
+      transition: background 0.12s var(--ease), border-color 0.12s var(--ease), transform 0.08s var(--ease);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+    .big-btn:hover { background: var(--bg-3); border-color: var(--border-strong); }
+    .big-btn:active { transform: translateY(1px); }
+    .big-btn svg { width: 22px; opacity: 0.9; }
+    .big-btn.pause:hover { color: var(--warning); border-color: var(--warning); }
+    .big-btn.stop:hover  { color: var(--danger);  border-color: var(--danger); }
+    .big-btn.cool:hover  { color: var(--info);    border-color: var(--info); }
+    .big-btn .tiny-label { font-size: 11px; font-weight: 500; color: var(--text-muted); }
+  </style>
+</head>
+<body>
+  <div id="app" class="basic">
+
+    <!-- Basic Mode banner -->
+    <div class="basic-banner">
+      <div class="ic-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:20px"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg>
+      </div>
+      <div class="txt">
+        <strong>Basic Mode</strong>
+        <div class="sub">Simplified view — only the essentials. AI safety watch is still on.</div>
+      </div>
+      <a class="btn sm" href="mode-picker.html">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+        Switch mode
+      </a>
+    </div>
+
+    <!-- Hero: big camera + current print -->
+    <div class="basic-hero">
+
+      <!-- Big camera -->
+      <div class="card">
+        <div class="card-head">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7a2 2 0 0 1 2-2h3l2-2h6l2 2h3a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7Z"/><circle cx="12" cy="13" r="4"/></svg>
+          <span class="title">Live Camera</span>
+          <span class="badge violet dot">🐾 AI watch on</span>
+        </div>
+        <div class="card-body">
+          <div class="camera" style="aspect-ratio:16/10">
+            <div class="bed-grid"></div>
+            <div class="print-ghost"></div>
+            <div class="live"><span class="dot"></span>LIVE</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Current print — simple & big -->
+      <div class="card">
+        <div class="card-head">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V3h12v6"/><rect x="6" y="13" width="12" height="8" rx="1"/></svg>
+          <span class="title">Printing now</span>
+        </div>
+        <div class="card-body center" style="display:flex;flex-direction:column;align-items:center;gap:14px;">
+          <div class="gauge" style="width:130px;height:130px;">
+            <svg width="130" height="130">
+              <circle cx="65" cy="65" r="56" stroke-width="10" fill="none" class="track" />
+              <circle cx="65" cy="65" r="56" stroke-width="10" fill="none" class="fill"
+                stroke-dasharray="351.7" stroke-dashoffset="116" />
+            </svg>
+            <div class="center">
+              <div class="pct">67<span style="font-size:13px">%</span></div>
+              <div class="lab">layer 134 / 200</div>
+            </div>
+          </div>
+          <div style="width:100%">
+            <div class="tiny muted">FILE</div>
+            <div style="font-weight:600;font-size:14px" class="nowrap">dragon_vase.scad</div>
+          </div>
+          <div class="grid" style="grid-template-columns:1fr 1fr;width:100%;gap:8px;">
+            <div class="tile" style="padding:10px;text-align:center">
+              <div class="lbl">Done in</div>
+              <div class="val" style="font-size:16px;color:var(--accent)">50m</div>
+            </div>
+            <div class="tile" style="padding:10px;text-align:center">
+              <div class="lbl">Nozzle</div>
+              <div class="val" style="font-size:16px">215°</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Big controls: Pause / Stop / Cooldown -->
+    <div class="big-controls mt-2">
+      <button class="big-btn pause">
+        <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>
+        Pause
+        <span class="tiny-label">halts at current layer</span>
+      </button>
+      <button class="big-btn stop">
+        <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12"/></svg>
+        Stop
+        <span class="tiny-label">cancels the print</span>
+      </button>
+      <button class="big-btn cool">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M4 6l16 12M20 6 4 18"/></svg>
+        Cooldown
+        <span class="tiny-label">nozzle + bed off</span>
+      </button>
+    </div>
+
+    <!-- Preheat + print a file -->
+    <div class="grid mt-2" style="grid-template-columns:1fr 1fr;">
+
+      <div class="card">
+        <div class="card-head">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0Z"/></svg>
+          <span class="title">Preheat</span>
+          <span class="sub">tap a material</span>
+        </div>
+        <div class="card-body">
+          <div class="grid" style="grid-template-columns:1fr 1fr;gap:10px">
+            <button class="big-btn"><span style="color:var(--info);font-size:18px">●</span>PLA<span class="tiny-label">200° / 60°</span></button>
+            <button class="big-btn"><span style="color:var(--warning);font-size:18px">●</span>PETG<span class="tiny-label">240° / 80°</span></button>
+            <button class="big-btn"><span style="color:var(--danger);font-size:18px">●</span>ABS<span class="tiny-label">250° / 100°</span></button>
+            <button class="big-btn"><span style="color:var(--violet);font-size:18px">●</span>TPU<span class="tiny-label">230° / 50°</span></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22h14a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2z"/><path d="M14 2v5h5"/></svg>
+          <span class="title">Print a file</span>
+        </div>
+        <div class="card-body" style="display:flex;flex-direction:column;gap:12px;height:100%;">
+          <a class="big-btn primary" href="slice.html" style="background:var(--accent);color:#08160a;border:none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:22px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5-5 5 5"/><path d="M12 5v12"/></svg>
+            Browse files
+            <span class="tiny-label" style="color:rgba(8,22,10,0.7)">from your computer</span>
+          </a>
+          <a class="big-btn" href="beginner.html" style="border-style:dashed">
+            <svg viewBox="0 0 24 24" fill="currentColor" style="width:22px"><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5Z"/></svg>
+            Describe an idea
+            <span class="tiny-label">AI makes it for you</span>
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tiny status footer (kept, but minimal) -->
+    <div class="tiles mt-2" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr))">
+      <div class="tile" style="padding:11px">
+        <div class="lbl">Bed</div>
+        <div class="val" style="font-size:15px">60°</div>
+      </div>
+      <div class="tile" style="padding:11px">
+        <div class="lbl">Speed</div>
+        <div class="val" style="font-size:15px">142 <span class="muted tiny">mm/s</span></div>
+      </div>
+      <div class="tile" style="padding:11px">
+        <div class="lbl">Socket</div>
+        <div class="val" style="font-size:15px;color:var(--success)">ON · 218W</div>
+      </div>
+      <div class="tile accent" style="padding:11px">
+        <div class="lbl">AI</div>
+        <div class="val" style="font-size:15px">all good</div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="assets/nav.js"></script>
+  <script>
+    // Init the shared shell, then collapse to icon-only sidebar and trim nav
+    // down to the few items Basic Mode needs.
+    init({
+      active: "dashboard",
+      title: "Basic Mode",
+      afterInject: () => {
+        const sb = document.querySelector(".sidebar");
+        if (sb) sb.classList.add("collapsed");
+
+        // Keep only Dashboard / Slice & Build / Settings; hide the rest
+        const keep = ["Dashboard", "Slice & Build", "Settings"];
+        document.querySelectorAll(".sidebar .nav-item").forEach((n) => {
+          const label = n.querySelector("span")?.textContent || "";
+          if (!keep.includes(label)) n.classList.add("basic-hide");
+        });
+
+        // Inject a "Switch Mode" item near the top of the sidebar
+        if (sb && !sb.querySelector(".switch-mode-item")) {
+          const a = document.createElement("a");
+          a.className = "nav-item active switch-mode-item";
+          a.href = "mode-picker.html";
+          a.style.borderColor = "var(--accent)";
+          a.innerHTML = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg><span>Switch Mode</span>';
+          sb.insertBefore(a, sb.children[2]);
+        }
+      }
+    });
+  </script>
+</body>
+</html>
