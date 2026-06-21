@@ -14,7 +14,7 @@ if (fileInput) {
         previewWrap: $("slice-preview-wrap"), canvas: $("slice-canvas"),
         layer: $("slice-layer"), layerLabel: $("slice-layer-label"), travel: $("slice-travel"),
         print: $("slice-print"), continueBtn: $("slice-continue"), warning: $("slice-warning"),
-        download: $("slice-download"),
+        download: $("slice-download"), exportStl: $("slice-export-stl"),
         scad: $("slice-scad"), scadRender: $("slice-scad-render"),
         scadLive: $("slice-scad-live"), scadPreviewCanvas: $("scad-preview-canvas"),
         scadAiPrompt: $("scad-ai-prompt"), scadAiGo: $("scad-ai-go"), scadAiUndo: $("scad-ai-undo"),
@@ -232,6 +232,29 @@ if (fileInput) {
         return merged;
     };
 
+    // Serialise a BufferGeometry to ASCII STL (universally accepted; no extra deps).
+    const geometryToStlAscii = (geo, name) => {
+        const THREE = libs.THREE;
+        const g = geo.index ? geo.toNonIndexed() : geo;
+        const pos = g.getAttribute("position");
+        const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+        const ab = new THREE.Vector3(), ac = new THREE.Vector3(), n = new THREE.Vector3();
+        const f = (v) => v.toFixed(4);
+        const parts = ["solid " + name + "\n"];
+        for (let i = 0; i < pos.count; i += 3) {
+            a.fromBufferAttribute(pos, i); b.fromBufferAttribute(pos, i + 1); c.fromBufferAttribute(pos, i + 2);
+            ab.subVectors(b, a); ac.subVectors(c, a); n.crossVectors(ab, ac);
+            if (n.lengthSq() > 0) n.normalize();
+            parts.push(" facet normal " + f(n.x) + " " + f(n.y) + " " + f(n.z) + "\n  outer loop\n");
+            parts.push("   vertex " + f(a.x) + " " + f(a.y) + " " + f(a.z) + "\n");
+            parts.push("   vertex " + f(b.x) + " " + f(b.y) + " " + f(b.z) + "\n");
+            parts.push("   vertex " + f(c.x) + " " + f(c.y) + " " + f(c.z) + "\n");
+            parts.push("  endloop\n endfacet\n");
+        }
+        parts.push("endsolid " + name + "\n");
+        return parts.join("");
+    };
+
     const renderParts = () => {
         if (!els.partsList) return;
         if (parts.length <= 1) { els.partsList.classList.add("d-none"); els.partsList.innerHTML = ""; return; }
@@ -252,6 +275,7 @@ if (fileInput) {
         parts = [{ geo, name: name || "model", scale: 1, dx: 0, dy: 0 }];
         selectedPart = 0;
         renderParts(); syncScaleSlider();
+        if (els.exportStl) els.exportStl.disabled = false; // a model is loaded — STL export is available
     };
     // Append a component, auto-placed to the right so it doesn't overlap.
     const addPart = (geo, name) => {
@@ -516,7 +540,7 @@ if (fileInput) {
                     parts.splice(i, 1);
                     if (selectedPart >= parts.length) selectedPart = parts.length - 1;
                     renderParts(); syncScaleSlider();
-                    if (parts.length) await sliceCurrent(); else { baseGcode = ""; els.previewWrap.classList.add("d-none"); els.print.disabled = true; els.download.disabled = true; setStatus("All parts removed.", ""); }
+                    if (parts.length) await sliceCurrent(); else { baseGcode = ""; els.previewWrap.classList.add("d-none"); els.print.disabled = true; els.download.disabled = true; if (els.exportStl) els.exportStl.disabled = true; setStatus("All parts removed.", ""); }
                 }
                 return;
             }
@@ -544,6 +568,19 @@ if (fileInput) {
         if (!baseGcode) return;
         if (!confirm("Send this sliced gcode to the printer and start printing?")) return;
         uploadGcode(finalGcode(), baseName + ".gcode", els.print);
+    });
+
+    els.exportStl && els.exportStl.addEventListener("click", async () => {
+        try {
+            await loadLibs();
+            const geo = mergeParts();
+            if (!geo) { setStatus("Load or generate a model first.", "error"); return; }
+            const name = baseName || "model";
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(new Blob([geometryToStlAscii(geo, name)], { type: "model/stl" }));
+            a.download = name + ".stl"; a.click(); URL.revokeObjectURL(a.href);
+            setStatus("Exported " + name + ".stl", "ok");
+        } catch (err) { setStatus("STL export failed: " + (err && err.message ? err.message : err), "error"); }
     });
 
     // ── OpenSCAD: live 3D preview + slice ────────────────────────────────
