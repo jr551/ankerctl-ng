@@ -1,0 +1,445 @@
+/* ==========================================================================
+   ankerctl-ng · redesign design system  (ng.css)
+
+   Adopted from the mockups in /mockups. Loaded AFTER Bootstrap so it can
+   coexist during the page-by-page port:
+
+   - :root tokens and the SHELL layer (sidebar/topbar) are global. Their
+     class names were chosen to NOT collide with Bootstrap (the mockup's
+     `.nav-item` is renamed `.ng-nav` here, since Bootstrap owns `.nav-item`).
+   - The CONTENT component layer (card/btn/badge/tile/gauge/…) is scoped under
+     `.ngui`, so it only restyles pages that opt in with class="ngui". Un-ported
+     tabs keep their Bootstrap look untouched. When the last page is ported we
+     drop Bootstrap and lift the `.ngui` scope.
+   ========================================================================== */
+
+/* ---------- Design tokens ---------- */
+:root {
+  --bg-0: #0a0e14;
+  --bg-1: #0f141d;
+  --bg-2: #161d29;
+  --bg-3: #1f283a;
+  --bg-elev: #232d42;
+  --border: rgba(255, 255, 255, 0.07);
+  --border-strong: rgba(255, 255, 255, 0.13);
+  --text: #e8eef7;
+  --text-soft: #b6c2d4;
+  --text-muted: #7b8aa0;
+  --text-faint: #6b7a93; /* review fix: was #56627a (~3.0:1); bumped to clear AA on small labels */
+
+  --accent: #88f387;
+  --accent-strong: #5ee05d;
+  --accent-glow: rgba(136, 243, 135, 0.22);
+  --accent-soft: rgba(136, 243, 135, 0.12);
+
+  --danger: #ff5d6c;
+  --danger-glow: rgba(255, 93, 108, 0.28);
+  --warning: #ffb340;
+  --info: #4dc4ff;
+  --success: #36d77c;
+  --violet: #b78bff;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 20px 60px -16px rgba(0, 0, 0, 0.6);
+
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+
+  --ng-font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  --sidebar-w: 240px;
+  --topbar-h: 60px;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ---------- Reduced motion (review fix: honour the OS / Appearance pref) ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ==========================================================================
+   SHELL LAYER (global)
+   ========================================================================== */
+.app {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  min-height: 100vh;
+}
+
+/* ---------- Sidebar ---------- */
+.sidebar {
+  background: var(--bg-1);
+  border-right: 1px solid var(--border);
+  padding: 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px 14px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  text-decoration: none;
+}
+.brand-mark {
+  width: 34px; height: 34px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  display: grid; place-items: center;
+  color: #08160a;
+  font-weight: 800;
+  box-shadow: 0 4px 14px var(--accent-glow);
+  flex-shrink: 0;
+}
+.brand-name { font-weight: 700; font-size: 16px; letter-spacing: -0.02em; color: var(--text); }
+.brand-name .ng { color: var(--accent); }
+.brand-tag { font-size: 10px; color: var(--text-muted); letter-spacing: 0.04em; text-transform: uppercase; }
+
+.printer-select {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 9px 11px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.printer-select .led {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 8px var(--success);
+  flex-shrink: 0;
+}
+.printer-select .led.off { background: var(--text-faint); box-shadow: none; }
+.printer-select .meta { flex: 1; min-width: 0; }
+.printer-select .name { font-weight: 600; font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.printer-select .sub { font-size: 11px; color: var(--text-muted); font-family: var(--mono); }
+
+.nav-section {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--text-faint);
+  padding: 12px 10px 4px;
+}
+.ng-nav {
+  display: flex; align-items: center; gap: 11px;
+  padding: 9px 10px;
+  border-radius: var(--radius-sm);
+  color: var(--text-soft);
+  font-weight: 500; font-size: 13.5px;
+  border: 1px solid transparent;
+  background: transparent;
+  width: 100%; text-align: left;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+  cursor: pointer;
+  text-decoration: none;
+}
+.ng-nav .ic { width: 18px; height: 18px; flex-shrink: 0; opacity: 0.85; }
+.ng-nav i { width: 20px; text-align: center; font-size: 15px; opacity: 0.85; flex-shrink: 0; }
+.ng-nav:hover { background: var(--bg-2); color: var(--text); }
+.ng-nav.active { background: var(--accent-soft); color: var(--accent); }
+.ng-nav.active .ic { opacity: 1; }
+.ng-nav .badge-count {
+  margin-left: auto; background: var(--bg-3); color: var(--text-soft);
+  font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px;
+}
+.ng-nav.beginner {
+  background: linear-gradient(90deg, var(--accent-soft), transparent);
+  border: 1px dashed var(--border-strong);
+  color: var(--accent);
+  margin-top: 4px;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+  display: flex; flex-direction: column; gap: 4px;
+}
+.sidebar-footer .row { display: flex; justify-content: space-between; }
+
+/* ---------- Main + topbar ---------- */
+.main { display: flex; flex-direction: column; min-width: 0; }
+.topbar {
+  min-height: var(--topbar-h);
+  border-bottom: 1px solid var(--border);
+  background: rgba(15, 20, 29, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  display: flex; align-items: center; gap: 14px;
+  padding: 8px 22px;
+  position: sticky; top: 0; z-index: 1030;
+  flex-wrap: wrap;
+}
+.topbar .crumb { font-size: 12px; color: var(--text-muted); }
+.topbar h1 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.01em; color: var(--text); }
+.topbar .spacer { flex: 1; }
+
+.conn-pills { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--bg-2); border: 1px solid var(--border);
+  padding: 5px 10px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; color: var(--text-soft);
+  font-family: var(--mono); letter-spacing: 0.02em;
+}
+.pill .led { width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); }
+.pill.ok .led { background: var(--success); box-shadow: 0 0 6px var(--success); }
+.pill.warn .led { background: var(--warning); box-shadow: 0 0 6px var(--warning); }
+.pill.off .led { background: var(--text-faint); }
+
+.icon-btn {
+  width: 36px; height: 36px; border-radius: 10px;
+  background: var(--bg-2); border: 1px solid var(--border);
+  color: var(--text-soft);
+  display: grid; place-items: center;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease), transform 0.1s var(--ease);
+  cursor: pointer;
+}
+.icon-btn:hover { background: var(--bg-3); color: var(--text); }
+.icon-btn:active { transform: scale(0.96); }
+.icon-btn .ic { width: 18px; height: 18px; }
+
+/* Global, always-visible E-STOP (topbar). Static — no animation, to avoid the
+   continuous-repaint lag the pulsing variant caused. */
+.estop {
+  background: linear-gradient(180deg, var(--danger), #d63a47);
+  color: white; border: none;
+  font-weight: 800; font-size: 13px; letter-spacing: 0.06em;
+  padding: 8px 16px; border-radius: 10px;
+  display: inline-flex; align-items: center; gap: 8px;
+  box-shadow: 0 0 0 1px rgba(255, 93, 108, 0.4), 0 6px 20px var(--danger-glow);
+  cursor: pointer;
+  transition: transform 0.1s var(--ease), box-shadow 0.15s var(--ease);
+}
+.estop:hover { box-shadow: 0 0 0 2px rgba(255, 93, 108, 0.55), 0 8px 28px var(--danger-glow); }
+.estop:active { transform: scale(0.97); }
+.estop i { font-size: 15px; }
+
+.content { padding: 20px 22px 56px; width: 100%; }
+
+/* ---------- Responsive shell (review fix: icon-rail instead of hiding) ---------- */
+@media (max-width: 900px) {
+  .app { grid-template-columns: 64px 1fr; }
+  .sidebar { padding: 14px 8px; align-items: center; }
+  .brand { justify-content: center; padding: 0 0 12px; }
+  .brand-text, .brand-tag, .printer-select .meta,
+  .nav-section, .ng-nav span, .ng-nav .badge-count, .sidebar-footer { display: none; }
+  .ng-nav, .printer-select { justify-content: center; padding: 11px 8px; }
+  .content { padding: 16px; }
+  .topbar { padding: 8px 14px; }
+}
+
+/* ==========================================================================
+   CONTENT COMPONENT LAYER  (scoped under .ngui — see file header)
+   ========================================================================== */
+.ngui { font-family: var(--ng-font); color: var(--text); }
+.ngui *, .ngui *::before, .ngui *::after { box-sizing: border-box; }
+
+/* ---------- Cards ---------- */
+.ngui .ngcard {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin: 0;
+}
+.ngui .ngcard-head {
+  padding: 13px 16px;
+  display: flex; align-items: center; gap: 10px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600; font-size: 14px;
+}
+.ngui .ngcard-head .ic { color: var(--accent); width: 18px; height: 18px; }
+.ngui .ngcard-head .title { flex: 1; }
+.ngui .ngcard-head .sub { color: var(--text-muted); font-weight: 400; font-size: 12px; }
+.ngui .ngcard-body { padding: 16px; }
+.ngui .ngcard-foot {
+  padding: 11px 16px; border-top: 1px solid var(--border);
+  background: var(--bg-2); font-size: 12px; color: var(--text-muted);
+}
+
+/* ---------- Grid / flex helpers ---------- */
+.ngui .grid { display: grid; gap: 16px; }
+.ngui .ngrow { display: flex; gap: 16px; }
+.ngui .ngcol { flex: 1; min-width: 0; }
+.ngui .gap-sm { gap: 10px; }
+.ngui .wrap { flex-wrap: wrap; }
+.ngui .mb-1 { margin-bottom: 8px; }
+.ngui .mb-2 { margin-bottom: 16px; }
+.ngui .mt-1 { margin-top: 8px; }
+.ngui .mt-2 { margin-top: 16px; }
+.ngui .divider { height: 1px; background: var(--border); margin: 14px 0; border: 0; }
+.ngui .mono { font-family: var(--mono); }
+.ngui .muted { color: var(--text-muted); }
+.ngui .soft { color: var(--text-soft); }
+.ngui .tiny { font-size: 11px; }
+.ngui .center { text-align: center; }
+.ngui .nowrap { white-space: nowrap; }
+
+/* ---------- Camera frame ---------- */
+.ngui .camera {
+  position: relative; aspect-ratio: 16/9;
+  background: linear-gradient(135deg, #1a2333 0%, #0c1119 100%);
+  border-radius: var(--radius); overflow: hidden;
+  display: grid; place-items: center;
+}
+.ngui .camera .live, .ngui .camera .ai-chip {
+  position: absolute; top: 12px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  color: white; padding: 5px 10px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+  display: flex; align-items: center; gap: 7px;
+}
+.ngui .camera .live { left: 12px; }
+.ngui .camera .ai-chip { right: 12px; color: var(--accent); border: 1px solid var(--accent-soft); }
+.ngui .camera .live .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--danger); animation: ng-pulse 1.4s infinite; }
+@keyframes ng-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+/* ---------- Status tiles ---------- */
+.ngui .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.ngui .tile { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
+.ngui .tile .lbl { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); }
+.ngui .tile .val { font-size: 20px; font-weight: 700; font-family: var(--mono); letter-spacing: -0.02em; margin-top: 4px; color: var(--text); }
+.ngui .tile .det { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.ngui .tile.accent { background: linear-gradient(180deg, var(--accent-soft), transparent); border-color: var(--accent-soft); }
+.ngui .tile.accent .val { color: var(--accent); }
+.ngui .tile.warn .val { color: var(--warning); }
+.ngui .tile.danger .val { color: var(--danger); }
+
+/* ---------- Jog pad ---------- */
+.ngui .jog { display: grid; grid-template-columns: repeat(3, 54px); grid-template-rows: repeat(3, 54px); gap: 8px; justify-content: center; }
+.ngui .jog button {
+  background: var(--bg-2); border: 1px solid var(--border); color: var(--text-soft);
+  border-radius: 12px; display: grid; place-items: center; font-size: 18px; cursor: pointer;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease), border-color 0.12s var(--ease);
+}
+.ngui .jog button:hover { background: var(--bg-3); color: var(--text); border-color: var(--border-strong); }
+.ngui .jog button.home { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-soft); }
+.ngui .jog .ic { width: 20px; height: 20px; }
+.ngui .jog .y-plus { grid-column: 2; grid-row: 1; }
+.ngui .jog .y-minus { grid-column: 2; grid-row: 3; }
+.ngui .jog .x-minus { grid-column: 1; grid-row: 2; }
+.ngui .jog .x-plus { grid-column: 3; grid-row: 2; }
+.ngui .jog .home-xy { grid-column: 2; grid-row: 2; }
+.ngui .jog-z { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.ngui .jog-z button { width: 60px; height: 46px; background: var(--bg-2); border: 1px solid var(--border); color: var(--text-soft); border-radius: 12px; display: grid; place-items: center; cursor: pointer; }
+.ngui .jog-z button:hover { background: var(--bg-3); color: var(--text); }
+.ngui .jog-z button.home { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-soft); }
+.ngui .jog-z .ic { width: 20px; height: 20px; }
+
+/* ---------- Range slider ---------- */
+.ngui .range { -webkit-appearance: none; appearance: none; width: 100%; height: 6px; background: var(--bg-3); border-radius: 999px; outline: none; }
+.ngui .range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 18px; height: 18px; border-radius: 50%; background: var(--accent); border: 3px solid var(--bg-1); box-shadow: 0 0 0 1px var(--accent); cursor: pointer; }
+.ngui .range::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: var(--accent); border: 3px solid var(--bg-1); cursor: pointer; }
+
+/* ---------- Buttons ---------- */
+.ngui .ngbtn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  background: var(--bg-2); border: 1px solid var(--border); color: var(--text);
+  padding: 8px 14px; border-radius: var(--radius-sm); font-weight: 600; font-size: 13px;
+  cursor: pointer; text-decoration: none;
+  transition: background 0.12s var(--ease), border-color 0.12s var(--ease), transform 0.08s var(--ease);
+}
+.ngui .ngbtn:hover { background: var(--bg-3); border-color: var(--border-strong); }
+.ngui .ngbtn:active { transform: translateY(1px); }
+.ngui .ngbtn .ic { width: 16px; height: 16px; }
+.ngui .ngbtn.primary { background: var(--accent); color: #08160a; border-color: var(--accent); box-shadow: 0 4px 14px var(--accent-glow); }
+.ngui .ngbtn.primary:hover { background: var(--accent-strong); }
+.ngui .ngbtn.danger { background: var(--danger); color: white; border-color: var(--danger); }
+.ngui .ngbtn.warning { background: var(--warning); color: #1a1100; border-color: var(--warning); }
+.ngui .ngbtn.ghost { background: transparent; }
+.ngui .ngbtn.sm { padding: 5px 10px; font-size: 12px; }
+.ngui .ngbtn.lg { padding: 12px 22px; font-size: 15px; }
+.ngui .ngbtn.block { width: 100%; }
+
+/* segmented control */
+.ngui .segmented { display: inline-flex; background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 3px; gap: 2px; }
+.ngui .segmented button { background: transparent; border: none; color: var(--text-muted); padding: 6px 14px; border-radius: 6px; font-weight: 600; font-size: 12.5px; cursor: pointer; transition: background 0.12s var(--ease), color 0.12s var(--ease); }
+.ngui .segmented button.active { background: var(--bg-elev); color: var(--text); box-shadow: var(--shadow-sm); }
+.ngui .segmented button:hover:not(.active) { color: var(--text-soft); }
+
+/* ---------- Progress ---------- */
+.ngui .ngprogress { height: 10px; background: var(--bg-3); border-radius: 999px; overflow: hidden; position: relative; }
+.ngui .ngprogress .bar { height: 100%; background: linear-gradient(90deg, var(--accent-strong), var(--accent)); border-radius: 999px; position: relative; box-shadow: 0 0 12px var(--accent-glow); }
+.ngui .ngprogress.striped .bar::after { content: ""; position: absolute; inset: 0; background-image: repeating-linear-gradient(45deg, rgba(255,255,255,0.12) 0 6px, transparent 6px 12px); animation: ng-stripes 0.8s linear infinite; }
+@keyframes ng-stripes { from { background-position: 0 0; } to { background-position: 16px 0; } }
+
+/* circular gauge */
+.ngui .gauge { position: relative; width: 120px; height: 120px; }
+.ngui .gauge svg { transform: rotate(-90deg); }
+.ngui .gauge .track { stroke: var(--bg-3); }
+.ngui .gauge .fill { stroke: var(--accent); stroke-linecap: round; filter: drop-shadow(0 0 4px var(--accent-glow)); transition: stroke-dashoffset 0.6s var(--ease); }
+.ngui .gauge .center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.ngui .gauge .pct { font-family: var(--mono); font-size: 22px; font-weight: 700; letter-spacing: -0.03em; }
+.ngui .gauge .lab { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; }
+
+.ngui .temp-ring { position: relative; width: 92px; height: 92px; }
+.ngui .temp-ring svg { transform: rotate(-90deg); }
+.ngui .temp-ring .track { stroke: var(--bg-3); fill: none; }
+.ngui .temp-ring .fill { stroke-linecap: round; fill: none; transition: stroke-dashoffset 0.6s var(--ease); }
+.ngui .temp-ring.hot .fill { stroke: var(--danger); filter: drop-shadow(0 0 4px var(--danger-glow)); }
+.ngui .temp-ring.bed .fill { stroke: var(--warning); filter: drop-shadow(0 0 4px rgba(255,179,64,0.4)); }
+.ngui .temp-ring .center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.ngui .temp-ring .cur { font-family: var(--mono); font-size: 18px; font-weight: 700; }
+.ngui .temp-ring .tgt { font-size: 10px; color: var(--text-muted); font-family: var(--mono); }
+
+/* ---------- Form controls ---------- */
+.ngui .label { font-size: 12px; font-weight: 600; color: var(--text-soft); margin-bottom: 6px; display: block; }
+.ngui .input, .ngui .select, .ngui .textarea {
+  width: 100%; background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--text); padding: 9px 12px;
+  transition: border-color 0.12s var(--ease), box-shadow 0.12s var(--ease);
+}
+.ngui .input:focus, .ngui .select:focus, .ngui .textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+.ngui .textarea { resize: vertical; min-height: 70px; font-family: var(--mono); }
+.ngui .nginput-group { display: flex; align-items: stretch; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: var(--bg-2); }
+.ngui .nginput-group .input { border: none; background: transparent; }
+.ngui .nginput-group .adjoin { background: var(--bg-3); color: var(--text-muted); padding: 9px 11px; font-size: 12px; font-weight: 600; display: flex; align-items: center; }
+
+/* switch */
+.ngui .switch { position: relative; width: 40px; height: 22px; display: inline-block; }
+.ngui .switch input { opacity: 0; width: 0; height: 0; }
+.ngui .switch .slider { position: absolute; inset: 0; background: var(--bg-3); border: 1px solid var(--border); border-radius: 999px; transition: background 0.15s var(--ease); }
+.ngui .switch .slider::before { content: ""; position: absolute; width: 16px; height: 16px; background: var(--text-soft); border-radius: 50%; top: 2px; left: 2px; transition: transform 0.15s var(--ease), background 0.15s var(--ease); }
+.ngui .switch input:checked + .slider { background: var(--accent-soft); border-color: var(--accent); }
+.ngui .switch input:checked + .slider::before { transform: translateX(18px); background: var(--accent); }
+
+/* ---------- Badges ---------- */
+.ngui .chip { display: inline-flex; align-items: center; gap: 5px; background: var(--bg-3); color: var(--text-soft); font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 999px; }
+.ngui .chip.success { background: rgba(54, 215, 124, 0.15); color: var(--success); }
+.ngui .chip.warn { background: rgba(255, 179, 64, 0.15); color: var(--warning); }
+.ngui .chip.danger { background: rgba(255, 93, 108, 0.15); color: var(--danger); }
+.ngui .chip.info { background: rgba(77, 196, 255, 0.15); color: var(--info); }
+.ngui .chip.violet { background: rgba(183, 139, 255, 0.15); color: var(--violet); }
+.ngui .chip.dot::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+/* ---------- Chart ---------- */
+.ngui .chart svg { width: 100%; height: 100%; display: block; }
+.ngui .chart .grid-line { stroke: var(--border); stroke-dasharray: 2 4; }
+.ngui .chart .line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.ngui .chart .area { opacity: 0.18; }
+
+/* ---------- AI panel ---------- */
+.ngui .ai-panel { background: linear-gradient(135deg, rgba(183, 139, 255, 0.08), rgba(136, 243, 135, 0.06)); border: 1px solid rgba(183, 139, 255, 0.2); border-radius: var(--radius); padding: 14px; }
+.ngui .ai-panel .head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; font-weight: 700; color: var(--violet); letter-spacing: 0.04em; text-transform: uppercase; }
+.ngui .ai-panel .head .sparkle { width: 16px; height: 16px; }

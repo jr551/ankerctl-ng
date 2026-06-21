@@ -52,49 +52,52 @@ ankerctl-ng{{if .Printer}} - {{.Printer.Name}}{{end}}
 
 {{define "menu"}}
 {{if .Configure}}
-    <li class="nav-item" role="presentation">
-        <button class="btn btn-outline-secondary btn-sm" id="kid-mode-toggle" type="button"
+    <li class="nav-section">Workspace</li>
+    <li role="presentation">
+        <button class="ng-nav active" id="home-tab" data-bs-toggle="pill" data-bs-target="#home"
+            data-title="Dashboard" type="button" role="tab">
+            <i class="bi-house"></i><span>Dashboard</span>
+        </button>
+    </li>
+    <li role="presentation">
+        <button class="ng-nav" id="slice-tab" data-bs-toggle="pill" data-bs-target="#slice"
+            data-title="Slice &amp; Build" type="button" role="tab">
+            <i class="bi-box"></i><span>Slice &amp; Build</span>
+        </button>
+    </li>
+    <li role="presentation">
+        <button class="ng-nav" id="history-tab" data-bs-toggle="pill" data-bs-target="#history"
+            data-title="History" type="button" role="tab">
+            <i class="bi-clock-history"></i><span>History</span>
+        </button>
+    </li>
+    <li role="presentation">
+        <button class="ng-nav" id="filaments-tab" data-bs-toggle="pill" data-bs-target="#filaments"
+            data-title="Filaments" type="button" role="tab">
+            <i class="bi-droplet-fill"></i><span>Filaments</span>
+        </button>
+    </li>
+    <li role="presentation">
+        <button class="ng-nav beginner" id="kid-mode-toggle" type="button"
             title="Beginner Mode — simple: describe an idea or pick a file, and print">
-            <i class="bi-magic px-1"></i>Beginner Mode</button>
-    </li>
-    <li class="nav-item" role="presentation">
-        <button class="btn btn-outline-primary nav-link{{if .Configure}} active{{end}}"
-            id="home-tab" data-bs-toggle="pill" data-bs-target="#home" type="button" role="tab">
-            <i class="bi-house px-1"></i>Home
-        </button>
-    </li>
-    <li class="nav-item" role="presentation">
-        <button class="btn btn-outline-primary nav-link"
-            id="slice-tab" data-bs-toggle="pill" data-bs-target="#slice" type="button" role="tab">
-            <i class="bi-box px-1"></i>Slice &amp; Build
-        </button>
-    </li>
-    <li class="nav-item" role="presentation">
-        <button class="btn btn-outline-primary nav-link"
-            id="history-tab" data-bs-toggle="pill" data-bs-target="#history" type="button" role="tab">
-            <i class="bi-clock-history px-1"></i>History
-        </button>
-    </li>
-    <li class="nav-item" role="presentation">
-        <button class="btn btn-outline-primary nav-link"
-            id="filaments-tab" data-bs-toggle="pill" data-bs-target="#filaments" type="button" role="tab">
-            <i class="bi-droplet-fill px-1"></i>Filaments
+            <i class="bi-magic"></i><span>Beginner Mode</span>
         </button>
     </li>
 {{end}}
 
-<li class="nav-item" role="presentation">
-    <button class="btn btn-outline-primary nav-link{{if not .Configure}} active{{end}}"
-        id="setup-tab" data-bs-toggle="pill" data-bs-target="#setup" type="button" role="tab">
-    <i class="bi-gear-fill px-1"></i>Setup
+<li class="nav-section">System</li>
+<li role="presentation">
+    <button class="ng-nav{{if not .Configure}} active{{end}}" id="setup-tab" data-bs-toggle="pill"
+        data-bs-target="#setup" data-title="Settings" type="button" role="tab">
+        <i class="bi-gear-fill"></i><span>Settings</span>
     </button>
 </li>
 
 {{if .DebugMode}}
-<li class="nav-item" role="presentation">
-    <button class="btn btn-outline-primary nav-link"
-        id="debug-tab" data-bs-toggle="pill" data-bs-target="#debug" type="button" role="tab">
-    <i class="bi-bug-fill px-1"></i>Debug
+<li role="presentation">
+    <button class="ng-nav" id="debug-tab" data-bs-toggle="pill" data-bs-target="#debug"
+        data-title="Debug" type="button" role="tab">
+        <i class="bi-bug-fill"></i><span>Debug</span>
     </button>
 </li>
 {{end}}

@@ -96,7 +96,7 @@ func (h *Handler) OpenscadEdit(w http.ResponseWriter, r *http.Request) {
 		h.writeJSON(w, http.StatusOK, map[string]any{"skipped": true})
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 85*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 170*time.Second)
 	defer cancel()
 	code, ran, err := pm.EditOpenSCAD(ctx, body.Scad, body.Prompt, body.Images)
 	if err != nil || !ran {

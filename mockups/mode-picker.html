@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Choose your mode · ankerctl-ng mockup</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+  <style>
+    /* Mode-picker-specific styling. Could live in styles.css once adopted. */
+    .pick-backdrop {
+      position: fixed; inset: 0;
+      background:
+        radial-gradient(circle at 20% 0%, rgba(136, 243, 135, 0.08), transparent 50%),
+        radial-gradient(circle at 80% 100%, rgba(77, 196, 255, 0.08), transparent 50%),
+        var(--bg-0);
+      display: grid;
+      place-items: center;
+      padding: 32px 20px;
+      overflow-y: auto;
+    }
+    .pick-shell {
+      max-width: 1080px;
+      width: 100%;
+      text-align: center;
+    }
+    .pick-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+    .pick-brand .brand-mark { width: 44px; height: 44px; font-size: 20px; }
+    .pick-brand .name { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+    .pick-brand .name .ng { color: var(--accent); }
+    .pick-title {
+      font-size: 30px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin: 0 0 6px;
+    }
+    .pick-sub {
+      color: var(--text-muted);
+      font-size: 14.5px;
+      margin: 0 0 32px;
+    }
+    .pick-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+      text-align: left;
+    }
+    @media (max-width: 880px) { .pick-grid { grid-template-columns: 1fr; } }
+
+    .mode-card {
+      position: relative;
+      background: var(--bg-1);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: transform 0.15s var(--ease), border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
+      cursor: pointer;
+      overflow: hidden;
+    }
+    .mode-card::before {
+      content: "";
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: var(--card-accent, var(--accent));
+      opacity: 0.7;
+    }
+    .mode-card:hover {
+      transform: translateY(-3px);
+      border-color: var(--card-accent, var(--accent));
+      box-shadow: 0 16px 40px -16px rgba(0,0,0,0.6);
+    }
+    .mode-card.recommended {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent), 0 8px 28px var(--accent-glow);
+    }
+    .mode-card .rec-pill {
+      position: absolute;
+      top: 14px; right: 14px;
+      background: var(--accent);
+      color: #08160a;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 3px 8px;
+      border-radius: 999px;
+    }
+    .mode-card .icon-wrap {
+      width: 52px; height: 52px;
+      border-radius: 14px;
+      display: grid; place-items: center;
+      background: var(--card-accent-soft, var(--accent-soft));
+      color: var(--card-accent, var(--accent));
+    }
+    .mode-card .icon-wrap svg { width: 26px; }
+    .mode-card .mname { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
+    .mode-card .mdesc { font-size: 13px; color: var(--text-muted); line-height: 1.55; }
+    .mode-card .features { list-style: none; padding: 0; margin: 4px 0 0; font-size: 12.5px; color: var(--text-soft); }
+    .mode-card .features li {
+      display: flex; align-items: flex-start; gap: 8px;
+      padding: 4px 0;
+    }
+    .mode-card .features svg { width: 14px; flex-shrink: 0; margin-top: 3px; color: var(--card-accent, var(--accent)); }
+    .mode-card .features .x { color: var(--text-faint); }
+    .mode-card .features .x svg { color: var(--text-faint); }
+    .mode-card .cta {
+      margin-top: auto;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      padding: 11px 16px;
+      border-radius: var(--radius-sm);
+      font-weight: 700;
+      font-size: 13.5px;
+      background: var(--card-accent-soft, var(--accent-soft));
+      color: var(--card-accent, var(--accent));
+      border: 1px solid var(--card-accent, var(--accent));
+      transition: background 0.12s var(--ease);
+    }
+    .mode-card:hover .cta { background: var(--card-accent, var(--accent)); color: #08160a; }
+    .mode-card.recommended .cta { background: var(--accent); color: #08160a; }
+
+    .pick-foot {
+      margin-top: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 22px;
+      flex-wrap: wrap;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+    .pick-foot a { color: var(--text-soft); text-decoration: underline; }
+    .remember {
+      display: inline-flex; align-items: center; gap: 8px;
+      cursor: pointer;
+    }
+    .check {
+      width: 18px; height: 18px;
+      border: 1.5px solid var(--border-strong);
+      border-radius: 5px;
+      display: grid; place-items: center;
+      background: var(--bg-2);
+    }
+    .remember input { display: none; }
+    .remember input:checked + .check {
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+    .remember input:checked + .check::after {
+      content: "✓"; color: #08160a; font-size: 12px; font-weight: 800;
+    }
+
+    /* card accents */
+    .mode-card.basic    { --card-accent: var(--accent);  --card-accent-soft: var(--accent-soft); }
+    .mode-card.advanced { --card-accent: var(--info);    --card-accent-soft: rgba(77,196,255,0.12); }
+    .mode-card.beginner { --card-accent: var(--violet);  --card-accent-soft: rgba(183,139,255,0.12); }
+  </style>
+</head>
+<body>
+  <div class="mockup-banner">
+    <span class="dot"></span>
+    <strong>UI REDESIGN MOCKUP</strong>
+    <span class="sep">·</span>
+    <span>Mode-picker cover — full-screen splash shown on first launch / mode switch</span>
+    <span class="sep">·</span>
+    <a href="basic-dashboard.html">See Basic Mode dashboard →</a>
+    <span class="sep">·</span>
+    <a href="index.html">Back to Advanced dashboard</a>
+  </div>
+
+  <div class="pick-backdrop">
+    <div class="pick-shell">
+
+      <div class="pick-brand">
+        <div class="brand-mark">A</div>
+        <div class="name">ankerctl<span class="ng">-ng</span></div>
+      </div>
+
+      <h1 class="pick-title">How do you want to use ankerctl?</h1>
+      <p class="pick-sub">You can switch any time from the sidebar. Your filament library, history and settings stay the same.</p>
+
+      <div class="pick-grid">
+
+        <!-- BASIC -->
+        <a class="mode-card basic recommended" href="basic-dashboard.html">
+          <span class="rec-pill">Recommended</span>
+          <div class="icon-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg>
+          </div>
+          <div>
+            <div class="mname">Basic Mode</div>
+            <div class="mdesc">Just print and watch. A clean dashboard with the camera, current print, and the few buttons you actually use day-to-day.</div>
+          </div>
+          <ul class="features">
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4L19 6"/></svg>Big camera + live status</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4L19 6"/></svg>One-tap Pause / Stop / E-STOP</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4L19 6"/></svg>Preheat presets (PLA / PETG…)</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4L19 6"/></svg>AI safety watch stays on</li>
+            <li class="x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6 6 18"/></svg>Manual jog pad &amp; temp graph</li>
+            <li class="x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6 6 18"/></svg>Power strip, upload debug, GCode edit</li>
+          </ul>
+          <span class="cta">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px"><path d="m9 18 6-6-6-6"/></svg>
+            Enter Basic Mode
+          </span>
+        </a>
+
+        <!-- ADVANCED -->
+        <a class="mode-card advanced" href="index.html">
+          <div class="icon-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 7v6c0 5 3.5 8 9 9 5.5-1 9-4 9-9V7Z"/><path d="m9 12 2 2 4-4"/></svg>
+          </div>
+          <div>
+            <div class="mname">Advanced Mode</div>
+            <div class="mdesc">Everything ankerctl can do. Manual controls, temperature history, smart socket, AI monitor, GCode tools — all on one dashboard.</div>
+          </div>
+          <ul class="features">
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4L19 6"/></svg>Full jog pad + Z controls</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4L19 6"/></svg>Temperature history graph</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4L19 6"/></svg>Smart-socket telemetry</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4L19 6"/></svg>Live AI monitor + upload stream</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4L19 6"/></svg>Slice, GCode inspect, filament tools</li>
+          </ul>
+          <span class="cta">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px"><path d="m9 18 6-6-6-6"/></svg>
+            Enter Advanced Mode
+          </span>
+        </a>
+
+        <!-- BEGINNER -->
+        <a class="mode-card beginner" href="beginner.html">
+          <div class="icon-wrap">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5Z"/></svg>
+          </div>
+          <div>
+            <div class="mname">Beginner Mode</div>
+            <div class="mdesc">New to 3D printing? Describe an idea in a sentence, the AI writes the OpenSCAD, slices it, and you just hit print.</div>
+          </div>
+          <ul class="features">
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4L19 6"/></svg>Describe or pick a file</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4L19 6"/></svg>AI writes &amp; checks the model</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4L19 6"/></svg>Auto-safe settings (small prints)</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4L19 6"/></svg>Confirm, then it prints</li>
+            <li class="x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6 6 18"/></svg>No manual printer control</li>
+          </ul>
+          <span class="cta">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:16px"><path d="m9 18 6-6-6-6"/></svg>
+            Open Beginner Wizard
+          </span>
+        </a>
+
+      </div>
+
+      <div class="pick-foot">
+        <label class="remember">
+          <input type="checkbox" checked />
+          <span class="check"></span>
+          Remember my choice
+        </label>
+        <span class="sep" style="opacity:.4">·</span>
+        <a href="index.html">Skip — continue to Advanced dashboard</a>
+        <span class="sep" style="opacity:.4">·</span>
+        <span class="mono tiny">v1.1.1 · Office M5C (…QXY12)</span>
+      </div>
+
+    </div>
+  </div>
+</body>
+</html>

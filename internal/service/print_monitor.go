@@ -116,7 +116,7 @@ func NewPrintMonitorService(cfgMgr *config.Manager, cfg model.PrintMonitorConfig
 		log:         slog.With("service", "printmonitor"),
 		cfgMgr:      cfgMgr,
 		snapshotter: snapshotter,
-		httpClient:  &http.Client{Timeout: 90 * time.Second},
+		httpClient:  &http.Client{Timeout: 180 * time.Second},
 		cfg:         normalizePrintMonitorConfig(cfg),
 		cmdCh:       make(chan any, 8),
 	}

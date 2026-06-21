@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Beginner Mode · ankerctl-ng mockup</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+  <style>
+    /* this page has no normal chrome — just the overlay flows side by side */
+    .flows { display:grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 24px; padding: 32px; max-width: 1500px; margin: 0 auto; }
+    .flow-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); margin-bottom: 10px; padding-left: 6px; }
+    .kid-card.compact { padding: 22px; }
+    .scaffold { background: var(--bg-0); min-height: 100vh; }
+  </style>
+</head>
+<body>
+  <div class="mockup-banner">
+    <span class="dot"></span>
+    <strong>UI REDESIGN MOCKUP</strong>
+    <span class="sep">·</span>
+    <span>Beginner Mode — all three wizard steps shown side-by-side</span>
+    <span class="sep">·</span>
+    <a href="index.html">Back to Dashboard</a>
+    <span class="sep">·</span>
+    <a href="README.md">README</a>
+  </div>
+
+  <div class="scaffold">
+    <div class="flows">
+
+      <!-- ===== Step 1: Choose ===== -->
+      <div>
+        <div class="flow-label">Step 1 · Choose idea or file</div>
+        <div class="kid-overlay" style="position:relative;padding:0;background:none;backdrop-filter:none;display:block">
+          <div class="kid-card compact">
+            <button class="icon-btn" style="position:absolute;top:14px;right:14px">&times;</button>
+            <div class="kid-title">Beginner Mode</div>
+            <div class="kid-sub">Describe an idea or pick a file. We handle the rest.</div>
+
+            <div class="steps" style="margin-bottom:18px">
+              <div class="s active"></div><div class="s"></div><div class="s"></div>
+            </div>
+
+            <textarea class="textarea" rows="3" style="font-size:14px" placeholder="e.g. a phone stand, a hexagon pen holder, a name tag that says SAM">a phone stand for my desk, angle 25 degrees</textarea>
+
+            <div style="text-align:center;color:var(--text-muted);font-size:12px;margin:14px 0">— or —</div>
+
+            <label class="btn block ghost" style="border-style:dashed;padding:18px">
+              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;margin-right:6px"><path d="M4 22h14a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2z"/><path d="M14 2v5h5"/></svg>
+              Pick a 3D file (.stl)
+            </label>
+
+            <button class="btn primary lg block" style="margin-top:18px;font-size:16px">
+              <svg class="ic" viewBox="0 0 24 24" fill="currentColor" style="width:18px;margin-right:4px"><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5Z"/></svg>
+              Make it
+            </button>
+
+            <div class="tiny muted center" style="margin-top:12px">Models are auto-scaled small. You'll confirm before printing.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== Step 2: Working ===== -->
+      <div>
+        <div class="flow-label">Step 2 · AI builds it (per-pass status)</div>
+        <div class="kid-overlay" style="position:relative;padding:0;background:none;backdrop-filter:none;display:block">
+          <div class="kid-card compact">
+            <button class="icon-btn" style="position:absolute;top:14px;right:14px">&times;</button>
+            <div class="kid-title">Beginner Mode</div>
+            <div class="kid-sub">Working on it — never looks frozen.</div>
+
+            <div class="steps" style="margin-bottom:18px">
+              <div class="s done"></div><div class="s active"></div><div class="s"></div>
+            </div>
+
+            <div style="text-align:center;padding:8px 0">
+              <div style="position:relative;width:80px;height:80px;margin:0 auto 14px">
+                <svg width="80" height="80" viewBox="0 0 80 80" style="animation:spin 2s linear infinite">
+                  <circle cx="40" cy="40" r="34" stroke="var(--bg-3)" stroke-width="6" fill="none"/>
+                  <circle cx="40" cy="40" r="34" stroke="var(--accent)" stroke-width="6" fill="none" stroke-dasharray="80 200" stroke-linecap="round"/>
+                </svg>
+                <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+                <svg viewBox="0 0 24 24" fill="var(--accent)" style="position:absolute;inset:0;margin:auto;width:30px;height:30px"><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5Z"/></svg>
+              </div>
+              <div style="font-weight:600;font-size:14px">Writing OpenSCAD…</div>
+              <div class="tiny muted">pass 2 of 2 · refining</div>
+            </div>
+
+            <div style="background:var(--bg-0);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;font-size:12px">
+              <div class="row" style="justify-content:space-between;padding:4px 0">
+                <span><span style="color:var(--success)">✓</span> Pass 1 · generate model</span>
+                <span class="mono muted tiny">0.8s</span>
+              </div>
+              <div class="row" style="justify-content:space-between;padding:4px 0">
+                <span><span style="color:var(--success)">✓</span> Compile · 0 errors</span>
+                <span class="mono muted tiny">0.3s</span>
+              </div>
+              <div class="row" style="justify-content:space-between;padding:4px 0">
+                <span><span style="color:var(--accent)">●</span> Pass 2 · refine geometry</span>
+                <span class="mono muted tiny">…</span>
+              </div>
+              <div class="row" style="justify-content:space-between;padding:4px 0">
+                <span class="muted">○ Slice &amp; sanity check</span>
+                <span class="mono muted tiny">queued</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== Step 3: Done ===== -->
+      <div>
+        <div class="flow-label">Step 3 · Preview &amp; print</div>
+        <div class="kid-overlay" style="position:relative;padding:0;background:none;backdrop-filter:none;display:block">
+          <div class="kid-card compact">
+            <button class="icon-btn" style="position:absolute;top:14px;right:14px">&times;</button>
+            <div class="kid-title">Ready to print!</div>
+            <div class="kid-sub">Here's your model. Confirm to send it.</div>
+
+            <div class="steps" style="margin-bottom:18px">
+              <div class="s done"></div><div class="s done"></div><div class="s active"></div>
+            </div>
+
+            <div class="preview-stage" style="aspect-ratio:16/10;margin-bottom:14px">
+              <div class="bed"></div>
+              <div class="model" style="width:50%;height:40%;bottom:20%"></div>
+              <div class="orbit-hint">drag to inspect</div>
+              <div class="hud">phone_stand.scad · 23 g · 18 min</div>
+            </div>
+
+            <div class="tiles" style="grid-template-columns:1fr 1fr 1fr;margin-bottom:14px;gap:8px">
+              <div class="tile" style="padding:9px;text-align:center">
+                <div class="lbl">Filament</div>
+                <div class="val" style="font-size:14px">23 g</div>
+              </div>
+              <div class="tile" style="padding:9px;text-align:center">
+                <div class="lbl">Time</div>
+                <div class="val" style="font-size:14px">18m</div>
+              </div>
+              <div class="tile" style="padding:9px;text-align:center">
+                <div class="lbl">Size</div>
+                <div class="val" style="font-size:14px">S</div>
+              </div>
+            </div>
+
+            <div class="ai-panel" style="margin-bottom:14px;padding:10px 12px">
+              <div class="head" style="margin-bottom:4px">
+                <svg class="sparkle" viewBox="0 0 24 24" fill="currentColor" style="width:14px"><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5Z"/></svg>
+                All clear
+              </div>
+              <div class="tiny" style="color:var(--text-soft)">Sane geometry, no risky overhangs. Auto-settings: PLA · 0.20mm · 18% infill.</div>
+            </div>
+
+            <div class="row gap-sm">
+              <button class="btn lg" style="flex:1">Make another</button>
+              <button class="btn primary lg" style="flex:1.6">
+                <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;margin-right:4px"><path d="M6 9V3h12v6"/><rect x="6" y="13" width="12" height="8" rx="1"/></svg>
+                Print it
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Inline trigger demo: how the overlay appears from the dashboard -->
+    <div style="max-width:1500px;margin:0 auto;padding:0 32px 60px">
+      <div class="flow-label">Trigger button (sits in sidebar)</div>
+      <div class="row gap-sm wrap">
+        <a class="nav-item beginner" href="#" style="max-width:260px">
+          <svg class="ic" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5Z"/></svg>
+          <span>Beginner Mode</span>
+        </a>
+        <span class="tiny muted" style="align-self:center">opens the full-screen overlay shown above</span>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>

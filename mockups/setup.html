@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Settings · ankerctl-ng mockup</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <div id="app">
+
+    <div class="grid" style="grid-template-columns:220px 1fr;align-items:start;">
+
+      <!-- Sub-nav -->
+      <div class="subnav">
+        <a href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Account</a>
+        <a href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V3h12v6"/><rect x="6" y="13" width="12" height="8" rx="1"/></svg>Printer</a>
+        <a href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.1 2.1-2.4-.6-.6-2.4Z"/></svg>Tools</a>
+        <a href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21a2 2 0 0 0 4 0"/></svg>Notifications <span class="badge" style="margin-left:auto;background:var(--danger);color:white">3</span></a>
+        <a class="active" href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg>Appearance</a>
+        <a href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7a2 2 0 0 1 2-2h3l2-2h6l2 2h3a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7Z"/><circle cx="12" cy="13" r="4"/></svg>Camera &amp; AI</a>
+        <a href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>Timelapse</a>
+        <a href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3h16l-2 14-6 4-6-4Z"/><path d="M8 7h8M8 11h8"/></svg>Mqtt / API</a>
+        <a href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6M15 2v6M6 8h12v3a6 6 0 0 1-12 0V8Z"/><path d="M12 17v5"/></svg>Power &amp; Socket</a>
+        <a href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9a21 21 0 0 1 18 0"/><path d="M3 14a21 21 0 0 0 18 0"/><path d="M3 19a21 21 0 0 0 18 0"/></svg>Home Assistant</a>
+      </div>
+
+      <!-- Settings content (Appearance panel) -->
+      <div>
+        <div class="card mb-2">
+          <div class="card-head">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg>
+            <span class="title">Theme</span>
+          </div>
+          <div class="card-body">
+            <div class="grid" style="grid-template-columns:repeat(3,1fr);gap:14px;max-width:540px">
+              <div class="theme-card active">
+                <div class="preview dark"></div>
+                <div class="name">Dark</div>
+              </div>
+              <div class="theme-card">
+                <div class="preview light"></div>
+                <div class="name">Light</div>
+              </div>
+              <div class="theme-card">
+                <div class="preview auto"></div>
+                <div class="name">Auto · system</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card mb-2">
+          <div class="card-head">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="10.5" r="2.5"/><circle cx="8.5" cy="7.5" r="2.5"/><circle cx="6.5" cy="12.5" r="2.5"/><path d="M12 22a10 10 0 1 1 0-20 7 7 0 0 1 7 7c0 3-2 5-5 5h-1.5a1.5 1.5 0 0 0-1 2.5l.5.5a1.5 1.5 0 0 1-1 2.5Z"/></svg>
+            <span class="title">Accent colour</span>
+          </div>
+          <div class="card-body">
+            <div class="row gap-sm wrap" style="align-items:center">
+              <div class="accent-swatch active" style="background:#88f387;color:#88f387"></div>
+              <div class="accent-swatch" style="background:#4dc4ff;color:#4dc4ff"></div>
+              <div class="accent-swatch" style="background:#ff5d6c;color:#ff5d6c"></div>
+              <div class="accent-swatch" style="background:#ffb340;color:#ffb340"></div>
+              <div class="accent-swatch" style="background:#b78bff;color:#b78bff"></div>
+              <div class="accent-swatch" style="background:#36d77c;color:#36d77c"></div>
+              <div class="accent-swatch" style="background:#ff7ac6;color:#ff7ac6"></div>
+              <div class="accent-swatch" style="background:#ffd84a;color:#ffd84a"></div>
+              <div class="accent-swatch" style="background:#7a8aa0;color:#7a8aa0"></div>
+              <div style="display:flex;align-items:center;gap:6px;padding-left:8px;border-left:1px solid var(--border);margin-left:6px">
+                <span class="tiny muted">custom</span>
+                <input type="color" value="#88f387" style="width:32px;height:32px;border:none;background:none;cursor:pointer" />
+              </div>
+            </div>
+            <div class="tiny muted mt-1">Live preview across the whole UI — buttons, progress bars, charts, E-STOP glow.</div>
+          </div>
+        </div>
+
+        <div class="card mb-2">
+          <div class="card-head">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
+            <span class="title">Density &amp; typography</span>
+          </div>
+          <div class="card-body">
+            <div class="row gap-sm wrap">
+              <div style="flex:1;min-width:200px">
+                <label class="label">Density</label>
+                <div class="segmented" style="display:flex;width:100%">
+                  <button style="flex:1">Compact</button>
+                  <button class="active" style="flex:1">Comfortable</button>
+                  <button style="flex:1">Spacious</button>
+                </div>
+              </div>
+              <div style="flex:1;min-width:200px">
+                <label class="label">Number font</label>
+                <select class="select">
+                  <option>JetBrains Mono</option>
+                  <option>SF Mono</option>
+                  <option>Menlo</option>
+                  <option>System</option>
+                </select>
+              </div>
+            </div>
+            <div class="row gap-sm wrap mt-1">
+              <div style="flex:1;min-width:200px;display:flex;justify-content:space-between;align-items:center">
+                <label class="label" style="margin:0">Reduce motion</label>
+                <label class="switch"><input type="checkbox"><span class="slider"></span></label>
+              </div>
+              <div style="flex:1;min-width:200px;display:flex;justify-content:space-between;align-items:center">
+                <label class="label" style="margin:0">High contrast</label>
+                <label class="switch"><input type="checkbox"><span class="slider"></span></label>
+              </div>
+              <div style="flex:1;min-width:200px;display:flex;justify-content:space-between;align-items:center">
+                <label class="label" style="margin:0">Show AI scan overlay</label>
+                <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Notifications preview card (to show another section as a hint) -->
+        <div class="card">
+          <div class="card-head">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21a2 2 0 0 0 4 0"/></svg>
+            <span class="title">Notification channels</span>
+            <span class="badge warn dot">3 pending</span>
+          </div>
+          <div class="card-body">
+            <table class="table">
+              <thead><tr><th>Channel</th><th>Target</th><th>Events</th><th>Status</th><th></th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><strong>SMTP</strong></td>
+                  <td class="mono tiny">me@example.com</td>
+                  <td><span class="badge info dot">print done</span> <span class="badge danger dot">failure</span></td>
+                  <td><span class="badge success dot">verified</span></td>
+                  <td class="right"><label class="switch"><input type="checkbox" checked><span class="slider"></span></label></td>
+                </tr>
+                <tr>
+                  <td><strong>Apprise</strong></td>
+                  <td class="mono tiny">discord://…4a2f</td>
+                  <td><span class="badge info dot">all</span></td>
+                  <td><span class="badge success dot">verified</span></td>
+                  <td class="right"><label class="switch"><input type="checkbox" checked><span class="slider"></span></label></td>
+                </tr>
+                <tr>
+                  <td><strong>Webhook</strong></td>
+                  <td class="mono tiny">https://hass.local/…</td>
+                  <td><span class="badge violet dot">🐾 animal</span> <span class="badge danger dot">ESTOP</span></td>
+                  <td><span class="badge warn dot">pending</span></td>
+                  <td class="right"><label class="switch"><input type="checkbox"><span class="slider"></span></label></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="assets/nav.js"></script>
+  <script>init({ active: "setup", title: "Settings" });</script>
+</body>
+</html>
