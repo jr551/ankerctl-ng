@@ -640,7 +640,11 @@ func (s *PrintMonitorService) EditOpenSCAD(ctx context.Context, currentSCAD, pro
 	if strings.TrimSpace(cfg.OpenRouterKey) == "" || strings.TrimSpace(cfg.Model) == "" {
 		return "", false, nil
 	}
-	const sys = "You are an expert in OpenSCAD. You are given the current OpenSCAD source (possibly empty) and a requested change, plus optional reference images. Reply with ONLY the complete, valid, updated OpenSCAD source — no markdown fences, no commentary, no explanation, no leading sentence. Make the requested change while keeping sensible existing structure. Prefer parametric, well-formed OpenSCAD with millimetre units. Keep the model a reasonable size for a desktop FDM printer (roughly within a 200mm cube). Do not add example/test calls that were not present unless the request asks for them."
+	const sys = "You are an expert in OpenSCAD. You are given the current OpenSCAD source (possibly empty) and a requested change, plus optional reference images. " +
+		"Reply with ONLY raw OpenSCAD source code — no markdown code fences, no LaTeX (no $$ and no \\text{}), no language tags, no commentary, no explanation, not even a leading sentence. " +
+		"Keep the code COMPACT so it generates fast: factor repeated or symmetric features into modules and use mirror() for left/right symmetry, and use a modest facet count ($fn around 24-48). " +
+		"Produce a SINGLE watertight solid (union the parts) that is 3D-printable on a desktop FDM printer with NO supports: it must have a flat base resting on z=0, with no parts floating above the bed or disconnected from the rest of the model, and no feature thinner than about 1.5 mm. " +
+		"Use millimetre units and keep the model within roughly a 120 mm cube. Make the requested change while keeping sensible existing structure; do not add example or test calls unless the request asks for them."
 	userContent := []map[string]any{
 		{"type": "text", "text": "Current OpenSCAD code:\n" + currentSCAD + "\n\nRequested change: " + prompt},
 	}
@@ -669,6 +673,7 @@ func (s *PrintMonitorService) EditOpenSCAD(ctx context.Context, currentSCAD, pro
 // prepend despite being told not to.
 func stripSCADProse(raw string) string {
 	code := strings.TrimSpace(stripCodeFence(raw))
+	code = stripSCADWrappers(code)
 	// Drop a leading natural-language line if the real code clearly starts later.
 	if nl := strings.IndexByte(code, '\n'); nl > 0 {
 		first := strings.TrimSpace(code[:nl])
@@ -682,6 +687,39 @@ func stripSCADProse(raw string) string {
 		}
 	}
 	return code
+}
+
+// stripSCADWrappers removes LaTeX/markdown artifacts some models wrap code in —
+// e.g. a leading "$$\text{openscad}" or a lone "openscad" language tag, or a
+// trailing "$$" — none of which are valid OpenSCAD. It deliberately leaves real
+// OpenSCAD special variables ($fn, $fa, $fs, …) alone: those start with a single
+// '$', whereas the LaTeX artifact starts with a double "$$".
+func stripSCADWrappers(code string) string {
+	isJunk := func(s string) bool {
+		t := strings.TrimSpace(s)
+		switch {
+		case t == "":
+			return true
+		case strings.HasPrefix(t, "$$"): // LaTeX display math, not an OpenSCAD $var
+			return true
+		case strings.HasPrefix(t, `\text`), strings.HasPrefix(t, `\(`), strings.HasPrefix(t, `\)`),
+			strings.HasPrefix(t, `\[`), strings.HasPrefix(t, `\]`):
+			return true
+		}
+		switch strings.ToLower(t) {
+		case "openscad", "scad", "cad": // stray language tag on its own line
+			return true
+		}
+		return false
+	}
+	lines := strings.Split(code, "\n")
+	for len(lines) > 0 && isJunk(lines[0]) {
+		lines = lines[1:]
+	}
+	for len(lines) > 0 && isJunk(lines[len(lines)-1]) {
+		lines = lines[:len(lines)-1]
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
 // stripCodeFence removes a leading ```lang fence and trailing ``` from any
