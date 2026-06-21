@@ -539,7 +539,7 @@ func (s *PrintMonitorService) AnalyzeSliceImage(ctx context.Context, imageDataUR
 	if strings.TrimSpace(cfg.OpenRouterKey) == "" || strings.TrimSpace(cfg.Model) == "" {
 		return SliceCheckResult{}, false, nil
 	}
-	const sys = "You are reviewing a 2D top-down toolpath preview of a model that was just sliced for 3D printing (green lines are extrusion paths on the bed). Reply with strict JSON only: {\"serious\": boolean, \"issue\": string}. Set serious=true ONLY for problems that would clearly ruin the print: the toolpath is empty or almost empty, it is cut off / runs off the plate, or it is grossly distorted or degenerate. Normal infill, perimeters, skirts and small gaps are FINE — do not flag them. Keep issue to one short sentence; use an empty string when serious is false."
+	const sys = "You are reviewing a 2D top-down toolpath preview of a model that was just sliced for 3D printing (green lines are extrusion paths on the bed). Reply with strict JSON only: {\"serious\": boolean, \"issue\": string}. Set serious=true ONLY for problems that would clearly ruin the print: there is essentially NO toolpath at all, or the toolpath is cut off / runs off the edge of the plate, or it is grossly distorted or degenerate. A small, simple, or sparse model that only covers part of the bed is completely FINE — do NOT flag sparse, small, or few-part layouts, and do NOT flag normal infill, perimeters, skirts, or gaps between parts. When in doubt, set serious=false. Keep issue to one short sentence; use an empty string when serious is false."
 	messages := []map[string]any{
 		{"role": "system", "content": sys},
 		{"role": "user", "content": []map[string]any{
