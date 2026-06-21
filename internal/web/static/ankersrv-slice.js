@@ -561,17 +561,27 @@ if (fileInput) {
         scene.add(new THREE.AmbientLight(0xffffff, 0.8));
         const dir = new THREE.DirectionalLight(0xffffff, 0.85); dir.position.set(0.6, -1, 1.4); scene.add(dir);
 
-        // Ghosted AnkerMake-style printer reference, for context (and fun).
+        // Ghosted AnkerMake M5C reference: a branded bed + a printer-like frame.
         const B = PREVIEW_BED;
-        const bed = new THREE.Mesh(new THREE.BoxGeometry(B.w, B.l, 2),
-            new THREE.MeshBasicMaterial({ color: 0x88f387, transparent: true, opacity: 0.05, side: THREE.DoubleSide }));
-        bed.position.set(0, 0, -1); scene.add(bed);
-        const grid = new THREE.GridHelper(B.w, 11, 0x88f387, 0x335c39);
-        grid.rotation.x = Math.PI / 2; grid.material.transparent = true; grid.material.opacity = 0.3; scene.add(grid);
-        const ghostLine = (geom) => new THREE.LineSegments(new THREE.EdgesGeometry(geom),
-            new THREE.LineBasicMaterial({ color: 0x88f387, transparent: true, opacity: 0.18 }));
+        // Branded bed surface drawn to a canvas texture (grid + AnkerMake/ankerctl-ng).
+        const bedCanvas = document.createElement("canvas"); bedCanvas.width = bedCanvas.height = 512;
+        const bx = bedCanvas.getContext("2d");
+        bx.fillStyle = "#0d1712"; bx.fillRect(0, 0, 512, 512);
+        bx.strokeStyle = "rgba(136,243,135,0.16)"; bx.lineWidth = 1;
+        for (let i = 0; i <= 11; i++) { const p = Math.round(i * 512 / 11); bx.beginPath(); bx.moveTo(p, 0); bx.lineTo(p, 512); bx.moveTo(0, p); bx.lineTo(512, p); bx.stroke(); }
+        bx.strokeStyle = "rgba(136,243,135,0.45)"; bx.lineWidth = 5; bx.strokeRect(3, 3, 506, 506);
+        bx.textAlign = "center";
+        bx.font = "bold 46px system-ui, sans-serif"; bx.fillStyle = "rgba(136,243,135,0.5)"; bx.fillText("AnkerMake M5C", 256, 432);
+        bx.font = "600 26px system-ui, sans-serif"; bx.fillStyle = "rgba(136,243,135,0.36)"; bx.fillText("ankerctl-ng", 256, 468);
+        const bedTex = new THREE.CanvasTexture(bedCanvas);
+        const bed = new THREE.Mesh(new THREE.PlaneGeometry(B.w, B.l),
+            new THREE.MeshBasicMaterial({ map: bedTex, transparent: true, opacity: 0.62, side: THREE.DoubleSide }));
+        bed.position.set(0, 0, -0.2); scene.add(bed); // bed surface just under the model base (z=0)
+        const ghostMat = new THREE.LineBasicMaterial({ color: 0x88f387, transparent: true, opacity: 0.2 });
+        const ghostLine = (geom) => new THREE.LineSegments(new THREE.EdgesGeometry(geom), ghostMat);
         const volume = ghostLine(new THREE.BoxGeometry(B.w, B.l, B.h)); volume.position.set(0, 0, B.h / 2); scene.add(volume);
-        const gantry = ghostLine(new THREE.BoxGeometry(B.w, 14, 14)); gantry.position.set(0, 0, B.h - 7); scene.add(gantry);
+        const gantry = ghostLine(new THREE.BoxGeometry(B.w, 16, 16)); gantry.position.set(0, 0, B.h - 8); scene.add(gantry); // X rail near top
+        const head = ghostLine(new THREE.BoxGeometry(26, 22, 30)); head.position.set(0, 0, B.h - 22); scene.add(head);    // ghost toolhead
 
         const controls = new libs.OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
@@ -795,7 +805,7 @@ if (fileInput) {
         const kidShow = (on) => { kid.overlay.classList.toggle("d-none", !on); document.body.classList.toggle("kid-active", on); };
         const kidStep = (s) => { kid.stepChoose.classList.toggle("d-none", s !== "choose"); kid.stepWork.classList.toggle("d-none", s !== "work"); kid.stepDone.classList.toggle("d-none", s !== "done"); };
         const kidSay = (m) => { if (kid.status) kid.status.textContent = m; };
-        const KID_FUN = ["Mixing the colours… 🎨", "Teaching the robot… 🤖", "Drawing your idea… ✏️", "Building it in 3D… 🧱", "Tidying it up… ✨"];
+        const KID_FUN = ["Designing the model…", "Generating the shape…", "Refining the model…", "Preparing it…"];
         if (kid.toggle) kid.toggle.addEventListener("click", () => { kidStep("choose"); kidShow(true); });
         if (kid.exit) kid.exit.addEventListener("click", () => kidShow(false));
         if (kid.file) kid.file.addEventListener("change", () => { kidFile = kid.file.files && kid.file.files[0]; kid.filename.textContent = kidFile ? "📦 " + kidFile.name : ""; });
@@ -826,7 +836,7 @@ if (fileInput) {
             if (d.skipped || !d.scad) return null;
             let built = await compileAndRender(d.scad);
             if (built.ok) return d.scad;
-            kidSay("Fixing a little mistake… 🔧");
+            kidSay("Fixing a compile error…");
             d = await call(d.scad, `This OpenSCAD for "${idea}" failed to compile: ${built.error}. Return ONLY the corrected complete OpenSCAD.`);
             if (d.skipped || !d.scad) return null;
             built = await compileAndRender(d.scad);
@@ -835,42 +845,42 @@ if (fileInput) {
 
         const kidMake = async () => {
             const text = (kid.prompt.value || "").trim();
-            if (!text && !kidFile) { kidSay("Type an idea or pick a file first! 😊"); return; }
-            kid.make.disabled = true; kidStep("work"); kidSay("Getting started… 🚀");
+            if (!text && !kidFile) { kidSay("Type an idea or pick a file first."); return; }
+            kid.make.disabled = true; kidStep("work"); kidSay("Starting…");
             const funTimer = setInterval(() => kidSay(KID_FUN[Math.floor(performance.now() / 2500) % KID_FUN.length]), 2500);
             const bail = (msg) => { clearInterval(funTimer); kidSay(msg); kid.make.disabled = false; kidStep("choose"); };
             try {
                 await loadLibs();
                 let geo;
                 if (kidFile) {
-                    kidSay("Opening your file… 📂");
-                    if (!/\.stl$/i.test(kidFile.name)) return bail("That's not a .stl file 🙈");
+                    kidSay("Opening your file…");
+                    if (!/\.stl$/i.test(kidFile.name)) return bail("That's not a .stl file.");
                     const buf = await kidFile.arrayBuffer();
-                    if (!inspectSTL(buf, kidFile.size).ok) return bail("Hmm, that file looks broken 🙈");
+                    if (!inspectSTL(buf, kidFile.size).ok) return bail("That file looks invalid.");
                     geo = new libs.STLLoader().parse(buf);
                     baseName = (kidFile.name.replace(/\.stl$/i, "") || "my-model");
                 } else {
-                    kidSay("Asking the robot to design it… 🤖");
+                    kidSay("Designing the model with AI…");
                     const scad = await kidAIBuild(text);
-                    if (!scad) return bail("The robot got stuck 😅 try a simpler idea!");
+                    if (!scad) return bail("The AI couldn't build that — try a simpler description.");
                     const stl = await compileScad(scad);
                     geo = new libs.STLLoader().parse(stl.buffer.slice(stl.byteOffset, stl.byteOffset + stl.byteLength));
                     baseName = "my-" + ((text.split(/\s+/)[0] || "model").replace(/[^a-z0-9]/gi, "").toLowerCase() || "model");
-                    if (els.scad) els.scad.value = scad; // also reflect into power-mode editor
+                    if (els.scad) els.scad.value = scad; // also reflect into the full editor
                 }
                 kidScaleSmall(geo, 60);
                 setParts(geo, baseName);
-                kidSay("Getting it ready to print… 🧱");
+                kidSay("Preparing it to print…");
                 kidSettings();
                 await sliceCurrent(); // slices + AI check + verdict, draws the bed preview
                 clearInterval(funTimer);
-                if (!baseGcode) return bail("Oops, couldn't make that printable 😅 try another idea!");
+                if (!baseGcode) return bail("Couldn't make that printable — try another idea.");
                 try { if (kid.donePreview && els.canvas) kid.donePreview.src = els.canvas.toDataURL("image/jpeg", 0.7); } catch (e) { /* preview optional */ }
                 const warned = els.warning && !els.warning.classList.contains("d-none");
-                kid.doneMsg.textContent = warned ? "Ready! It's a tricky one — ask a grown-up to watch 👀" : "Yay! Ready to print! 🎉";
+                kid.doneMsg.textContent = warned ? "Ready — this one looks tricky; check it before printing." : "Ready to print.";
                 kidStep("done");
             } catch (err) {
-                bail("Something went wrong 😅 try again!");
+                bail("Something went wrong — try again.");
             } finally { kid.make.disabled = false; }
         };
         kid.make.addEventListener("click", kidMake);
@@ -878,10 +888,10 @@ if (fileInput) {
             if (!baseGcode) return;
             if (!confirm("Send your model to the printer?")) return;
             kid.print.disabled = true;
-            kid.doneMsg.textContent = "Sending it to the printer… 🖨️";
+            kid.doneMsg.textContent = "Sending to the printer…";
             uploadGcode(finalGcode(), baseName + ".gcode", null).finally(() => {
                 kid.print.disabled = false;
-                kid.doneMsg.textContent = "Sent to the printer! 🎉 Go watch it print!";
+                kid.doneMsg.textContent = "Sent to the printer.";
             });
         });
     }

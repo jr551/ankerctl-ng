@@ -13,32 +13,31 @@ ankerctl-ng{{if .Printer}} - {{.Printer.Name}}{{end}}
 <!-- 🧸 Kid Mode (Easy Maker) overlay — idea/STL -> AI -> auto-settings -> print -->
 <div id="kid-mode" class="kid-overlay d-none">
     <div class="kid-card">
-        <button class="kid-exit" id="kid-exit" type="button" title="Back to normal mode" aria-label="Exit Kid Mode">&times;</button>
-        <div class="kid-title">🧸 Let's Make Something!</div>
+        <button class="kid-exit" id="kid-exit" type="button" title="Close" aria-label="Close Beginner Mode">&times;</button>
+        <div class="kid-title">Beginner Mode</div>
 
         <div id="kid-step-choose" class="kid-step">
-            <p class="kid-sub">Type an idea, or pick a 3D file — then tap the big button! ✨</p>
+            <p class="kid-sub">Describe an idea or pick a 3D file, then make it. Settings are chosen for you.</p>
             <textarea id="kid-prompt" class="kid-input" rows="2"
-                placeholder="e.g. a little dinosaur, a star, a name tag that says SAM"></textarea>
+                placeholder="e.g. a phone stand, a hexagon pen holder, a name tag that says SAM"></textarea>
             <div class="kid-or">— or —</div>
-            <label class="kid-filebtn" for="kid-file">📂 Pick a 3D file (.stl)</label>
+            <label class="kid-filebtn" for="kid-file"><i class="bi-folder2-open px-1"></i>Pick a 3D file (.stl)</label>
             <input type="file" id="kid-file" accept=".stl" class="d-none" />
             <div id="kid-filename" class="kid-filename"></div>
-            <button id="kid-make" class="kid-make-btn" type="button">✨ MAKE IT! ✨</button>
-            <div class="kid-hint">A grown-up should help with the printer. Models are kept small. 😊</div>
+            <button id="kid-make" class="kid-make-btn" type="button">Make it</button>
+            <div class="kid-hint">Models are scaled small. Printing sends to the printer after a confirmation.</div>
         </div>
 
         <div id="kid-step-work" class="kid-step d-none">
-            <div class="kid-spinner">🤖</div>
-            <div id="kid-status" class="kid-status">Thinking…</div>
+            <div class="spinner-border text-primary my-2" role="status" aria-hidden="true"></div>
+            <div id="kid-status" class="kid-status">Working…</div>
         </div>
 
         <div id="kid-step-done" class="kid-step d-none">
-            <div class="kid-done-emoji">🎉</div>
-            <div id="kid-done-msg" class="kid-status">Ready to print!</div>
+            <div id="kid-done-msg" class="kid-status">Ready to print.</div>
             <img id="kid-done-preview" class="kid-preview" alt="your model" />
-            <button id="kid-print" class="kid-print-btn" type="button">🖨️ PRINT IT!</button>
-            <button id="kid-again" class="kid-again-btn" type="button">↺ Make another</button>
+            <button id="kid-print" class="kid-print-btn" type="button"><i class="bi-printer px-1"></i>Print it</button>
+            <button id="kid-again" class="kid-again-btn" type="button">Make another</button>
         </div>
     </div>
 </div>
@@ -54,8 +53,9 @@ ankerctl-ng{{if .Printer}} - {{.Printer.Name}}{{end}}
 {{define "menu"}}
 {{if .Configure}}
     <li class="nav-item" role="presentation">
-        <button class="btn btn-warning fw-bold kid-mode-btn" id="kid-mode-toggle" type="button"
-            title="Beginner Mode — super simple maker mode: idea or file → print">🧸 Beginner Mode</button>
+        <button class="btn btn-outline-secondary btn-sm" id="kid-mode-toggle" type="button"
+            title="Beginner Mode — simple: describe an idea or pick a file, and print">
+            <i class="bi-magic px-1"></i>Beginner Mode</button>
     </li>
     <li class="nav-item" role="presentation">
         <button class="btn btn-outline-primary nav-link{{if .Configure}} active{{end}}"
