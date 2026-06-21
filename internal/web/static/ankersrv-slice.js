@@ -365,6 +365,9 @@ if (fileInput) {
             await loadLibs();
             currentGeometry = mergeParts();
             if (!currentGeometry) throw new Error("no parts to slice");
+            currentGeometry.computeBoundingBox();
+            const bb = currentGeometry.boundingBox;
+            const dimStr = ` · ${Math.round(bb.max.x - bb.min.x)}×${Math.round(bb.max.y - bb.min.y)}×${Math.round(bb.max.z - bb.min.z)} mm`;
             const t0 = performance.now();
             // Runs in a Web Worker (with a main-thread fallback) so the page never freezes.
             const g = await sliceGeometry(currentGeometry, cfg);
@@ -380,7 +383,7 @@ if (fileInput) {
             const tris = triangleCount(currentGeometry);
             if (tris > TRI_WARN) issues.push(`Very complex model (~${tris.toLocaleString()} triangles) — slicing is slow and the print may take a long time.`);
             if (moves > MOVE_WARN) issues.push(`Very large toolpath (${moves.toLocaleString()} moves) — long print and a big upload; inspect carefully first.`);
-            setStatus(`Sliced in ${dt} ms — ${parsed.layers.length} layers, ${moves} moves. Running AI check…`);
+            setStatus(`Sliced in ${dt} ms — ${parsed.layers.length} layers, ${moves} moves${dimStr}. Running AI check…`);
             let aiChecked = false;
             try {
                 const r = await fetch("/api/slice/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: els.canvas.toDataURL("image/jpeg", 0.6) }) });
@@ -388,7 +391,7 @@ if (fileInput) {
             } catch (e) { /* AI optional — surfaced below */ }
             applyVerdict(issues);
             const aiNote = aiChecked ? "" : " (AI check unavailable)";
-            setStatus(`Sliced in ${dt} ms — ${parsed.layers.length} layers, ${moves} moves.` + (issues.length ? " A check flagged an issue (below)." : " Download & inspect before printing a new model.") + aiNote, issues.length ? "error" : "ok");
+            setStatus(`Sliced in ${dt} ms — ${parsed.layers.length} layers, ${moves} moves${dimStr}.` + (issues.length ? " A check flagged an issue (below)." : " Download & inspect before printing a new model.") + aiNote, issues.length ? "error" : "ok");
         } catch (err) { setStatus("Slice failed: " + (err && err.message ? err.message : err), "error"); }
         finally { els.run.disabled = false; els.run.innerHTML = runLabel; }
     };
@@ -635,6 +638,7 @@ if (fileInput) {
         els.scadRender.addEventListener("click", async () => {
             const src = els.scad.value.trim();
             if (!src) { setStatus("Paste some OpenSCAD first.", "error"); return; }
+            clearTimeout(scadTimer); // don't let a pending live-preview clobber the slice result status
             baseName = "openscad-model";
             els.scadRender.disabled = true;
             showScadLoading(true);

@@ -5966,4 +5966,22 @@ $(function () {
         }
     });
 
+    // QoL: remember the last-used tab across reloads, so a refresh lands you
+    // back where you were instead of always on Home.
+    try {
+        var TAB_KEY = "ankerctl_last_tab";
+        document.querySelectorAll('#tab [data-bs-toggle="pill"]').forEach(function (btn) {
+            btn.addEventListener("shown.bs.tab", function () {
+                try { localStorage.setItem(TAB_KEY, btn.id); } catch (e) { /* ignore */ }
+            });
+        });
+        var savedTab = localStorage.getItem(TAB_KEY);
+        if (savedTab) {
+            var tabEl = document.getElementById(savedTab);
+            if (tabEl && window.bootstrap && window.bootstrap.Tab) {
+                try { window.bootstrap.Tab.getOrCreateInstance(tabEl).show(); } catch (e) { /* ignore */ }
+            }
+        }
+    } catch (e) { /* QoL only — never block startup */ }
+
 });
