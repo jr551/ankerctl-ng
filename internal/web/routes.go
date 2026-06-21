@@ -118,6 +118,7 @@ func (s *Server) registerRoutes() {
 	// AI print monitor / smart socket
 	r.Get("/api/print-monitor/status", h.PrintMonitorStatus)
 	r.Post("/api/print-monitor/check", h.PrintMonitorCheck)
+	r.Post("/api/print-monitor/cancel-autooff", h.PrintMonitorCancelAutoOff)
 	r.Get("/api/smart-socket/state", h.SmartSocketState)
 	r.Post("/api/smart-socket/control", h.SmartSocketControl)
 

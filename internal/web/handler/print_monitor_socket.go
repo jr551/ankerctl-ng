@@ -67,6 +67,17 @@ func (h *Handler) PrintMonitorStatus(w http.ResponseWriter, _ *http.Request) {
 	h.writeJSON(w, http.StatusOK, map[string]any{"available": true, "status": pm.Status()})
 }
 
+// PrintMonitorCancelAutoOff aborts a pending failure power-off during its grace
+// countdown (the user pressed "Keep printing").
+func (h *Handler) PrintMonitorCancelAutoOff(w http.ResponseWriter, _ *http.Request) {
+	pm, ok := h.printMonitor()
+	if !ok {
+		h.writeError(w, http.StatusServiceUnavailable, "print monitor service unavailable")
+		return
+	}
+	h.writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "cancelled": pm.CancelAutoOff()})
+}
+
 func (h *Handler) PrintMonitorCheck(w http.ResponseWriter, r *http.Request) {
 	pm, ok := h.printMonitor()
 	if !ok {

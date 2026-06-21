@@ -87,6 +87,12 @@
         </div>
     </div>
 
+<!-- Failure auto-off countdown banner (shows when a failing print is about to be powered off) -->
+    <div id="autooff-banner" class="autooff-banner d-none" role="alert">
+        <span id="autooff-banner-text">A print may be failing — power will be cut soon.</span>
+        <button id="autooff-cancel" type="button" class="btn btn-light btn-sm fw-bold ms-3">Keep printing</button>
+    </div>
+
 <!-- Message Center -->
     <div class="container text-center" id="messages">
         {{if .UnsupportedDevice}}

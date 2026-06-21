@@ -418,6 +418,7 @@ type SmartSocketConfig struct {
 func DefaultSmartSocketConfig() SmartSocketConfig {
 	return SmartSocketConfig{
 		Enabled:                     false,
+		AutoOffOnFail:               true, // graceful: notify + 2-min cancellable countdown before power-off
 		PowerUnit:                   "W",
 		ConfirmOff:                  true,
 		PowerSavingDashboardWakeSec: 600,
