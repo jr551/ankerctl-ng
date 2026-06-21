@@ -9,6 +9,39 @@ ankerctl-ng{{if .Printer}} - {{.Printer.Name}}{{end}}
 {{template "tabs/slice.html" .}}
 {{template "tabs/history.html" .}}
 {{template "tabs/filaments.html" .}}
+
+<!-- 🧸 Kid Mode (Easy Maker) overlay — idea/STL -> AI -> auto-settings -> print -->
+<div id="kid-mode" class="kid-overlay d-none">
+    <div class="kid-card">
+        <button class="kid-exit" id="kid-exit" type="button" title="Back to normal mode" aria-label="Exit Kid Mode">&times;</button>
+        <div class="kid-title">🧸 Let's Make Something!</div>
+
+        <div id="kid-step-choose" class="kid-step">
+            <p class="kid-sub">Type an idea, or pick a 3D file — then tap the big button! ✨</p>
+            <textarea id="kid-prompt" class="kid-input" rows="2"
+                placeholder="e.g. a little dinosaur, a star, a name tag that says SAM"></textarea>
+            <div class="kid-or">— or —</div>
+            <label class="kid-filebtn" for="kid-file">📂 Pick a 3D file (.stl)</label>
+            <input type="file" id="kid-file" accept=".stl" class="d-none" />
+            <div id="kid-filename" class="kid-filename"></div>
+            <button id="kid-make" class="kid-make-btn" type="button">✨ MAKE IT! ✨</button>
+            <div class="kid-hint">A grown-up should help with the printer. Models are kept small. 😊</div>
+        </div>
+
+        <div id="kid-step-work" class="kid-step d-none">
+            <div class="kid-spinner">🤖</div>
+            <div id="kid-status" class="kid-status">Thinking…</div>
+        </div>
+
+        <div id="kid-step-done" class="kid-step d-none">
+            <div class="kid-done-emoji">🎉</div>
+            <div id="kid-done-msg" class="kid-status">Ready to print!</div>
+            <img id="kid-done-preview" class="kid-preview" alt="your model" />
+            <button id="kid-print" class="kid-print-btn" type="button">🖨️ PRINT IT!</button>
+            <button id="kid-again" class="kid-again-btn" type="button">↺ Make another</button>
+        </div>
+    </div>
+</div>
 {{end}}
 
 {{template "tabs/setup.html" .}}
@@ -20,6 +53,10 @@ ankerctl-ng{{if .Printer}} - {{.Printer.Name}}{{end}}
 
 {{define "menu"}}
 {{if .Configure}}
+    <li class="nav-item" role="presentation">
+        <button class="btn btn-warning fw-bold kid-mode-btn" id="kid-mode-toggle" type="button"
+            title="Beginner Mode — super simple maker mode: idea or file → print">🧸 Beginner Mode</button>
+    </li>
     <li class="nav-item" role="presentation">
         <button class="btn btn-outline-primary nav-link{{if .Configure}} active{{end}}"
             id="home-tab" data-bs-toggle="pill" data-bs-target="#home" type="button" role="tab">
