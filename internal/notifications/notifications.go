@@ -310,6 +310,13 @@ func (s *NotificationService) NotifyAnimalEmergencyStop(ctx context.Context, pay
 	s.sendWithAttachments(ctx, EventPrintFailed, payload, attachments)
 }
 
+// NotifyPrintFailing warns the user (with the camera frame) that a print looks
+// like it is failing and power will be cut after the grace period unless they
+// cancel. Delivered as a print-failed event so it rides existing routing/opt-in.
+func (s *NotificationService) NotifyPrintFailing(ctx context.Context, payload map[string]any, attachments []string) {
+	s.sendWithAttachments(ctx, EventPrintFailed, payload, attachments)
+}
+
 func (s *NotificationService) currentClient() *Client {
 	if s.cfg == nil {
 		return nil

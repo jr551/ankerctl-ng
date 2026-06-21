@@ -885,3 +885,12 @@ code {
 .kid-again-btn:hover { background: rgba(255, 255, 255, .08); }
 .kid-status { font-size: 1.05rem; margin-top: 1rem; }
 .kid-preview { max-width: 100%; border: 1px solid var(--bs-border-color, #343a40); border-radius: .5rem; margin-top: 1rem; background: #111; }
+
+/* ── Failure auto-off countdown banner ───────────────────────────────── */
+.autooff-banner {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 2100;
+    display: flex; align-items: center; justify-content: center; gap: .5rem;
+    padding: .6rem 1rem; background: #b02a37; color: #fff; font-weight: 600;
+    box-shadow: 0 2px 8px rgba(0,0,0,.4);
+}
+.autooff-banner.d-none { display: none; }

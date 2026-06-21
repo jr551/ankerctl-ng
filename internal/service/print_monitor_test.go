@@ -207,6 +207,8 @@ func (f *fakeAnimalNotifier) NotifyAnimalEmergencyStop(_ context.Context, payloa
 	f.lastAttach = attachments
 }
 
+func (f *fakeAnimalNotifier) NotifyPrintFailing(_ context.Context, _ map[string]any, _ []string) {}
+
 // With no smart socket configured (nil cfgMgr) the emergency stop cannot cut
 // power, but it must still alert the user with the camera frame attached.
 func TestPrintMonitorEmergencyStopForAnimalNotifies(t *testing.T) {

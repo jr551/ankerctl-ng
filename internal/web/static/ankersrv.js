@@ -5966,6 +5966,45 @@ $(function () {
         }
     });
 
+    // Failure auto-off countdown banner (global): when the AI monitor flags a
+    // failing print, the server schedules a power-off after a grace period and
+    // exposes pending_off_at. We show a top banner with a live countdown and a
+    // "Keep printing" button that cancels it.
+    (function () {
+        var banner = document.getElementById("autooff-banner");
+        if (!banner) return;
+        var textEl = document.getElementById("autooff-banner-text");
+        var cancelBtn = document.getElementById("autooff-cancel");
+        var deadline = 0, ticker = null;
+        var hide = function () { banner.classList.add("d-none"); deadline = 0; if (ticker) { clearInterval(ticker); ticker = null; } };
+        var tick = function () {
+            if (!deadline) return;
+            var rem = Math.max(0, Math.round((deadline - Date.now()) / 1000));
+            textEl.textContent = "⚠️ This print looks like it may be failing — cutting power in " + rem + "s.";
+            if (rem <= 0) hide(); // server has fired the power-off
+        };
+        var show = function (at) {
+            var d = new Date(at).getTime();
+            if (!isFinite(d) || d <= Date.now()) return;
+            deadline = d; banner.classList.remove("d-none"); tick();
+            if (!ticker) ticker = setInterval(tick, 1000);
+        };
+        if (cancelBtn) cancelBtn.addEventListener("click", function () {
+            cancelBtn.disabled = true;
+            fetch("/api/print-monitor/cancel-autooff", { method: "POST" }).catch(function () {}).then(function () {
+                cancelBtn.disabled = false; hide();
+                if (typeof flash_message === "function") flash_message("Power-off cancelled — keeping the print going", "success");
+            });
+        });
+        var poll = function () {
+            fetch("/api/print-monitor/status").then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+                var at = j && j.status && j.status.pending_off_at;
+                if (at) { if (!deadline) show(at); } else if (deadline) hide();
+            }).catch(function () {});
+        };
+        setInterval(poll, 4000); poll();
+    })();
+
     // QoL: remember the last-used tab across reloads, so a refresh lands you
     // back where you were instead of always on Home.
     try {

@@ -51,12 +51,14 @@ type PrintMonitorResult struct {
 }
 
 type PrintMonitorStatus struct {
-	Configured bool                `json:"configured"`
-	Active     bool                `json:"active"`
-	Running    bool                `json:"running"`
-	LastCheck  *time.Time          `json:"last_check,omitempty"`
-	NextCheck  *time.Time          `json:"next_check,omitempty"`
-	LastResult *PrintMonitorResult `json:"last_result,omitempty"`
+	Configured       bool                `json:"configured"`
+	Active           bool                `json:"active"`
+	Running          bool                `json:"running"`
+	LastCheck        *time.Time          `json:"last_check,omitempty"`
+	NextCheck        *time.Time          `json:"next_check,omitempty"`
+	LastResult       *PrintMonitorResult `json:"last_result,omitempty"`
+	PendingOffAt     *time.Time          `json:"pending_off_at,omitempty"`     // power will cut at this time unless cancelled
+	PendingOffReason string              `json:"pending_off_reason,omitempty"` // why the failure power-off is pending
 }
 
 type printMonitorConfigCmd struct {
@@ -86,15 +88,26 @@ type PrintMonitorService struct {
 	lastResult    *PrintMonitorResult
 	notifier      AnimalStopNotifier
 
+	// Graceful auto-off: on a failing check we notify the user and start a grace
+	// countdown; power is cut at pendingOffAt unless the user cancels (which
+	// bumps pendingOffGen, invalidating the in-flight timer).
+	pendingOffAt     *time.Time
+	pendingOffReason string
+	pendingOffGen    int
+
 	cmdCh chan any
 }
 
-// AnimalStopNotifier sends a user-facing safety alert (with an optional camera
-// frame) when the animal-detection emergency stop fires. It is satisfied by the
-// notifications service; kept as an interface here so the service package does
-// not import notifications (which would be an import cycle).
+const autoOffGraceSec = 120 // user has 2 minutes to cancel a failure power-off
+
+// AnimalStopNotifier sends user-facing alerts (with an optional camera frame):
+// the animal-detection emergency stop, and the "print may be failing — power
+// will cut soon" warning. It is satisfied by the notifications service; kept as
+// an interface here so the service package does not import notifications (which
+// would be an import cycle).
 type AnimalStopNotifier interface {
 	NotifyAnimalEmergencyStop(ctx context.Context, payload map[string]any, attachments []string)
+	NotifyPrintFailing(ctx context.Context, payload map[string]any, attachments []string)
 }
 
 func NewPrintMonitorService(cfgMgr *config.Manager, cfg model.PrintMonitorConfig, snapshotter SnapshotOnly) *PrintMonitorService {
@@ -162,13 +175,34 @@ func (s *PrintMonitorService) Status() PrintMonitorStatus {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return PrintMonitorStatus{
-		Configured: s.cfg.Enabled && strings.TrimSpace(s.cfg.OpenRouterKey) != "" && strings.TrimSpace(s.cfg.Model) != "",
-		Active:     s.active,
-		Running:    s.checkRunning,
-		LastCheck:  cloneTimePtr(s.lastCheck),
-		NextCheck:  cloneTimePtr(s.nextCheck),
-		LastResult: clonePrintMonitorResult(s.lastResult),
+		Configured:       s.cfg.Enabled && strings.TrimSpace(s.cfg.OpenRouterKey) != "" && strings.TrimSpace(s.cfg.Model) != "",
+		Active:           s.active,
+		Running:          s.checkRunning,
+		LastCheck:        cloneTimePtr(s.lastCheck),
+		NextCheck:        cloneTimePtr(s.nextCheck),
+		LastResult:       clonePrintMonitorResult(s.lastResult),
+		PendingOffAt:     cloneTimePtr(s.pendingOffAt),
+		PendingOffReason: s.pendingOffReason,
 	}
+}
+
+// CancelAutoOff aborts a pending failure power-off (user pressed the cancel
+// button during the grace countdown). Bumping the generation invalidates the
+// in-flight timer.
+func (s *PrintMonitorService) CancelAutoOff() bool {
+	s.mu.Lock()
+	had := s.pendingOffAt != nil
+	s.pendingOffAt = nil
+	s.pendingOffReason = ""
+	s.pendingOffGen++
+	s.mu.Unlock()
+	if had {
+		if s.log != nil {
+			s.log.Info("failure auto-off cancelled by user")
+		}
+		s.Notify(map[string]any{"type": "print_monitor.autooff_cancelled"})
+	}
+	return had
 }
 
 func (s *PrintMonitorService) Notify(data any) {
@@ -229,6 +263,11 @@ func (s *PrintMonitorService) Notify(data any) {
 	case mqttStateIdle, mqttStatePaused, mqttStateAborted:
 		s.active = false
 		s.nextCheck = nil
+		// Print ended/paused — clear any pending failure power-off (the timer also
+		// guards on s.active, so it won't fire; this just clears the UI state).
+		s.pendingOffAt = nil
+		s.pendingOffReason = ""
+		s.pendingOffGen++
 	}
 }
 
@@ -404,9 +443,11 @@ func (s *PrintMonitorService) finishCheck(ctx context.Context, cfg model.PrintMo
 	s.Notify(map[string]any{"type": "print_monitor.result", "result": result})
 	s.recordHistoryResult(result)
 	if result.AnimalDetected && cfg.EmergencyStopOnAnimal {
-		s.emergencyStopForAnimal(ctx, result)
+		s.emergencyStopForAnimal(ctx, result) // safety stop — always instant
 	} else if result.Failing {
-		s.maybeAutoOff(ctx)
+		s.scheduleGracefulOff(ctx, result) // failure — 2 min countdown the user can cancel
+	} else {
+		s.CancelAutoOff() // a healthy check clears any pending failure power-off
 	}
 }
 
@@ -481,9 +522,10 @@ type aiVerdict struct {
 func (s *PrintMonitorService) callOpenRouter(ctx context.Context, cfg model.PrintMonitorConfig, imageJPEG []byte, referencePNG []byte, metadata map[string]any) (aiVerdict, error) {
 	imageURL := "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(imageJPEG)
 	metaJSON, _ := json.MarshalIndent(metadata, "", "  ")
-	instruction := "Inspect the live camera contact sheet and metadata. If a reference slicer thumbnail is present, use it as the expected shape/layout. Also inspect any visible filament path into the toolhead and treat a missing, snapped, kinked, misrouted, or obviously non-feeding filament path as a failure signal when supported by the image. Reply with strict JSON only: {\"failing\": boolean, \"confidence\": number, \"reason\": string}."
+	base := "Inspect the live camera contact sheet and metadata. If a reference slicer thumbnail is present, use it as the expected shape/layout. Also inspect any visible filament path into the toolhead and treat a missing, snapped, kinked, misrouted, or obviously non-feeding filament path as a failure signal when supported by the image.\n\nIMPORTANT — avoid false alarms: a small print, or one in its early layers, can look tiny or sparse on a large bed, and a mostly-empty-looking bed early in a print is NORMAL. Do NOT report failing just because the bed looks empty/sparse, the object is small, or there is a single stray strand. Only report failing for a clear, substantial failure: large spaghetti/stringing across the part, a detached or badly shifted part, or a big blob. When unsure, set failing false with low confidence."
+	instruction := base + "\n\nReply with strict JSON only: {\"failing\": boolean, \"confidence\": number, \"reason\": string}."
 	if cfg.EmergencyStopOnAnimal {
-		instruction = "Inspect the live camera contact sheet and metadata. If a reference slicer thumbnail is present, use it as the expected shape/layout. Also inspect any visible filament path into the toolhead and treat a missing, snapped, kinked, misrouted, or obviously non-feeding filament path as a failure signal when supported by the image.\n\nSAFETY CHECK: also look for any real, live non-human animal physically present in the scene (e.g. a pet such as a cat, dog, bird, or rodent). If one is clearly visible, set \"animal_detected\" true and name it in \"animal\". Be conservative: do NOT count 3D-printed models, figurines, toys, photos, or pictures of animals — only a real living animal actually in the room. When unsure, set animal_detected false.\n\nReply with strict JSON only: {\"failing\": boolean, \"confidence\": number, \"reason\": string, \"animal_detected\": boolean, \"animal\": string}."
+		instruction = base + "\n\nSAFETY CHECK: also look for any real, live non-human animal physically present in the scene (e.g. a pet such as a cat, dog, bird, or rodent). If one is clearly visible, set \"animal_detected\" true and name it in \"animal\". Be VERY conservative — this triggers an immediate power cut: the object on the print bed is the 3D print and is NEVER an animal even if it is shaped like one (a cat/dog/dinosaur model is just a print), so ignore the printed model entirely. Do NOT count 3D-printed models, figurines, toys, photos, screens, or pictures of animals — only a real, living, moving animal that has entered the room. When unsure, set animal_detected false.\n\nReply with strict JSON only: {\"failing\": boolean, \"confidence\": number, \"reason\": string, \"animal_detected\": boolean, \"animal\": string}."
 	}
 	userContent := []map[string]any{
 		{"type": "text", "text": instruction + "\n\nMetadata:\n" + string(metaJSON)},
@@ -942,7 +984,12 @@ func (s *PrintMonitorService) referenceThumbnail(filename string) []byte {
 	return nil
 }
 
-func (s *PrintMonitorService) maybeAutoOff(ctx context.Context) {
+// scheduleGracefulOff handles a failing check: if auto-off is enabled and the
+// smart socket is configured, it notifies the user and starts a grace countdown
+// (default 2 min), then cuts power when it elapses — UNLESS the user cancels via
+// the UI (CancelAutoOff bumps the generation, invalidating this timer). Unlike
+// the animal stop, this is never instant: the user always gets the countdown.
+func (s *PrintMonitorService) scheduleGracefulOff(ctx context.Context, result PrintMonitorResult) {
 	if s.cfgMgr == nil {
 		return
 	}
@@ -953,10 +1000,62 @@ func (s *PrintMonitorService) maybeAutoOff(ctx context.Context) {
 	if strings.TrimSpace(cfg.SmartSocket.SwitchEntity) == "" {
 		return
 	}
-	client := NewHomeAssistantClient(cfg.SmartSocket.BaseURL, cfg.SmartSocket.Token)
-	if err := client.CallService(ctx, "switch", "turn_off", cfg.SmartSocket.SwitchEntity); err != nil && s.log != nil {
-		s.log.Warn("failed to turn off smart socket after print monitor failure", "err", err)
+	s.mu.Lock()
+	if s.pendingOffAt != nil { // already counting down — don't restack
+		s.mu.Unlock()
+		return
 	}
+	deadline := time.Now().Add(autoOffGraceSec * time.Second)
+	s.pendingOffAt = &deadline
+	s.pendingOffReason = result.Reason
+	s.pendingOffGen++
+	gen := s.pendingOffGen
+	s.mu.Unlock()
+
+	if s.log != nil {
+		s.log.Warn("print may be failing — power-off scheduled unless cancelled",
+			"grace_sec", autoOffGraceSec, "reason", result.Reason, "filename", result.Filename)
+	}
+	s.Notify(map[string]any{"type": "print_monitor.pending_off", "at": deadline, "reason": result.Reason})
+	if s.notifier != nil {
+		msg := fmt.Sprintf("⚠ Your print may be failing — power will be cut in about %d minute(s) unless you cancel it in the ankerctl-ng UI.", autoOffGraceSec/60)
+		if r := strings.TrimSpace(result.Reason); r != "" {
+			msg += " AI: " + r
+		}
+		payload := map[string]any{"filename": result.Filename, "reason": msg}
+		var attachments []string
+		if result.ContactSheet != "" {
+			attachments = []string{result.ContactSheet}
+		}
+		s.notifier.NotifyPrintFailing(ctx, payload, attachments)
+	}
+	// Cut power at the deadline unless cancelled. Use a fresh context (the check's
+	// ctx is gone by then) and re-read socket creds at fire time is unnecessary —
+	// capture them now.
+	go func(gen int, sw, base, token string) {
+		time.Sleep(autoOffGraceSec * time.Second)
+		s.mu.Lock()
+		fire := s.pendingOffAt != nil && s.pendingOffGen == gen && s.active
+		if fire {
+			s.pendingOffAt = nil
+			s.pendingOffReason = ""
+		}
+		s.mu.Unlock()
+		if !fire {
+			return // cancelled, superseded, or print already ended
+		}
+		cctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		client := NewHomeAssistantClient(base, token)
+		if err := client.CallService(cctx, "switch", "turn_off", sw); err != nil {
+			if s.log != nil {
+				s.log.Error("failed to cut printer power after failure grace period", "err", err)
+			}
+		} else if s.log != nil {
+			s.log.Warn("printer power cut after failure grace period elapsed")
+		}
+		s.Notify(map[string]any{"type": "print_monitor.powered_off"})
+	}(gen, cfg.SmartSocket.SwitchEntity, cfg.SmartSocket.BaseURL, cfg.SmartSocket.Token)
 }
 
 func buildContactSheet(paths []string) ([]byte, error) {
