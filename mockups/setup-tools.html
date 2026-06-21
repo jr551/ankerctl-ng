@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Settings · Tools · ankerctl-ng mockup</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <div class="settings-layout">
+      <div id="subnav-slot"></div>
+
+      <div>
+
+        <!-- Slicer integration -->
+        <div class="card mb-2">
+          <div class="card-head">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.1 2.1-2.4-.6-.6-2.4Z"/></svg>
+            <span class="title">Slicer integration</span>
+            <span class="badge info">OrcaSlicer-first</span>
+          </div>
+          <div class="card-body">
+            <div class="alert info">
+              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg>
+              <div class="body">In your slicer, set <strong>Host type: OctoPrint</strong>, then point it at the URL &amp; API key below. Use <em>Send and Print</em> to start a job immediately.</div>
+            </div>
+
+            <div class="kv-grid mb-2">
+              <div class="keyval"><span class="k">Host / URL</span><span class="v mono">http://ankerctl.local:4470</span></div>
+              <div class="keyval"><span class="k">API key</span><span class="v mono">ank-secret-…e60</span></div>
+              <div class="keyval"><span class="k">Protocol</span><span class="v">OctoPrint 1.x</span></div>
+              <div class="keyval"><span class="k">Upload path</span><span class="v mono">/api/files/local</span></div>
+            </div>
+
+            <div class="label">Setup walkthroughs</div>
+            <div class="row gap-sm wrap">
+              <button class="btn sm"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>OrcaSlicer</button>
+              <button class="btn sm"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>PrusaSlicer</button>
+              <button class="btn sm"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>Cura</button>
+              <button class="btn sm ghost">Copy host URL</button>
+              <button class="btn sm ghost">Copy API key</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- GCode archiving -->
+        <div class="card mb-2">
+          <div class="card-head">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3h16l-2 14-6 4-6-4Z"/><path d="M8 7h8M8 11h8"/></svg>
+            <span class="title">GCode archiving</span>
+          </div>
+          <div class="card-body">
+            <div class="field row-mode">
+              <div>
+                <label class="label">Archive every uploaded gcode</label>
+                <span class="hint">So you can reprint or inspect later from the History tab.</span>
+              </div>
+              <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+            </div>
+
+            <div class="field">
+              <label class="label">Archive path</label>
+              <div class="input-group">
+                <span class="adown">📁</span>
+                <input class="input mono" value="/home/ankerctl/.ankerctl-ng/gcode" />
+                <button class="adown">Browse</button>
+              </div>
+              <span class="hint">Permissions: 0700 · 472 MB used · 138 files</span>
+            </div>
+
+            <div class="field">
+              <div class="row" style="justify-content:space-between">
+                <label class="label" style="margin:0">Retain</label>
+                <span class="mono tiny">90 days</span>
+              </div>
+              <input type="range" class="range" min="7" max="365" value="90" />
+              <div class="row" style="justify-content:space-between" class="tiny muted">
+                <span>7d</span><span>30d</span><span>90d</span><span>365d</span><span>forever</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Upload limits -->
+        <div class="card mb-2">
+          <div class="card-head">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5-5 5 5"/><path d="M12 5v12"/></svg>
+            <span class="title">Upload limits</span>
+          </div>
+          <div class="card-body">
+            <div class="field">
+              <div class="row" style="justify-content:space-between">
+                <label class="label" style="margin:0">Max upload size</label>
+                <span class="mono tiny">512 MB</span>
+              </div>
+              <input type="range" class="range" min="32" max="2048" step="32" value="512" />
+              <span class="hint">Large gcode files (over ~200 MB) may need a higher cap.</span>
+            </div>
+            <div class="field row-mode">
+              <div>
+                <label class="label">PPPP upload rate cap</label>
+                <span class="hint">Throttle to keep the printer's WiFi responsive during upload.</span>
+              </div>
+              <select class="select" style="max-width:160px">
+                <option>Unlimited</option>
+                <option selected>2 Mbps</option>
+                <option>5 Mbps</option>
+                <option>10 Mbps</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Server -->
+        <div class="card">
+          <div class="card-head">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="8" rx="1"/><rect x="3" y="13" width="18" height="8" rx="1"/><path d="M7 7h.01M7 17h.01"/></svg>
+            <span class="title">Server</span>
+          </div>
+          <div class="card-body">
+            <div class="field row-mode">
+              <div>
+                <label class="label">Bind address</label>
+                <span class="hint">Restart required to take effect.</span>
+              </div>
+              <input class="input mono" style="max-width:220px" value="0.0.0.0:4470" />
+            </div>
+
+            <div class="field row-mode">
+              <div>
+                <label class="label">Debug mode</label>
+                <span class="hint">Exposes <span class="mono">/api/debug/*</span> and the Debug tab.</span>
+              </div>
+              <label class="switch"><input type="checkbox"><span class="slider"></span></label>
+            </div>
+
+            <div class="field row-mode">
+              <div>
+                <label class="label">Access log</label>
+                <span class="hint">Write every request to the ring buffer.</span>
+              </div>
+              <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+            </div>
+
+            <div class="divider"></div>
+            <div class="row gap-sm wrap">
+              <button class="btn"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>Reload config</button>
+              <button class="btn warning"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64A9 9 0 1 1 5.64 6.64"/><path d="M12 2v10"/></svg>Restart ankerctl</button>
+              <button class="btn danger"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64A9 9 0 1 1 5.64 6.64"/><path d="M12 2v10"/></svg>Shut down</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/nav.js"></script>
+  <script>init({ active: "setup", title: "Settings · Tools", subnav: "tools" });</script>
+</body>
+</html>

@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Settings · Home Assistant · ankerctl-ng mockup</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <div class="settings-layout">
+      <div id="subnav-slot"></div>
+
+      <div>
+
+        <!-- Connection -->
+        <div class="card mb-2">
+          <div class="card-head">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h5v-6h4v6h5V9.5"/></svg>
+            <span class="title">Home Assistant</span>
+            <span class="badge success dot">connected</span>
+          </div>
+          <div class="card-body">
+            <div class="field row-mode">
+              <div><label class="label">Enable Home Assistant integration</label><span class="hint">Expose camera, switch, sensors &amp; speech hooks.</span></div>
+              <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+            </div>
+
+            <div class="row gap-sm">
+              <div class="field" style="flex:2;margin-bottom:0">
+                <label class="label">HA URL</label>
+                <div class="input-group">
+                  <span class="adown">🔗</span>
+                  <input class="input mono" value="http://hass.local:8123" />
+                </div>
+              </div>
+              <div class="field" style="flex:2;margin-bottom:0">
+                <label class="label">Long-lived access token</label>
+                <input type="password" class="input mono" value="eyJhbGciOi…4a2b" />
+              </div>
+            </div>
+
+            <div class="row gap-sm wrap mt-1">
+              <button class="btn primary"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 5 5L20 7"/></svg>Test connection</button>
+              <span class="badge success dot">reachable · 8 ms</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Discovery -->
+        <div class="card mb-2">
+          <div class="card-head">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m15 9-2 6-4 2 2-6 4-2Z"/></svg>
+            <span class="title">MQTT discovery</span>
+            <span class="badge info dot">9 entities</span>
+          </div>
+          <div class="card-body">
+            <div class="field row-mode">
+              <div><label class="label">Publish discovery topics</label><span class="hint">Auto-create entities in HA via MQTT.</span></div>
+              <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+            </div>
+
+            <div class="field">
+              <label class="label">Discovery prefix</label>
+              <input class="input mono" value="homeassistant" />
+              <span class="hint">Match HA's <span class="mono">mqtt</span> integration prefix.</span>
+            </div>
+
+            <div class="label">Discovered entities</div>
+            <div class="row gap-sm wrap">
+              <span class="badge info dot">camera.ankermake_m5c</span>
+              <span class="badge info dot">switch.ankermake_socket</span>
+              <span class="badge info dot">sensor.ankermake_progress</span>
+              <span class="badge info dot">sensor.ankermake_nozzle</span>
+              <span class="badge info dot">sensor.ankermake_bed</span>
+              <span class="badge info dot">sensor.ankermake_eta</span>
+              <span class="badge info dot">sensor.ankermake_power_w</span>
+              <span class="badge info dot">binary_sensor.ankermake_printing</span>
+              <span class="badge info dot">binary_sensor.ankermake_ai_watch</span>
+            </div>
+
+            <div class="row gap-sm wrap mt-1">
+              <button class="btn"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>Re-publish discovery</button>
+              <button class="btn ghost">Copy MQTT topic</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Entity mapping -->
+        <div class="card mb-2">
+          <div class="card-head">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h2m6 0h4a2 2 0 0 1 2 2v4M3 15v4a2 2 0 0 0 2 2h4m6 0h4a2 2 0 0 0 2-2v-4"/><circle cx="12" cy="12" r="2"/></svg>
+            <span class="title">Entity mapping</span>
+            <span class="sub">what ankerctl writes to</span>
+          </div>
+          <div class="card-body" style="padding:0">
+            <table class="table">
+              <thead><tr><th>HA entity</th><th>Source</th><th>Read / Write</th></tr></thead>
+              <tbody>
+                <tr><td class="mono tiny">camera.ankermake_m5c</td><td>Camera stream</td><td><span class="badge info dot">read</span></td></tr>
+                <tr><td class="mono tiny">switch.ankermake_socket</td><td>Smart socket</td><td><span class="badge success dot">read · write</span></td></tr>
+                <tr><td class="mono tiny">sensor.ankermake_progress</td><td>Print progress %</td><td><span class="badge info dot">read</span></td></tr>
+                <tr><td class="mono tiny">binary_sensor.ankermake_printing</td><td>Print state</td><td><span class="badge info dot">read</span></td></tr>
+                <tr><td class="mono tiny">sensor.ankermake_power_w</td><td>Socket telemetry</td><td><span class="badge info dot">read</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Speech hooks + events -->
+        <div class="grid" style="grid-template-columns:1fr 1fr;gap:18px;">
+          <div class="card">
+            <div class="card-head">
+              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10v4h4l5 5V5L7 10H3Z"/><path d="M16 8a5 5 0 0 1 0 8M19 5a9 9 0 0 1 0 14"/></svg>
+              <span class="title">Speech hooks</span>
+            </div>
+            <div class="card-body">
+              <div class="field row-mode">
+                <div><label class="label">Trigger <span class="mono">tts.speak</span> on events</label></div>
+                <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+              </div>
+              <div class="field">
+                <label class="label">Webhook URL</label>
+                <input class="input mono" value="http://hass.local:8123/api/webhook/ankermake" />
+              </div>
+              <div class="label">Fires on</div>
+              <div class="row gap-sm wrap">
+                <span class="badge success dot">print done</span>
+                <span class="badge danger dot">failure</span>
+                <span class="badge violet dot">🐾 animal</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3h16l-2 14-6 4-6-4Z"/><path d="M8 7h8M8 11h8"/></svg>
+              <span class="title">Recent HA events</span>
+            </div>
+            <div class="card-body" style="padding:0">
+              <table class="table">
+                <tbody>
+                  <tr><td><span class="badge info dot">state</span></td><td class="mono tiny">progress 67%</td><td class="tiny muted">38s ago</td></tr>
+                  <tr><td><span class="badge success dot">tts</span></td><td class="tiny">"Print 67% done"</td><td class="tiny muted">12m ago</td></tr>
+                  <tr><td><span class="badge info dot">state</span></td><td class="mono tiny">printing=true</td><td class="tiny muted">1h ago</td></tr>
+                  <tr><td><span class="badge success dot">tts</span></td><td class="tiny">"Print started"</td><td class="tiny muted">2h ago</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/nav.js"></script>
+  <script>init({ active: "setup", title: "Settings · Home Assistant", subnav: "homeassistant" });</script>
+</body>
+</html>

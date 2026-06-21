@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Settings · Notifications · ankerctl-ng mockup</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <div class="settings-layout">
+      <div id="subnav-slot"></div>
+
+      <div>
+
+        <!-- Channels -->
+        <div class="card mb-2">
+          <div class="card-head">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21a2 2 0 0 0 4 0"/></svg>
+            <span class="title">Channels</span>
+            <button class="btn primary sm" style="margin-left:auto"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>Add channel</button>
+          </div>
+          <div class="card-body" style="padding:0">
+            <table class="table">
+              <thead><tr><th>Channel</th><th>Target</th><th>Status</th><th>Enabled</th><th></th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><strong>SMTP</strong><div class="tiny muted">email</div></td>
+                  <td class="mono tiny">me@example.com</td>
+                  <td><span class="badge success dot">verified</span></td>
+                  <td><label class="switch"><input type="checkbox" checked><span class="slider"></span></label></td>
+                  <td class="right">
+                    <button class="icon-btn" style="width:30px;height:30px" title="Edit"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+                    <button class="icon-btn" style="width:30px;height:30px" title="Test"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 5 5L20 7"/></svg></button>
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Apprise</strong><div class="tiny muted">discord / slack / …</div></td>
+                  <td class="mono tiny">discord://…4a2f</td>
+                  <td><span class="badge success dot">verified</span></td>
+                  <td><label class="switch"><input type="checkbox" checked><span class="slider"></span></label></td>
+                  <td class="right">
+                    <button class="icon-btn" style="width:30px;height:30px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+                    <button class="icon-btn" style="width:30px;height:30px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 5 5L20 7"/></svg></button>
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Webhook</strong><div class="tiny muted">Home Assistant</div></td>
+                  <td class="mono tiny">https://hass.local/…</td>
+                  <td><span class="badge warn dot">pending</span></td>
+                  <td><label class="switch"><input type="checkbox"><span class="slider"></span></label></td>
+                  <td class="right">
+                    <button class="icon-btn" style="width:30px;height:30px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+                    <button class="icon-btn" style="width:30px;height:30px"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 5 5L20 7"/></svg></button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Event routing matrix -->
+        <div class="card mb-2">
+          <div class="card-head">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+            <span class="title">Event routing</span>
+            <span class="sub">which events fire which channels</span>
+          </div>
+          <div class="card-body" style="padding:0;overflow-x:auto">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Event</th>
+                  <th class="center">SMTP</th>
+                  <th class="center">Apprise</th>
+                  <th class="center">Webhook</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="badge success dot">Print completed</span></td>
+                  <td class="center"><label class="switch"><input type="checkbox" checked><span class="slider"></span></label></td>
+                  <td class="center"><label class="switch"><input type="checkbox" checked><span class="slider"></span></label></td>
+                  <td class="center"><label class="switch"><input type="checkbox"><span class="slider"></span></label></td>
+                </tr>
+                <tr>
+                  <td><span class="badge danger dot">Print failed</span></td>
+                  <td class="center"><label class="switch"><input type="checkbox" checked><span class="slider"></span></label></td>
+                  <td class="center"><label class="switch"><input type="checkbox" checked><span class="slider"></span></label></td>
+                  <td class="center"><label class="switch"><input type="checkbox" checked><span class="slider"></span></label></td>
+                </tr>
+                <tr>
+                  <td><span class="badge violet dot">🐾 Animal detected</span></td>
+                  <td class="center"><label class="switch"><input type="checkbox" checked><span class="slider"></span></label></td>
+                  <td class="center"><label class="switch"><input type="checkbox" checked><span class="slider"></span></label></td>
+                  <td class="center"><label class="switch"><input type="checkbox" checked><span class="slider"></span></label></td>
+                </tr>
+                <tr>
+                  <td><span class="badge danger dot">E-STOP triggered</span></td>
+                  <td class="center"><label class="switch"><input type="checkbox" checked><span class="slider"></span></label></td>
+                  <td class="center"><label class="switch"><input type="checkbox" checked><span class="slider"></span></label></td>
+                  <td class="center"><label class="switch"><input type="checkbox" checked><span class="slider"></span></label></td>
+                </tr>
+                <tr>
+                  <td><span class="badge info dot">Upload started / done</span></td>
+                  <td class="center"><label class="switch"><input type="checkbox"><span class="slider"></span></label></td>
+                  <td class="center"><label class="switch"><input type="checkbox" checked><span class="slider"></span></label></td>
+                  <td class="center"><label class="switch"><input type="checkbox"><span class="slider"></span></label></td>
+                </tr>
+                <tr>
+                  <td><span class="badge warn dot">Idle / power-save</span></td>
+                  <td class="center"><label class="switch"><input type="checkbox"><span class="slider"></span></label></td>
+                  <td class="center"><label class="switch"><input type="checkbox"><span class="slider"></span></label></td>
+                  <td class="center"><label class="switch"><input type="checkbox"><span class="slider"></span></label></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Quiet hours + history -->
+        <div class="grid" style="grid-template-columns:1fr 1fr;gap:18px;">
+          <div class="card">
+            <div class="card-head">
+              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
+              <span class="title">Quiet hours</span>
+            </div>
+            <div class="card-body">
+              <div class="field row-mode">
+                <div><label class="label">Mute non-urgent at night</label><span class="hint">Failures &amp; E-STOP always fire.</span></div>
+                <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+              </div>
+              <div class="row gap-sm">
+                <div class="field" style="flex:1;margin:0">
+                  <label class="label">From</label>
+                  <input type="time" class="input mono" value="22:30" />
+                </div>
+                <div class="field" style="flex:1;margin:0">
+                  <label class="label">To</label>
+                  <input type="time" class="input mono" value="07:00" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+              <span class="title">Recent deliveries</span>
+            </div>
+            <div class="card-body" style="padding:0">
+              <table class="table">
+                <tbody>
+                  <tr><td><span class="badge success dot">completed</span></td><td class="tiny">SMTP · Apprise</td><td class="mono tiny muted">38s ago</td></tr>
+                  <tr><td><span class="badge danger dot">E-STOP</span></td><td class="tiny">all channels</td><td class="mono tiny muted">2m ago</td></tr>
+                  <tr><td><span class="badge danger dot">failed</span></td><td class="tiny">all channels</td><td class="mono tiny muted">1d ago</td></tr>
+                  <tr><td><span class="badge success dot">completed</span></td><td class="tiny">SMTP</td><td class="mono tiny muted">3d ago</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/nav.js"></script>
+  <script>init({ active: "setup", title: "Settings · Notifications", subnav: "notifications" });</script>
+</body>
+</html>

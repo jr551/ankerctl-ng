@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Settings · MQTT / API · ankerctl-ng mockup</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <div class="settings-layout">
+      <div id="subnav-slot"></div>
+
+      <div>
+
+        <!-- API key -->
+        <div class="card mb-2">
+          <div class="card-head">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8.2-8.2M16 5l3 3M19 2l3 3"/></svg>
+            <span class="title">HTTP API</span>
+            <span class="badge success dot">live</span>
+          </div>
+          <div class="card-body">
+            <div class="kv-grid mb-2">
+              <div class="keyval"><span class="k">Base URL</span><span class="v mono">http://ankerctl.local:4470</span></div>
+              <div class="keyval"><span class="k">OpenAPI</span><span class="v mono">/api/health · /api/version</span></div>
+              <div class="keyval"><span class="k">Auth</span><span class="v">X-Api-Key header</span></div>
+              <div class="keyval"><span class="k">Rate limit</span><span class="v">100 req / min</span></div>
+            </div>
+
+            <div class="field">
+              <label class="label">Current API key</label>
+              <div class="input-group">
+                <input type="password" class="input mono" value=" ank-secret-9f3e2c8a4b1d7e60" readonly />
+                <button class="adown">👁</button>
+                <button class="adown">📋</button>
+              </div>
+            </div>
+
+            <div class="field row-mode">
+              <div>
+                <label class="label">Write-protect</label>
+                <span class="hint">Require key for POST / DELETE.</span>
+              </div>
+              <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+            </div>
+
+            <div class="field">
+              <label class="label">Allowed origins (CORS)</label>
+              <div class="row gap-sm wrap">
+                <span class="badge info dot">http://ankerctl.local:4470</span>
+                <span class="badge info dot">http://192.168.1.10:4470</span>
+                <span class="badge info dot">app://orca-slicer</span>
+                <button class="btn sm ghost"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>Add origin</button>
+              </div>
+              <span class="hint">CORS is only enforced on browser-style requests.</span>
+            </div>
+
+            <div class="row gap-sm wrap mt-1">
+              <button class="btn warning"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>Regenerate key</button>
+              <button class="btn ghost">Download OpenAPI spec</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- MQTT broker -->
+        <div class="card mb-2">
+          <div class="card-head">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4M4 7a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4M4 12h16"/></svg>
+            <span class="title">MQTT broker · AnkerMake cloud</span>
+            <span class="badge success dot">connected</span>
+          </div>
+          <div class="card-body">
+            <div class="kv-grid mb-2">
+              <div class="keyval"><span class="k">Broker</span><span class="v mono">mqtt-ankermake.eu:8883</span></div>
+              <div class="keyval"><span class="k">TLS</span><span class="v">TLSv1.2 · mutual</span></div>
+              <div class="keyval"><span class="k">Client ID</span><span class="v mono">ankerctl-7a3c…f29b</span></div>
+              <div class="keyval"><span class="k">Keepalive</span><span class="v">60 s</span></div>
+              <div class="keyval"><span class="k">Topic prefix</span><span class="v mono">thing/product/{sn}/</span></div>
+              <div class="keyval"><span class="k">Last connected</span><span class="v">just now</span></div>
+            </div>
+
+            <div class="alert info">
+              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg>
+              <div class="body">MQTT is used for command-and-control of the printer via AnkerMake cloud. PPPP is the LAN fallback. Both are kept warm so the dashboard stays responsive.</div>
+            </div>
+
+            <div class="row gap-sm wrap">
+              <button class="btn"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>Reconnect now</button>
+              <button class="btn ghost">View live topics</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- PPPP -->
+        <div class="card mb-2">
+          <div class="card-head">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4M4 7a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4M4 12h16"/></svg>
+            <span class="title">PPPP · LAN tunnel</span>
+            <span class="badge success dot">online</span>
+          </div>
+          <div class="card-body">
+            <div class="kv-grid mb-2">
+              <div class="keyval"><span class="k">Mode</span><span class="v">P2P over LAN</span></div>
+              <div class="keyval"><span class="k">Local ports</span><span class="v mono">32100 · 32108 · 32109</span></div>
+              <div class="keyval"><span class="k">Self-heal</span><span class="v">keepalive + abort</span></div>
+              <div class="keyval"><span class="k">Last probe</span><span class="v">2.1 ms · just now</span></div>
+            </div>
+
+            <div class="field row-mode">
+              <div>
+                <label class="label">Aggressive keepalives</label>
+                <span class="hint">Send more frequent pings on flaky WiFi.</span>
+              </div>
+              <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+            </div>
+
+            <div class="field row-mode">
+              <div>
+                <label class="label">Auto-reconnect on upload stall</label>
+                <span class="hint">Close &amp; reopen the channel after N seconds of inactivity.</span>
+              </div>
+              <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+            </div>
+
+            <button class="btn"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>Probe PPPP reachability</button>
+          </div>
+        </div>
+
+        <!-- Trusted networks -->
+        <div class="card">
+          <div class="card-head">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 5v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V5Z"/><path d="m9 12 2 2 4-4"/></svg>
+            <span class="title">Trusted networks</span>
+          </div>
+          <div class="card-body">
+            <div class="field row-mode">
+              <div>
+                <label class="label">Skip API key on LAN reads</label>
+                <span class="hint">Only on these networks:</span>
+              </div>
+              <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+            </div>
+            <div class="row gap-sm wrap">
+              <span class="badge info dot">192.168.1.0/24</span>
+              <span class="badge info dot">10.0.0.0/8</span>
+              <span class="badge info dot">fd12:3456::/64</span>
+              <button class="btn sm ghost"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>Add network</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/nav.js"></script>
+  <script>init({ active: "setup", title: "Settings · MQTT / API", subnav: "mqtt" });</script>
+</body>
+</html>

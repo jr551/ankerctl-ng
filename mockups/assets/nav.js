@@ -26,8 +26,39 @@ const ICONS = {
   plug: '<path d="M9 2v6M15 2v6M6 8h12v3a6 6 0 0 1-12 0V8Z"/><path d="M12 17v5"/>',
   fire: '<path d="M12 2s4 4 4 8a4 4 0 0 1-8 0c0-1 .5-2 1-2.5C9 9 12 8 12 2Z"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
-  sparkles: '<path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5Z"/><path d="M19 14l1 2 2 1-2 1-1 2-1-2-2-1 2-1 1-2Z"/>'
+  sparkles: '<path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5Z"/><path d="M19 14l1 2 2 1-2 1-1 2-1-2-2-1 2-1 1-2Z"/>',
+  // settings-section icons
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  wrench: '<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.1 2.1-2.4-.6-.6-2.4Z"/>',
+  palette: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/>',
+  film: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>',
+  key: '<circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8.2-8.2M16 5l3 3M19 2l3 3"/>',
+  home: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h5v-6h4v6h5V9.5"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
+  save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8M7 3v5h8"/>',
+  copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+  refresh: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
+  trash: '<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5-5 5 5"/><path d="M12 5v12"/>',
+  check: '<path d="M5 12l4 4L19 6"/>',
+  shield: '<path d="M12 2 4 5v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V5Z"/>',
+  disk: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/>',
+  power: '<path d="M18.36 6.64A9 9 0 1 1 5.64 6.64"/><path d="M12 2v10"/>'
 };
+
+const SETTINGS_SECTIONS = [
+  { id: "account",       href: "setup-account.html",       label: "Account",         icon: "user" },
+  { id: "printer",       href: "setup-printer.html",       label: "Printer",         icon: "printer" },
+  { id: "tools",         href: "setup-tools.html",         label: "Tools",           icon: "wrench" },
+  { id: "notifications", href: "setup-notifications.html", label: "Notifications",   icon: "bell" },
+  { id: "appearance",    href: "setup.html",               label: "Appearance",      icon: "palette" },
+  { id: "camera-ai",     href: "setup-camera-ai.html",     label: "Camera & AI",     icon: "camera" },
+  { id: "timelapse",     href: "setup-timelapse.html",     label: "Timelapse",       icon: "film" },
+  { id: "mqtt",          href: "setup-mqtt.html",          label: "MQTT / API",      icon: "key" },
+  { id: "power",         href: "setup-power.html",         label: "Power & Socket",  icon: "power" },
+  { id: "homeassistant", href: "setup-homeassistant.html", label: "Home Assistant",  icon: "home" }
+];
 
 function icon(name, cls = "") {
   return `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ""}</svg>`;
@@ -96,6 +127,15 @@ function buildTopbar(title, active) {
     </header>`;
 }
 
+function buildSubnav(active) {
+  const items = SETTINGS_SECTIONS.map(s => `
+    <a class="${s.id === active ? "active" : ""}" href="${s.href}">
+      ${icon(s.icon)}
+      <span>${s.label}</span>
+    </a>`).join("");
+  return `<aside class="subnav">${items}</aside>`;
+}
+
 function buildBanner(current) {
   const links = PAGES.map(p =>
     `<a href="${p.href}"${p.id === current ? ' style="opacity:.6"' : ''}>${p.label}</a>`
@@ -149,6 +189,14 @@ function init(options = {}) {
   // Let pages tweak the injected shell (e.g. Basic Mode collapses the sidebar)
   if (typeof options.afterInject === "function") {
     options.afterInject();
+  }
+
+  // Settings sub-nav: fill any #subnav-slot element on the page
+  if (options.subnav) {
+    const slots = document.querySelectorAll("#subnav-slot");
+    slots.forEach((slot) => {
+      slot.outerHTML = buildSubnav(options.subnav);
+    });
   }
 }
 

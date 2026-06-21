@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Settings · Timelapse · ankerctl-ng mockup</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <div class="settings-layout">
+      <div id="subnav-slot"></div>
+
+      <div>
+
+        <!-- Capture -->
+        <div class="card mb-2">
+          <div class="card-head">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7a2 2 0 0 1 2-2h3l2-2h6l2 2h3a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7Z"/><circle cx="12" cy="13" r="4"/></svg>
+            <span class="title">Capture</span>
+            <label class="switch" style="margin-left:auto"><input type="checkbox" checked><span class="slider"></span></label>
+          </div>
+          <div class="card-body">
+            <div class="row gap-sm">
+              <div class="field" style="flex:1;margin-bottom:0">
+                <div class="row" style="justify-content:space-between">
+                  <label class="label" style="margin:0">Frame interval</label>
+                  <span class="mono tiny">every 8 s</span>
+                </div>
+                <input type="range" class="range" min="2" max="60" step="1" value="8" />
+                <div class="row tiny muted" style="justify-content:space-between"><span>2s</span><span>15s</span><span>30s</span><span>60s</span></div>
+              </div>
+              <div class="field" style="flex:1;margin-bottom:0">
+                <label class="label">Output FPS</label>
+                <select class="select"><option>15 fps</option><option selected>30 fps</option><option>60 fps</option></select>
+                <span class="hint">A 2-hour print at 8s / 30fps = ~30s clip.</span>
+              </div>
+            </div>
+
+            <div class="row gap-sm mt-1">
+              <div class="field" style="flex:1;margin-bottom:0">
+                <label class="label">Resolution</label>
+                <select class="select"><option>480p</option><option selected>720p</option><option>1080p</option></select>
+              </div>
+              <div class="field" style="flex:1;margin-bottom:0">
+                <label class="label">Encoder</label>
+                <select class="select"><option selected>H.264 (libx264)</option><option>HEVC (H.265)</option><option>VP9</option></select>
+              </div>
+            </div>
+
+            <div class="field row-mode mt-1">
+              <div><label class="label">Layer-change sync</label><span class="hint">Snap a frame exactly when a new layer starts (smoother timelapses).</span></div>
+              <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Storage -->
+        <div class="card mb-2">
+          <div class="card-head">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/></svg>
+            <span class="title">Storage</span>
+            <span class="sub">4.8 GB used</span>
+          </div>
+          <div class="card-body">
+            <div class="field">
+              <label class="label">Output directory</label>
+              <div class="input-group">
+                <span class="adown">📁</span>
+                <input class="input mono" value="/var/lib/ankerctl/timelapses" />
+                <button class="adown">Browse</button>
+              </div>
+            </div>
+
+            <div class="field">
+              <div class="row" style="justify-content:space-between">
+                <label class="label" style="margin:0">Disk usage</label>
+                <span class="mono tiny">4.8 GB of 32 GB</span>
+              </div>
+              <div class="progress" style="height:8px"><div class="bar" style="width:15%"></div></div>
+            </div>
+
+            <div class="field row-mode">
+              <div><label class="label">Auto-delete after</label><span class="hint">Frees space without you thinking about it.</span></div>
+              <select class="select" style="max-width:160px"><option>30 days</option><option selected>60 days</option><option>never</option></select>
+            </div>
+
+            <div class="field row-mode">
+              <div><label class="label">Auto-cleanup when over</label><span class="hint">If usage exceeds this, oldest clips go first.</span></div>
+              <select class="select" style="max-width:120px"><option>70%</option><option selected>80%</option><option>95%</option></select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Snapshot gallery -->
+        <div class="card mb-2">
+          <div class="card-head">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>
+            <span class="title">Snapshot gallery</span>
+          </div>
+          <div class="card-body">
+            <div class="field row-mode">
+              <div><label class="label">Per-print snapshot collection</label><span class="hint">Capture periodic stills alongside the timelapse.</span></div>
+              <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+            </div>
+            <div class="field row-mode">
+              <div><label class="label">Snapshots per collection</label></div>
+              <input type="number" class="input mono" style="max-width:120px" value="12" min="0" max="60" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Manual controls + recent -->
+        <div class="grid" style="grid-template-columns:1fr 1fr;gap:18px;">
+          <div class="card">
+            <div class="card-head">
+              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg>
+              <span class="title">Current print</span>
+            </div>
+            <div class="card-body">
+              <div class="alert info">
+                <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg>
+                <div class="body">Timelapse is recording for <strong>dragon_vase.scad</strong>. <span class="mono tiny">42 frames captured</span></div>
+              </div>
+              <div class="row gap-sm wrap">
+                <button class="btn warning"><svg class="ic" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>Pause</button>
+                <button class="btn danger"><svg class="ic" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12"/></svg>Stop &amp; render</button>
+                <button class="btn ghost">Dismiss</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7a2 2 0 0 1 2-2h3l2-2h6l2 2h3a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7Z"/><circle cx="12" cy="13" r="4"/></svg>
+              <span class="title">Recent clips</span>
+              <span class="badge info dot">14</span>
+            </div>
+            <div class="card-body" style="padding:0">
+              <table class="table">
+                <tbody>
+                  <tr><td class="mono tiny">phone_stand.mp4</td><td class="tiny muted">1d ago</td><td><button class="btn sm ghost">play</button></td></tr>
+                  <tr><td class="mono tiny">benchy_3.mp4</td><td class="tiny muted">3d ago</td><td><button class="btn sm ghost">play</button></td></tr>
+                  <tr><td class="mono tiny">name_tag.mp4</td><td class="tiny muted">7d ago</td><td><button class="btn sm ghost">play</button></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/nav.js"></script>
+  <script>init({ active: "setup", title: "Settings · Timelapse", subnav: "timelapse" });</script>
+</body>
+</html>

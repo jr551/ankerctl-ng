@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Settings · Power &amp; Socket · ankerctl-ng mockup</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <div class="settings-layout">
+      <div id="subnav-slot"></div>
+
+      <div>
+
+        <!-- Live state -->
+        <div class="card mb-2">
+          <div class="card-head">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></svg>
+            <span class="title">Smart socket</span>
+            <span class="badge success dot">ON · 218 W</span>
+          </div>
+          <div class="card-body">
+            <div class="tiles mb-2">
+              <div class="tile"><div class="lbl">State</div><div class="val" style="font-size:16px;color:var(--success)">ON</div><div class="det">since 13:48</div></div>
+              <div class="tile"><div class="lbl">Draw</div><div class="val" style="font-size:16px;color:var(--warning)">218 W</div><div class="det">peak 312 W</div></div>
+              <div class="tile"><div class="lbl">Session</div><div class="val" style="font-size:16px">2h 14m</div><div class="det">0.48 kWh</div></div>
+              <div class="tile"><div class="lbl">Today</div><div class="val" style="font-size:16px">1.2 kWh</div><div class="det">~$0.18</div></div>
+            </div>
+            <div class="row gap-sm wrap">
+              <button class="btn warning"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>Power-cycle socket</button>
+              <button class="btn danger"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64A9 9 0 1 1 5.64 6.64"/><path d="M12 2v10"/></svg>Turn off now</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Socket configuration -->
+        <div class="card mb-2">
+          <div class="card-head">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6M15 2v6M6 8h12v3a6 6 0 0 1-12 0V8Z"/><path d="M12 17v5"/></svg>
+            <span class="title">Socket configuration</span>
+          </div>
+          <div class="card-body">
+            <div class="field row-mode">
+              <div><label class="label">Enable smart socket</label><span class="hint">Required for E-STOP, auto-off, and animal safety stop.</span></div>
+              <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+            </div>
+
+            <div class="field">
+              <label class="label">Brand / protocol</label>
+              <select class="select">
+                <option>TP-Link Kasa</option>
+                <option selected>TP-Link Tapo</option>
+                <option>Tasmota (HTTP)</option>
+                <option>Shelly</option>
+                <option>Home Assistant switch</option>
+                <option>Generic HTTP (on/off URLs)</option>
+              </select>
+            </div>
+
+            <div class="row gap-sm">
+              <div class="field" style="flex:2;margin-bottom:0">
+                <label class="label">Host</label>
+                <input class="input mono" value="192.168.1.55" />
+              </div>
+              <div class="field" style="flex:3;margin-bottom:0">
+                <label class="label">Child device ID</label>
+                <input class="input mono" value="8006B2F6E92E36C82B9D7C5A1F4E" />
+              </div>
+            </div>
+
+            <div class="row gap-sm mt-1">
+              <div class="field" style="flex:1;margin-bottom:0">
+                <label class="label">Username</label>
+                <input class="input" value="jr" />
+              </div>
+              <div class="field" style="flex:1;margin-bottom:0">
+                <label class="label">Password</label>
+                <input type="password" class="input" value="•••••••••" />
+              </div>
+            </div>
+
+            <div class="row gap-sm wrap mt-1">
+              <button class="btn primary"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 5 5L20 7"/></svg>Test connection</button>
+              <span class="badge success dot">responding · 14 ms</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Behaviours -->
+        <div class="card mb-2">
+          <div class="card-head">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4"/></svg>
+            <span class="title">Behaviours</span>
+          </div>
+          <div class="card-body">
+            <div class="field row-mode">
+              <div>
+                <label class="label">Auto-off when print completes</label>
+                <span class="hint">Cut socket power after the bed cools below 40°C.</span>
+              </div>
+              <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+            </div>
+
+            <div class="field">
+              <div class="row" style="justify-content:space-between">
+                <label class="label" style="margin:0">Auto-off delay</label>
+                <span class="mono tiny">5 min after cool</span>
+              </div>
+              <input type="range" class="range" min="0" max="60" value="5" />
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="field row-mode">
+              <div>
+                <label class="label">Power-cycle on stuck upload</label>
+                <span class="hint">If PPPP upload stalls for &gt; N seconds, reboot the printer via the socket.</span>
+              </div>
+              <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+            </div>
+
+            <div class="field">
+              <div class="row" style="justify-content:space-between">
+                <label class="label" style="margin:0">Stuck threshold</label>
+                <span class="mono tiny">45 s</span>
+              </div>
+              <input type="range" class="range" min="15" max="180" value="45" />
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="field row-mode">
+              <div>
+                <label class="label">Idle power-save</label>
+                <span class="hint">Cut power when the printer is idle for a long time.</span>
+              </div>
+              <label class="switch"><input type="checkbox"><span class="slider"></span></label>
+            </div>
+            <div class="field">
+              <div class="row" style="justify-content:space-between">
+                <label class="label" style="margin:0">Idle timeout</label>
+                <span class="mono tiny">30 min</span>
+              </div>
+              <input type="range" class="range" min="5" max="240" value="30" />
+            </div>
+          </div>
+        </div>
+
+        <!-- 24h usage chart -->
+        <div class="card">
+          <div class="card-head">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 3-4 3 2 4-6"/></svg>
+            <span class="title">Power draw · last 24 h</span>
+            <span class="sub">avg 142 W · peak 312 W</span>
+          </div>
+          <div class="card-body">
+            <div class="chart" style="height:140px">
+              <svg viewBox="0 0 600 140" preserveAspectRatio="none">
+                <line x1="0" y1="35" x2="600" y2="35" class="grid-line" />
+                <line x1="0" y1="70" x2="600" y2="70" class="grid-line" />
+                <line x1="0" y1="105" x2="600" y2="105" class="grid-line" />
+                <path class="line" stroke="#ffb340" stroke-width="2"
+                  d="M0,130 L60,128 L120,80 L180,40 L240,32 L300,55 L360,42 L420,48 L480,38 L540,30 L600,42" />
+                <path class="area" fill="#ffb340"
+                  d="M0,130 L60,128 L120,80 L180,40 L240,32 L300,55 L360,42 L420,48 L480,38 L540,30 L600,42 L600,140 L0,140 Z" />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/nav.js"></script>
+  <script>init({ active: "setup", title: "Settings · Power & Socket", subnav: "power" });</script>
+</body>
+</html>
