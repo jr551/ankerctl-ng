@@ -847,3 +847,59 @@ code {
     cursor: zoom-in;
     border: 1px solid var(--bs-border-color);
 }
+
+/* ── 🧸 Kid Mode (Easy Maker) ────────────────────────────────────────── */
+.kid-mode-btn { border-radius: 999px; border: 3px solid #ffd23f; background: #ffcc00; color: #3a2c00; box-shadow: 0 3px 0 #e0a800; }
+.kid-mode-btn:hover { background: #ffd633; color: #3a2c00; }
+.kid-overlay {
+    position: fixed; inset: 0; z-index: 2000; overflow-y: auto;
+    display: flex; align-items: flex-start; justify-content: center; padding: 4vh 1rem;
+    background: linear-gradient(135deg, #ff5d5d 0%, #ffd23f 25%, #4cd964 55%, #4aa3ff 100%);
+    font-family: "Comic Sans MS", "Baloo 2", "Trebuchet MS", system-ui, sans-serif;
+}
+.kid-card {
+    position: relative; width: 100%; max-width: 560px; background: #fffdf7; border: 6px solid #2b2b2b;
+    border-radius: 28px; padding: 1.5rem 1.5rem 2rem; box-shadow: 0 12px 0 rgba(0,0,0,.25), 0 18px 40px rgba(0,0,0,.3);
+    text-align: center;
+}
+.kid-exit {
+    position: absolute; top: 12px; right: 14px; width: 44px; height: 44px; border-radius: 50%;
+    border: 3px solid #2b2b2b; background: #ff5d5d; color: #fff; font-size: 1.6rem; line-height: 1; cursor: pointer;
+}
+.kid-exit:hover { background: #ff3b3b; }
+.kid-title { font-size: 2rem; font-weight: 800; color: #2b2b2b; margin: .2rem 0 .6rem; }
+.kid-sub, .kid-hint { color: #444; }
+.kid-sub { font-size: 1.15rem; margin-bottom: 1rem; }
+.kid-hint { font-size: .85rem; margin-top: 1rem; opacity: .8; }
+.kid-input {
+    width: 100%; font-size: 1.3rem; padding: .8rem 1rem; border: 4px solid #4aa3ff; border-radius: 18px;
+    resize: vertical; outline: none; font-family: inherit;
+}
+.kid-input:focus { border-color: #1f7ae0; box-shadow: 0 0 0 4px rgba(74,163,255,.3); }
+.kid-or { font-size: 1.1rem; font-weight: 700; color: #888; margin: .8rem 0; }
+.kid-filebtn {
+    display: inline-block; cursor: pointer; font-size: 1.15rem; font-weight: 700; padding: .7rem 1.2rem;
+    background: #4cd964; color: #0a3d18; border: 4px solid #2b2b2b; border-radius: 16px; box-shadow: 0 4px 0 #2a9d45;
+}
+.kid-filebtn:hover { background: #43c95a; }
+.kid-filename { margin-top: .6rem; font-weight: 700; color: #0a3d18; min-height: 1.2rem; }
+.kid-make-btn, .kid-print-btn {
+    display: block; width: 100%; margin-top: 1.4rem; font-size: 1.8rem; font-weight: 800; padding: 1rem;
+    color: #fff; border: 5px solid #2b2b2b; border-radius: 22px; cursor: pointer;
+    background: #ff5d5d; box-shadow: 0 6px 0 #c43838; transition: transform .05s;
+}
+.kid-make-btn:hover, .kid-print-btn:hover { background: #ff4444; }
+.kid-make-btn:active, .kid-print-btn:active { transform: translateY(4px); box-shadow: 0 2px 0 #c43838; }
+.kid-make-btn:disabled { background: #bbb; box-shadow: 0 6px 0 #999; cursor: default; }
+.kid-print-btn { background: #4cd964; box-shadow: 0 6px 0 #2a9d45; }
+.kid-print-btn:hover { background: #43c95a; }
+.kid-again-btn {
+    margin-top: .8rem; font-size: 1.1rem; font-weight: 700; padding: .5rem 1.2rem; background: #fff;
+    color: #2b2b2b; border: 3px solid #2b2b2b; border-radius: 16px; cursor: pointer;
+}
+.kid-spinner { font-size: 4rem; animation: kid-bounce 1s ease-in-out infinite; }
+@keyframes kid-bounce { 0%,100% { transform: translateY(0) rotate(-6deg);} 50% { transform: translateY(-16px) rotate(6deg);} }
+.kid-status { font-size: 1.4rem; font-weight: 700; color: #2b2b2b; margin-top: 1rem; }
+.kid-done-emoji { font-size: 4rem; }
+.kid-preview { max-width: 100%; border: 4px solid #2b2b2b; border-radius: 18px; margin-top: 1rem; background: #111; }
+@media (prefers-reduced-motion: reduce) { .kid-spinner { animation: none; } }

@@ -24,6 +24,9 @@ if (fileInput) {
         infill: $("slice-infill"), infillLabel: $("slice-infill-label"), pattern: $("slice-pattern"),
         supports: $("slice-supports"), adhesion: $("slice-adhesion"),
         nozzleTemp: $("slice-nozzle-temp"), bedTemp: $("slice-bed-temp"),
+        skirtGap: $("slice-skirt-gap"),
+        scale: $("slice-scale"), scaleLabel: $("slice-scale-label"),
+        addPart: $("slice-add-part"), addFile: $("slice-add-file"), partsList: $("slice-parts"),
         gcodeFile: $("slice-gcode-file"), gcodeSend: $("slice-gcode-send"),
     };
 
@@ -39,7 +42,9 @@ if (fileInput) {
     const ANKER_PREAMBLE = "M4899 T3 ; ankerctl-ng: enable v3 jerk + S-curve acceleration\n";
 
     let libs = null, openscadFactory = null;
-    let currentGeometry = null;     // loaded model geometry
+    let currentGeometry = null;     // merged geometry actually sliced (built from parts)
+    let parts = [];                 // bed components: [{ geo, name, scale, dx, dy }]
+    let selectedPart = -1;          // index of the part the resize slider / drag acts on
     let baseGcode = "";             // sliced gcode (model as polyslice placed it)
     let parsed = null;              // parsed toolpath of baseGcode
     let offset = { x: 0, y: 0 };    // mm offset applied by dragging
@@ -193,9 +198,72 @@ if (fileInput) {
             supportEnabled: els.supports.checked,
             adhesionEnabled: adhesion !== "none",
             adhesionType: adhesion === "none" ? "skirt" : adhesion,
+            // Skirt gap: how far the skirt sits from the model. Tighter (default 2mm)
+            // means a smaller footprint, so more parts fit on the bed.
+            skirtDistance: els.skirtGap ? Math.max(0, parseFloat(els.skirtGap.value) || 2) : 2,
+            skirtLineCount: 2,
             nozzleTemperature: clampInt(els.nozzleTemp.value, 150, 275, 215),
             bedTemperature: clampInt(els.bedTemp.value, 0, 100, 60),
         };
+    };
+
+    // ── Multi-part bed: components are merged into one geometry, then sliced ──
+    // together so a single layer-by-layer toolpath covers every part.
+    const mergeParts = () => {
+        if (!parts.length || !libs) return null;
+        const THREE = libs.THREE;
+        const built = parts.map((p) => {
+            const g = p.geo.clone();
+            if (p.scale && p.scale !== 1) g.scale(p.scale, p.scale, p.scale);
+            g.computeBoundingBox();
+            const b = g.boundingBox;
+            // centre in XY, drop base to z=0, then apply the part's layout offset
+            g.translate(-(b.min.x + b.max.x) / 2 + (p.dx || 0), -(b.min.y + b.max.y) / 2 + (p.dy || 0), -b.min.z);
+            return g.getAttribute("position").array;
+        });
+        let total = 0;
+        built.forEach((a) => (total += a.length));
+        const pos = new Float32Array(total);
+        let o = 0;
+        built.forEach((a) => { pos.set(a, o); o += a.length; });
+        const merged = new THREE.BufferGeometry();
+        merged.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+        merged.computeVertexNormals();
+        return merged;
+    };
+
+    const renderParts = () => {
+        if (!els.partsList) return;
+        if (parts.length <= 1) { els.partsList.classList.add("d-none"); els.partsList.innerHTML = ""; return; }
+        els.partsList.classList.remove("d-none");
+        els.partsList.innerHTML = parts.map((p, i) =>
+            `<span class="badge ${i === selectedPart ? "bg-success" : "bg-secondary"} slice-part-chip me-1" data-i="${i}" role="button">`
+            + `${escapeHtml(p.name || ("part " + (i + 1)))}<span class="ms-1 slice-part-x" data-x="${i}" title="Remove">&times;</span></span>`
+        ).join("");
+    };
+    const syncScaleSlider = () => {
+        if (!els.scale) return;
+        const s = parts[selectedPart] ? parts[selectedPart].scale : 1;
+        els.scale.value = String(Math.round(s * 100));
+        if (els.scaleLabel) els.scaleLabel.textContent = Math.round(s * 100);
+    };
+    // Replace all parts with one (STL / OpenSCAD / AI result).
+    const setParts = (geo, name) => {
+        parts = [{ geo, name: name || "model", scale: 1, dx: 0, dy: 0 }];
+        selectedPart = 0;
+        renderParts(); syncScaleSlider();
+    };
+    // Append a component, auto-placed to the right so it doesn't overlap.
+    const addPart = (geo, name) => {
+        let dx = 0;
+        if (parts.length) {
+            geo.computeBoundingBox();
+            const w = parts.reduce((m, p) => { p.geo.computeBoundingBox(); const b = p.geo.boundingBox; return Math.max(m, (b.max.x - b.min.x) * (p.scale || 1)); }, 0);
+            dx = parts[parts.length - 1].dx + Math.max(20, w);
+        }
+        parts.push({ geo, name: name || ("part " + (parts.length + 1)), scale: 1, dx, dy: 0 });
+        selectedPart = parts.length - 1;
+        renderParts(); syncScaleSlider();
     };
 
     const parseGcode = (text) => {
@@ -287,14 +355,16 @@ if (fileInput) {
     };
 
     const sliceCurrent = async () => {
-        if (!currentGeometry) { setStatus("Load an STL or render OpenSCAD first.", "error"); return; }
+        if (!parts.length) { setStatus("Load an STL or render OpenSCAD first.", "error"); return; }
         const cfg = readConfig();
         const runLabel = els.run.innerHTML;
         els.run.disabled = true; els.print.disabled = true; els.download.disabled = true;
         els.run.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span>Slicing…';
-        setStatus("Slicing in the background — the UI stays responsive…");
+        setStatus(parts.length > 1 ? `Slicing ${parts.length} parts in the background…` : "Slicing in the background — the UI stays responsive…");
         try {
             await loadLibs();
+            currentGeometry = mergeParts();
+            if (!currentGeometry) throw new Error("no parts to slice");
             const t0 = performance.now();
             // Runs in a Web Worker (with a main-thread fallback) so the page never freezes.
             const g = await sliceGeometry(currentGeometry, cfg);
@@ -361,11 +431,20 @@ if (fileInput) {
         offset.y = dragging.oy - (e.clientY - dragging.sy) / f; // canvas Y is flipped vs bed Y
         drawBed();
     });
-    const endDrag = (e) => {
+    const endDrag = async (e) => {
         if (!dragging) return;
+        const dx = offset.x - dragging.ox, dy = offset.y - dragging.oy;
+        const multi = parts.length > 1 && selectedPart >= 0 && parts[selectedPart];
         dragging = null;
         try { els.canvas.releasePointerCapture(e.pointerId); } catch (_) {}
-        applyVerdict(offBedIssues()); // re-check bed bounds after the move
+        if (multi && (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5)) {
+            // Move just the selected part relative to the others, then re-slice the layout.
+            parts[selectedPart].dx += dx; parts[selectedPart].dy += dy;
+            offset = { x: 0, y: 0 };
+            await sliceCurrent();
+        } else {
+            applyVerdict(offBedIssues()); // single part: keep the cheap post-slice offset
+        }
     };
     els.canvas.addEventListener("pointerup", endDrag);
     els.canvas.addEventListener("pointercancel", endDrag);
@@ -381,20 +460,67 @@ if (fileInput) {
             await loadLibs();
             const buf = await file.arrayBuffer();
             const v = inspectSTL(buf, file.size);
-            if (!v.ok) { setStatus("Invalid STL — " + v.error + ". The file may be corrupt or not really an STL.", "error"); currentGeometry = null; fileInput.value = ""; return; }
+            if (!v.ok) { setStatus("Invalid STL — " + v.error + ". The file may be corrupt or not really an STL.", "error"); fileInput.value = ""; return; }
             modelWarnings = file.size > STL_SIZE_WARN ? [`Large file (${(file.size / 1048576).toFixed(0)} MB) — slicing may be slow.`] : [];
-            currentGeometry = new libs.STLLoader().parse(buf);
+            setParts(new libs.STLLoader().parse(buf), baseName);
             await sliceCurrent();
         } catch (err) { setStatus("Could not read STL: " + (err && err.message ? err.message : err), "error"); }
-        finally { els.run.disabled = !currentGeometry; }
+        finally { els.run.disabled = !parts.length; }
     });
 
     els.run.addEventListener("click", sliceCurrent);
 
     els.infill.addEventListener("input", () => { els.infillLabel.textContent = els.infill.value; });
     // Re-slice when a setting is committed.
-    [els.model, els.layerHeight, els.pattern, els.adhesion, els.supports, els.infill, els.nozzleTemp, els.bedTemp]
-        .forEach((el) => el && el.addEventListener("change", () => { if (currentGeometry) sliceCurrent(); }));
+    [els.model, els.layerHeight, els.pattern, els.adhesion, els.supports, els.infill, els.nozzleTemp, els.bedTemp, els.skirtGap]
+        .forEach((el) => el && el.addEventListener("change", () => { if (parts.length) sliceCurrent(); }));
+
+    // ── Resize the selected part ─────────────────────────────────────────
+    if (els.scale) {
+        els.scale.addEventListener("input", () => { if (els.scaleLabel) els.scaleLabel.textContent = els.scale.value; });
+        els.scale.addEventListener("change", () => {
+            if (!parts.length) return;
+            const i = selectedPart >= 0 ? selectedPart : 0;
+            parts[i].scale = Math.max(0.1, (parseInt(els.scale.value, 10) || 100) / 100);
+            sliceCurrent();
+        });
+    }
+    // ── Add another part (STL) ───────────────────────────────────────────
+    if (els.addPart && els.addFile) {
+        els.addPart.addEventListener("click", () => els.addFile.click());
+        els.addFile.addEventListener("change", async () => {
+            const file = els.addFile.files && els.addFile.files[0];
+            els.addFile.value = "";
+            if (!file) return;
+            if (!/\.stl$/i.test(file.name)) { setStatus("Add a .stl file.", "error"); return; }
+            try {
+                await loadLibs();
+                const buf = await file.arrayBuffer();
+                if (!inspectSTL(buf, file.size).ok) { setStatus("That STL looks corrupt — not added.", "error"); return; }
+                addPart(new libs.STLLoader().parse(buf), file.name.replace(/\.stl$/i, ""));
+                await sliceCurrent();
+            } catch (err) { setStatus("Could not add part: " + (err && err.message ? err.message : err), "error"); }
+        });
+    }
+    // ── Parts list: select / remove ──────────────────────────────────────
+    if (els.partsList) {
+        els.partsList.addEventListener("click", async (e) => {
+            const x = e.target.closest(".slice-part-x");
+            if (x) {
+                e.stopPropagation();
+                const i = parseInt(x.getAttribute("data-x"), 10);
+                if (i >= 0 && i < parts.length) {
+                    parts.splice(i, 1);
+                    if (selectedPart >= parts.length) selectedPart = parts.length - 1;
+                    renderParts(); syncScaleSlider();
+                    if (parts.length) await sliceCurrent(); else { baseGcode = ""; els.previewWrap.classList.add("d-none"); els.print.disabled = true; els.download.disabled = true; setStatus("All parts removed.", ""); }
+                }
+                return;
+            }
+            const chip = e.target.closest(".slice-part-chip");
+            if (chip) { selectedPart = parseInt(chip.getAttribute("data-i"), 10); renderParts(); syncScaleSlider(); }
+        });
+    }
 
     els.layer.addEventListener("input", () => { if (parsed) els.layerLabel.textContent = `${(parseInt(els.layer.value, 10) || 0) + 1} / ${parsed.layers.length}`; drawBed(); });
     els.travel.addEventListener("change", drawBed);
@@ -465,19 +591,25 @@ if (fileInput) {
         const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x88f387, metalness: 0.1, roughness: 0.6, flatShading: true }));
         preview.scene.add(mesh); preview.mesh = mesh;
     };
-    // Compile + render the current SCAD and grab the preview canvas as an image,
-    // so the AI can SEE what it produced during iterative refinement.
-    const renderScadToImage = async (src) => {
+    // Compile a candidate SCAD: validates it actually builds (the worker rejects
+    // with the OpenSCAD error on failure) and, on success, updates the 3D preview
+    // and grabs a render so the AI can SEE its result. Returns {ok, image, error}.
+    const compileAndRender = async (src) => {
         try {
             await loadLibs();
             const stl = await compileScad(src);
             setScadPreviewGeometry(new libs.STLLoader().parse(stl.buffer.slice(stl.byteOffset, stl.byteOffset + stl.byteLength)));
             initScadPreview();
-            if (!preview) return null;
-            preview.controls.update();
-            preview.renderer.render(preview.scene, preview.camera);
-            return preview.renderer.domElement.toDataURL("image/jpeg", 0.7);
-        } catch (e) { return null; }
+            let image = null;
+            if (preview) {
+                preview.controls.update();
+                preview.renderer.render(preview.scene, preview.camera);
+                image = preview.renderer.domElement.toDataURL("image/jpeg", 0.7);
+            }
+            return { ok: true, image };
+        } catch (e) {
+            return { ok: false, error: String((e && e.message) || e).slice(0, 400) };
+        }
     };
     const scheduleLivePreview = () => {
         if (!els.scadLive || !els.scadLive.checked || !els.scad.value.trim()) return;
@@ -510,7 +642,7 @@ if (fileInput) {
                 await loadLibs();
                 setStatus("Compiling OpenSCAD…");
                 const stl = await compileScad(src);
-                currentGeometry = new libs.STLLoader().parse(stl.buffer.slice(stl.byteOffset, stl.byteOffset + stl.byteLength));
+                setParts(new libs.STLLoader().parse(stl.buffer.slice(stl.byteOffset, stl.byteOffset + stl.byteLength)), "openscad-model");
                 await sliceCurrent();
             } catch (err) { setStatus("OpenSCAD: " + (err && err.message ? err.message : err), "error"); }
             finally { els.scadRender.disabled = !els.scad.value.trim(); showScadLoading(false); }
@@ -535,7 +667,8 @@ if (fileInput) {
         els.scadAiGo.addEventListener("click", async () => {
             const prompt = (els.scadAiPrompt.value || "").trim();
             if (!prompt) { setStatus("Describe the change for the AI first.", "error"); els.scadAiPrompt.focus(); return; }
-            const iterations = clampInt(els.scadAiIters && els.scadAiIters.value, 1, 5, 1);
+            const MAX_PASSES = 2; // capped at 2 for reliability + speed
+            const iterations = clampInt(els.scadAiIters && els.scadAiIters.value, 1, MAX_PASSES, MAX_PASSES);
             // Loading indicator: spinner on the button + a live elapsed counter and
             // frequent phase updates, because each AI pass can take 20-60s and the
             // user must never think it has frozen.
@@ -550,40 +683,71 @@ if (fileInput) {
             const setPhase = (p) => { phase = p; tick(); };
             const timer = setInterval(tick, 400);
             tick();
-            let pushedUndo = false, scad = els.scad.value, applied = false, didConverge = false;
+            // Reliability model: never apply OpenSCAD that doesn't compile. Each pass
+            // is validated by actually building it; a good build becomes the new
+            // "best" (and is applied + previewed). A bad build is NOT applied — the
+            // next pass is told to fix it (with the real compile error). We always
+            // end on the best compiling version, or report a clear failure.
+            const original = els.scad.value;
+            let best = original, bestImage = null;     // best compiling source so far
+            let lastCandidate = null, lastError = null; // last AI output + its compile error
+            let pushedUndo = false, appliedAny = false, didConverge = false;
+            const callAI = (baseScad, p, imgs) => fetch("/api/openscad/edit", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ scad: baseScad, prompt: p, images: imgs || [] }),
+            });
             try {
                 for (let i = 1; i <= iterations; i++) {
-                    let promptForCall, images;
+                    let baseScad, promptForCall, images;
                     if (i === 1) {
-                        setPhase(iterations > 1 ? `AI editing — pass 1 of ${iterations}` : "Asking the AI to edit the model");
-                        promptForCall = prompt; images = scadRefImages;
+                        setPhase(iterations > 1 ? `AI generating — pass 1 of ${iterations}` : "Asking the AI to build the model");
+                        baseScad = original; promptForCall = prompt; images = scadRefImages;
+                    } else if (lastError) {
+                        // Previous candidate didn't compile — hand it back with the error to fix.
+                        setPhase(`AI fixing a compile error — pass ${i} of ${iterations}`);
+                        baseScad = lastCandidate;
+                        promptForCall = `You wrote this OpenSCAD for the request "${prompt}", but it FAILED to compile with this OpenSCAD error:\n${lastError}\nReturn the COMPLETE corrected OpenSCAD that compiles and satisfies the request. Reply with ONLY the code.`;
+                        images = [];
                     } else {
-                        setPhase(`Rendering the result so the AI can review it — pass ${i} of ${iterations}`);
-                        const img = await renderScadToImage(scad);
-                        setPhase(`AI reviewing its own result & refining — pass ${i} of ${iterations}`);
-                        promptForCall = `You previously wrote this OpenSCAD for the request: "${prompt}". The code above is your current version` + (img ? ", and the attached image is a render of it" : "") + `. Critically review it and improve it so it better satisfies the request — fix mistakes, add missing detail, refine proportions and geometry. If it already fully satisfies the request, return it unchanged. Reply with ONLY the complete updated OpenSCAD.`;
-                        images = img ? [img] : [];
+                        setPhase(`AI reviewing its result & refining — pass ${i} of ${iterations}`);
+                        baseScad = best;
+                        promptForCall = `You previously wrote this OpenSCAD for the request "${prompt}". The code above is your current version` + (bestImage ? ", and the attached image is a render of it" : "") + `. Improve it to better satisfy the request — fix mistakes, add missing detail, refine proportions. If it already fully satisfies the request, return it unchanged. Reply with ONLY the complete updated OpenSCAD.`;
+                        images = bestImage ? [bestImage] : [];
                     }
-                    const resp = await fetch("/api/openscad/edit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scad, prompt: promptForCall, images }) });
+                    const resp = await callAI(baseScad, promptForCall, images);
                     if (!resp.ok) { settled = true; setStatus(`AI request failed (HTTP ${resp.status}) on pass ${i} of ${iterations}.`, "error"); break; }
                     const d = await resp.json().catch(() => ({}));
-                    if (d.skipped) { settled = true; setStatus(d.error ? `AI edit failed on pass ${i}: ${d.error}` : "AI not configured (set it up under Camera & AI).", "error"); break; }
+                    if (d.skipped) { settled = true; setStatus(d.error ? `AI edit failed: ${d.error}` : "AI not configured (set it up under Camera & AI).", "error"); break; }
                     if (!d.scad) { settled = true; setStatus(`AI returned no code on pass ${i}.`, "error"); break; }
-                    if (!pushedUndo) { scadUndo.push(els.scad.value); els.scadAiUndo.disabled = false; pushedUndo = true; }
-                    const converged = d.scad.trim() === scad.trim();
-                    scad = d.scad;
-                    els.scad.value = scad;
-                    els.scadRender.disabled = !scad.trim();
-                    applied = true;
-                    const det = document.getElementById("slice-scad-details"); if (det) det.open = true;
-                    if (converged && i > 1) { didConverge = true; break; }
-                    if (i < iterations) setPhase(`Pass ${i} of ${iterations} applied — continuing to refine`);
+                    lastCandidate = d.scad;
+
+                    setPhase(`Checking the model compiles — pass ${i} of ${iterations}`);
+                    const built = await compileAndRender(d.scad);
+                    if (built.ok) {
+                        const converged = best && d.scad.trim() === best.trim();
+                        if (!pushedUndo) { scadUndo.push(original); els.scadAiUndo.disabled = false; pushedUndo = true; }
+                        best = d.scad; bestImage = built.image; lastError = null; appliedAny = true;
+                        els.scad.value = best; els.scadRender.disabled = !best.trim();
+                        const det = document.getElementById("slice-scad-details"); if (det) det.open = true;
+                        if (converged) { didConverge = true; break; }
+                        if (i < iterations) setPhase(`Pass ${i} compiled OK — refining further`);
+                    } else {
+                        lastError = built.error || "unknown compile error";
+                        if (i < iterations) setPhase(`Pass ${i} didn't compile — asking the AI to fix it`);
+                    }
                 }
-                if (applied) {
+                if (!settled) {
                     settled = true;
-                    scheduleLivePreview();
                     const s = Math.round((performance.now() - t0) / 1000);
-                    setStatus(`${didConverge ? `AI refined the model and converged in ${s}s` : `AI finished in ${s}s`} — rendering preview. Use Undo to revert.`, "ok");
+                    if (appliedAny && !lastError) {
+                        scheduleLivePreview();
+                        setStatus(`${didConverge ? `AI built & verified the model (converged) in ${s}s` : `AI built & verified the model in ${s}s`} — preview updated. Use Undo to revert.`, "ok");
+                    } else if (appliedAny && lastError) {
+                        scheduleLivePreview();
+                        setStatus(`AI's last pass didn't compile — kept the best working version (verified). Use Undo to revert.`, "ok");
+                    } else {
+                        setStatus(`AI could not produce OpenSCAD that compiles${lastError ? ": " + lastError : ""}. Nothing was changed.`, "error");
+                    }
                 }
             } catch (err) { settled = true; setStatus("AI edit error: " + (err && err.message ? err.message : err), "error"); }
             finally { clearInterval(timer); els.scadAiGo.disabled = false; els.scadAiGo.innerHTML = aiGoLabel; els.scadAiPrompt.disabled = false; if (els.scadAiIters) els.scadAiIters.disabled = false; }
@@ -611,6 +775,110 @@ if (fileInput) {
             const warn = file.size > GCODE_SIZE_WARN ? `\n\nNote: this is a large file (${(file.size / 1048576).toFixed(0)} MB) and may take a while to upload.` : "";
             if (!confirm("Upload and print " + file.name + "?" + warn)) return;
             uploadGcode(text, file.name, els.gcodeSend);
+        });
+    }
+
+    // ── 🧸 Kid Mode (Easy Maker): idea/STL -> AI -> auto-settings -> print ──
+    const kid = {
+        toggle: $("kid-mode-toggle"), overlay: $("kid-mode"), exit: $("kid-exit"),
+        prompt: $("kid-prompt"), file: $("kid-file"), filename: $("kid-filename"), make: $("kid-make"),
+        status: $("kid-status"), doneMsg: $("kid-done-msg"), donePreview: $("kid-done-preview"),
+        print: $("kid-print"), again: $("kid-again"),
+        stepChoose: $("kid-step-choose"), stepWork: $("kid-step-work"), stepDone: $("kid-step-done"),
+    };
+    if (kid.overlay && kid.make) {
+        let kidFile = null;
+        const kidShow = (on) => { kid.overlay.classList.toggle("d-none", !on); document.body.classList.toggle("kid-active", on); };
+        const kidStep = (s) => { kid.stepChoose.classList.toggle("d-none", s !== "choose"); kid.stepWork.classList.toggle("d-none", s !== "work"); kid.stepDone.classList.toggle("d-none", s !== "done"); };
+        const kidSay = (m) => { if (kid.status) kid.status.textContent = m; };
+        const KID_FUN = ["Mixing the colours… 🎨", "Teaching the robot… 🤖", "Drawing your idea… ✏️", "Building it in 3D… 🧱", "Tidying it up… ✨"];
+        if (kid.toggle) kid.toggle.addEventListener("click", () => { kidStep("choose"); kidShow(true); });
+        if (kid.exit) kid.exit.addEventListener("click", () => kidShow(false));
+        if (kid.file) kid.file.addEventListener("change", () => { kidFile = kid.file.files && kid.file.files[0]; kid.filename.textContent = kidFile ? "📦 " + kidFile.name : ""; });
+        if (kid.again) kid.again.addEventListener("click", () => { kidStep("choose"); kid.make.disabled = false; kid.prompt.value = ""; kidFile = null; if (kid.file) kid.file.value = ""; kid.filename.textContent = ""; });
+
+        // Kid-safe slice settings, written into the real form so sliceCurrent() picks them up.
+        const kidSettings = () => {
+            if (els.model) els.model.value = "m5c";
+            if (els.layerHeight) els.layerHeight.value = "0.2";
+            if (els.infill) { els.infill.value = "15"; if (els.infillLabel) els.infillLabel.textContent = "15"; }
+            if (els.pattern) els.pattern.value = "grid";
+            if (els.adhesion) els.adhesion.value = "skirt";
+            if (els.supports) els.supports.checked = false;
+            if (els.nozzleTemp) els.nozzleTemp.value = "215";
+            if (els.bedTemp) els.bedTemp.value = "60";
+        };
+        // Keep kid prints small + quick: scale so the largest dimension is ~maxMM.
+        const kidScaleSmall = (geo, maxMM) => {
+            geo.computeBoundingBox(); const b = geo.boundingBox;
+            const m = Math.max(b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z);
+            if (m > maxMM && m > 0) geo.scale(maxMM / m, maxMM / m, maxMM / m);
+        };
+        // Build from an idea with one validate+fix retry (reuses the reliable compile check).
+        const kidAIBuild = async (idea) => {
+            const call = (scad, p) => fetch("/api/openscad/edit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scad, prompt: p, images: [] }) }).then((r) => (r.ok ? r.json() : {})).catch(() => ({}));
+            const buildPrompt = `Design a simple, fun, 3D-printable model of: ${idea}. Make it a single solid object about 40-60mm, stable on a flat base, no text unless asked, printable without supports if possible. Reply with ONLY complete OpenSCAD code.`;
+            let d = await call("", buildPrompt);
+            if (d.skipped || !d.scad) return null;
+            let built = await compileAndRender(d.scad);
+            if (built.ok) return d.scad;
+            kidSay("Fixing a little mistake… 🔧");
+            d = await call(d.scad, `This OpenSCAD for "${idea}" failed to compile: ${built.error}. Return ONLY the corrected complete OpenSCAD.`);
+            if (d.skipped || !d.scad) return null;
+            built = await compileAndRender(d.scad);
+            return built.ok ? d.scad : null;
+        };
+
+        const kidMake = async () => {
+            const text = (kid.prompt.value || "").trim();
+            if (!text && !kidFile) { kidSay("Type an idea or pick a file first! 😊"); return; }
+            kid.make.disabled = true; kidStep("work"); kidSay("Getting started… 🚀");
+            const funTimer = setInterval(() => kidSay(KID_FUN[Math.floor(performance.now() / 2500) % KID_FUN.length]), 2500);
+            const bail = (msg) => { clearInterval(funTimer); kidSay(msg); kid.make.disabled = false; kidStep("choose"); };
+            try {
+                await loadLibs();
+                let geo;
+                if (kidFile) {
+                    kidSay("Opening your file… 📂");
+                    if (!/\.stl$/i.test(kidFile.name)) return bail("That's not a .stl file 🙈");
+                    const buf = await kidFile.arrayBuffer();
+                    if (!inspectSTL(buf, kidFile.size).ok) return bail("Hmm, that file looks broken 🙈");
+                    geo = new libs.STLLoader().parse(buf);
+                    baseName = (kidFile.name.replace(/\.stl$/i, "") || "my-model");
+                } else {
+                    kidSay("Asking the robot to design it… 🤖");
+                    const scad = await kidAIBuild(text);
+                    if (!scad) return bail("The robot got stuck 😅 try a simpler idea!");
+                    const stl = await compileScad(scad);
+                    geo = new libs.STLLoader().parse(stl.buffer.slice(stl.byteOffset, stl.byteOffset + stl.byteLength));
+                    baseName = "my-" + ((text.split(/\s+/)[0] || "model").replace(/[^a-z0-9]/gi, "").toLowerCase() || "model");
+                    if (els.scad) els.scad.value = scad; // also reflect into power-mode editor
+                }
+                kidScaleSmall(geo, 60);
+                setParts(geo, baseName);
+                kidSay("Getting it ready to print… 🧱");
+                kidSettings();
+                await sliceCurrent(); // slices + AI check + verdict, draws the bed preview
+                clearInterval(funTimer);
+                if (!baseGcode) return bail("Oops, couldn't make that printable 😅 try another idea!");
+                try { if (kid.donePreview && els.canvas) kid.donePreview.src = els.canvas.toDataURL("image/jpeg", 0.7); } catch (e) { /* preview optional */ }
+                const warned = els.warning && !els.warning.classList.contains("d-none");
+                kid.doneMsg.textContent = warned ? "Ready! It's a tricky one — ask a grown-up to watch 👀" : "Yay! Ready to print! 🎉";
+                kidStep("done");
+            } catch (err) {
+                bail("Something went wrong 😅 try again!");
+            } finally { kid.make.disabled = false; }
+        };
+        kid.make.addEventListener("click", kidMake);
+        if (kid.print) kid.print.addEventListener("click", () => {
+            if (!baseGcode) return;
+            if (!confirm("Send your model to the printer?")) return;
+            kid.print.disabled = true;
+            kid.doneMsg.textContent = "Sending it to the printer… 🖨️";
+            uploadGcode(finalGcode(), baseName + ".gcode", null).finally(() => {
+                kid.print.disabled = false;
+                kid.doneMsg.textContent = "Sent to the printer! 🎉 Go watch it print!";
+            });
         });
     }
 }

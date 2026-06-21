@@ -43,11 +43,11 @@
                                             placeholder="Describe a change… e.g. add a 5mm hole in the centre" />
                                         <button class="btn btn-outline-primary" id="scad-ai-go" type="button">AI
                                             edit</button>
-                                        <span class="input-group-text" title="Refinement passes — the AI reviews its own result and improves it, up to this many times">&times;</span>
+                                        <span class="input-group-text" title="AI passes: each generated model is compiled and checked; a 2nd pass refines it or fixes compile errors (max 2)">&times;</span>
                                         <input type="number" class="form-control flex-grow-0" id="scad-ai-iters"
-                                            style="max-width: 3.5rem;" min="1" max="5" value="1"
-                                            title="Refinement passes — the AI reviews its own result and improves it, up to this many times"
-                                            aria-label="AI refinement passes" />
+                                            style="max-width: 3.5rem;" min="1" max="2" value="2"
+                                            title="AI passes: each generated model is compiled and checked; a 2nd pass refines it or fixes compile errors (max 2)"
+                                            aria-label="AI passes (max 2)" />
                                         <button class="btn btn-outline-secondary" id="scad-ai-undo" type="button"
                                             disabled title="Undo last AI edit"><i
                                                 class="bi-arrow-counterclockwise"></i></button>
@@ -110,6 +110,12 @@
                                     <option value="none">None</option>
                                 </select>
                             </div>
+                            <div class="col-6 col-md-2">
+                                <label class="form-label small mb-1" for="slice-skirt-gap">Skirt gap mm</label>
+                                <input type="number" class="form-control form-control-sm" id="slice-skirt-gap"
+                                    min="0" max="20" step="0.5" value="2"
+                                    title="How far the skirt sits from the model. Smaller = tighter footprint so more parts fit." />
+                            </div>
                             <div class="col-12 col-md-4">
                                 <label class="form-label small mb-1" for="slice-infill">Infill:
                                     <span id="slice-infill-label">20</span>%</label>
@@ -140,6 +146,21 @@
                             </button>
                             <span class="form-text mb-0" id="slice-status"></span>
                         </div>
+
+                        <!-- ── Resize the selected part + add more parts ────────── -->
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <label class="form-label mb-0 small text-nowrap" for="slice-scale">Size
+                                <span id="slice-scale-label">100</span>%</label>
+                            <input type="range" class="form-range flex-grow-1" id="slice-scale" min="25" max="300"
+                                step="5" value="100" style="min-width: 140px; max-width: 320px;"
+                                title="Shrink or enlarge the selected part" />
+                            <button class="btn btn-outline-secondary btn-sm" id="slice-add-part" type="button">
+                                <i class="bi-plus-lg px-1"></i>Add part
+                            </button>
+                            <input type="file" id="slice-add-file" accept=".stl" class="d-none" />
+                        </div>
+                        <div class="d-none" id="slice-parts" aria-label="Parts on the bed"></div>
+                        <div class="form-text mt-0">Add several parts and drag each one to arrange them — they print together.</div>
 
                         <!-- ── Bed preview (drag the model to reposition) ─────── -->
                         <div class="slice-preview-wrap d-none" id="slice-preview-wrap">
