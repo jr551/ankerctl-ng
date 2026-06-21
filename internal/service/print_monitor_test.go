@@ -165,6 +165,22 @@ func TestStripSCADProse(t *testing.T) {
 	if got := stripSCADProse(code); got != code {
 		t.Fatalf("code first line wrongly stripped: %q", got)
 	}
+	// LaTeX/markdown artifacts some models emit must be stripped. Real bug from a
+	// live run: the model prefixed the code with "$$\text{openscad}", which the
+	// prose-stripper kept because it contains braces.
+	if got := stripSCADProse("$$\\text{openscad}\n$fn=32;\ncube([1,1,1]);"); got != "$fn=32;\ncube([1,1,1]);" {
+		t.Fatalf("LaTeX artifact not stripped: %q", got)
+	}
+	if got := stripSCADProse("openscad\ncube([1,1,1]);"); got != "cube([1,1,1]);" {
+		t.Fatalf("language tag not stripped: %q", got)
+	}
+	if got := stripSCADProse("cube([1,1,1]);\n$$"); got != "cube([1,1,1]);" {
+		t.Fatalf("trailing $$ not stripped: %q", got)
+	}
+	// OpenSCAD special variables ($fn etc. — a single '$') must survive untouched.
+	if got := stripSCADProse("$fn=48;\nsphere(5);"); got != "$fn=48;\nsphere(5);" {
+		t.Fatalf("$fn wrongly stripped: %q", got)
+	}
 }
 
 func TestChatCompletionRetriesOnTransient(t *testing.T) {
