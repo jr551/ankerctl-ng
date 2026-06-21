@@ -795,7 +795,7 @@ if (fileInput) {
         const kidShow = (on) => { kid.overlay.classList.toggle("d-none", !on); document.body.classList.toggle("kid-active", on); };
         const kidStep = (s) => { kid.stepChoose.classList.toggle("d-none", s !== "choose"); kid.stepWork.classList.toggle("d-none", s !== "work"); kid.stepDone.classList.toggle("d-none", s !== "done"); };
         const kidSay = (m) => { if (kid.status) kid.status.textContent = m; };
-        const KID_FUN = ["Mixing the colours… 🎨", "Teaching the robot… 🤖", "Drawing your idea… ✏️", "Building it in 3D… 🧱", "Tidying it up… ✨"];
+        const KID_FUN = ["Designing the model…", "Generating the shape…", "Refining the model…", "Preparing it…"];
         if (kid.toggle) kid.toggle.addEventListener("click", () => { kidStep("choose"); kidShow(true); });
         if (kid.exit) kid.exit.addEventListener("click", () => kidShow(false));
         if (kid.file) kid.file.addEventListener("change", () => { kidFile = kid.file.files && kid.file.files[0]; kid.filename.textContent = kidFile ? "📦 " + kidFile.name : ""; });
@@ -826,7 +826,7 @@ if (fileInput) {
             if (d.skipped || !d.scad) return null;
             let built = await compileAndRender(d.scad);
             if (built.ok) return d.scad;
-            kidSay("Fixing a little mistake… 🔧");
+            kidSay("Fixing a compile error…");
             d = await call(d.scad, `This OpenSCAD for "${idea}" failed to compile: ${built.error}. Return ONLY the corrected complete OpenSCAD.`);
             if (d.skipped || !d.scad) return null;
             built = await compileAndRender(d.scad);
@@ -835,42 +835,42 @@ if (fileInput) {
 
         const kidMake = async () => {
             const text = (kid.prompt.value || "").trim();
-            if (!text && !kidFile) { kidSay("Type an idea or pick a file first! 😊"); return; }
-            kid.make.disabled = true; kidStep("work"); kidSay("Getting started… 🚀");
+            if (!text && !kidFile) { kidSay("Type an idea or pick a file first."); return; }
+            kid.make.disabled = true; kidStep("work"); kidSay("Starting…");
             const funTimer = setInterval(() => kidSay(KID_FUN[Math.floor(performance.now() / 2500) % KID_FUN.length]), 2500);
             const bail = (msg) => { clearInterval(funTimer); kidSay(msg); kid.make.disabled = false; kidStep("choose"); };
             try {
                 await loadLibs();
                 let geo;
                 if (kidFile) {
-                    kidSay("Opening your file… 📂");
-                    if (!/\.stl$/i.test(kidFile.name)) return bail("That's not a .stl file 🙈");
+                    kidSay("Opening your file…");
+                    if (!/\.stl$/i.test(kidFile.name)) return bail("That's not a .stl file.");
                     const buf = await kidFile.arrayBuffer();
-                    if (!inspectSTL(buf, kidFile.size).ok) return bail("Hmm, that file looks broken 🙈");
+                    if (!inspectSTL(buf, kidFile.size).ok) return bail("That file looks invalid.");
                     geo = new libs.STLLoader().parse(buf);
                     baseName = (kidFile.name.replace(/\.stl$/i, "") || "my-model");
                 } else {
-                    kidSay("Asking the robot to design it… 🤖");
+                    kidSay("Designing the model with AI…");
                     const scad = await kidAIBuild(text);
-                    if (!scad) return bail("The robot got stuck 😅 try a simpler idea!");
+                    if (!scad) return bail("The AI couldn't build that — try a simpler description.");
                     const stl = await compileScad(scad);
                     geo = new libs.STLLoader().parse(stl.buffer.slice(stl.byteOffset, stl.byteOffset + stl.byteLength));
                     baseName = "my-" + ((text.split(/\s+/)[0] || "model").replace(/[^a-z0-9]/gi, "").toLowerCase() || "model");
-                    if (els.scad) els.scad.value = scad; // also reflect into power-mode editor
+                    if (els.scad) els.scad.value = scad; // also reflect into the full editor
                 }
                 kidScaleSmall(geo, 60);
                 setParts(geo, baseName);
-                kidSay("Getting it ready to print… 🧱");
+                kidSay("Preparing it to print…");
                 kidSettings();
                 await sliceCurrent(); // slices + AI check + verdict, draws the bed preview
                 clearInterval(funTimer);
-                if (!baseGcode) return bail("Oops, couldn't make that printable 😅 try another idea!");
+                if (!baseGcode) return bail("Couldn't make that printable — try another idea.");
                 try { if (kid.donePreview && els.canvas) kid.donePreview.src = els.canvas.toDataURL("image/jpeg", 0.7); } catch (e) { /* preview optional */ }
                 const warned = els.warning && !els.warning.classList.contains("d-none");
-                kid.doneMsg.textContent = warned ? "Ready! It's a tricky one — ask a grown-up to watch 👀" : "Yay! Ready to print! 🎉";
+                kid.doneMsg.textContent = warned ? "Ready — this one looks tricky; check it before printing." : "Ready to print.";
                 kidStep("done");
             } catch (err) {
-                bail("Something went wrong 😅 try again!");
+                bail("Something went wrong — try again.");
             } finally { kid.make.disabled = false; }
         };
         kid.make.addEventListener("click", kidMake);
@@ -878,10 +878,10 @@ if (fileInput) {
             if (!baseGcode) return;
             if (!confirm("Send your model to the printer?")) return;
             kid.print.disabled = true;
-            kid.doneMsg.textContent = "Sending it to the printer… 🖨️";
+            kid.doneMsg.textContent = "Sending to the printer…";
             uploadGcode(finalGcode(), baseName + ".gcode", null).finally(() => {
                 kid.print.disabled = false;
-                kid.doneMsg.textContent = "Sent to the printer! 🎉 Go watch it print!";
+                kid.doneMsg.textContent = "Sent to the printer.";
             });
         });
     }
