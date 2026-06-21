@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Settings · Camera &amp; AI · ankerctl-ng mockup</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <div class="settings-layout">
+      <div id="subnav-slot"></div>
+
+      <div>
+
+        <!-- Camera source -->
+        <div class="card mb-2">
+          <div class="card-head">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7a2 2 0 0 1 2-2h3l2-2h6l2 2h3a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7Z"/><circle cx="12" cy="13" r="4"/></svg>
+            <span class="title">Camera source</span>
+          </div>
+          <div class="card-body">
+            <div class="segmented mb-2">
+              <button class="active">Built-in (PPPP)</button>
+              <button>External URL</button>
+              <button>Home Assistant camera</button>
+            </div>
+
+            <div class="field">
+              <label class="label">External snapshot URL</label>
+              <div class="input-group">
+                <span class="adown">🔗</span>
+                <input class="input mono" value="http://cam-1.lan/snap.jpg" />
+              </div>
+              <span class="hint">Any JPEG / MJPEG endpoint. Basic auth supported via <span class="mono">https://user:pass@…</span></span>
+            </div>
+
+            <div class="row gap-sm">
+              <div class="field" style="flex:1;margin-bottom:0">
+                <div class="row" style="justify-content:space-between">
+                  <label class="label" style="margin:0">Refresh rate</label>
+                  <span class="mono tiny">2.0 s / frame</span>
+                </div>
+                <input type="range" class="range" min="1" max="10" step="0.5" value="2" />
+              </div>
+              <div class="field" style="flex:1;margin-bottom:0">
+                <label class="label">Default live quality</label>
+                <select class="select"><option>SD (480p)</option><option selected>HD (720p)</option><option>Snapshot (1080p)</option></select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- AI print monitor -->
+        <div class="card mb-2">
+          <div class="card-head">
+            <svg class="ic" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5Z"/></svg>
+            <span class="title">AI print monitor</span>
+            <span class="badge violet dot">enabled</span>
+            <label class="switch" style="margin-left:auto"><input type="checkbox" checked><span class="slider"></span></label>
+          </div>
+          <div class="card-body">
+            <div class="alert violet">
+              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5Z"/></svg>
+              <div class="body">Periodically sends a camera frame to a vision model. If it detects a print failure (spaghetti, detachment, …) it can fire a notification or trigger actions. Frames &amp; replies are kept as evidence in History.</div>
+            </div>
+
+            <div class="row gap-sm">
+              <div class="field" style="flex:1;margin-bottom:0">
+                <div class="row" style="justify-content:space-between">
+                  <label class="label" style="margin:0">Check interval</label>
+                  <span class="mono tiny">every 90 s</span>
+                </div>
+                <input type="range" class="range" min="30" max="600" step="15" value="90" />
+                <div class="row tiny muted" style="justify-content:space-between"><span>30s</span><span>10m</span></div>
+              </div>
+              <div class="field" style="flex:1;margin-bottom:0">
+                <label class="label">Model</label>
+                <select class="select"><option>OpenAI · gpt-4o-mini</option><option selected>Anthropic · Claude Haiku</option><option>Google · Gemini Flash</option><option>Local · qwen-vl</option></select>
+              </div>
+            </div>
+
+            <div class="row gap-sm mt-1">
+              <div class="field" style="flex:1;margin-bottom:0">
+                <label class="label">Sensitivity</label>
+                <div class="segmented" style="display:flex;width:100%">
+                  <button style="flex:1">Low</button>
+                  <button class="active" style="flex:1">Medium</button>
+                  <button style="flex:1">High</button>
+                </div>
+                <span class="hint">Higher = more alerts + more false positives.</span>
+              </div>
+              <div class="field" style="flex:1;margin-bottom:0">
+                <label class="label">On failure detected</label>
+                <select class="select">
+                  <option>Notify only</option>
+                  <option selected>Notify + pause</option>
+                  <option>Notify + E-STOP (cut power)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="field row-mode mt-1">
+              <div>
+                <label class="label">Auto-off after sustained failure</label>
+                <span class="hint">Cut socket power if N consecutive checks fail.</span>
+              </div>
+              <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+            </div>
+
+            <div class="field row-mode">
+              <div>
+                <label class="label">Keep evidence frames for</label>
+                <span class="hint">Stored with the print's history entry.</span>
+              </div>
+              <select class="select" style="max-width:160px"><option>30 days</option><option selected>90 days</option><option>forever</option></select>
+            </div>
+
+            <div class="row gap-sm wrap mt-1">
+              <button class="btn primary"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 5 5L20 7"/></svg>Run check now</button>
+              <button class="btn"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>Test prompt</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Animal safety stop -->
+        <div class="card mb-2">
+          <div class="card-head">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--violet)"><circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="4" cy="8" r="2"/><circle cx="11" cy="13" r="4"/><path d="M11 17v4M9 21h4"/></svg>
+            <span class="title">🐾 Animal safety stop</span>
+            <span class="badge violet dot">armed</span>
+            <label class="switch" style="margin-left:auto"><input type="checkbox" checked><span class="slider"></span></label>
+          </div>
+          <div class="card-body">
+            <div class="alert danger">
+              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><path d="M12 9v4M12 17h.01"/></svg>
+              <div class="body"><strong>This cuts power to the printer immediately</strong> when a real, live non-human animal (a curious pet) is spotted in frame. Use only with a smart socket wired up.</div>
+            </div>
+
+            <div class="field">
+              <label class="label">Action</label>
+              <div class="segmented" style="display:flex;width:100%">
+                <button>Notify only</button>
+                <button class="active">Cut socket power</button>
+                <button>Cut power + home Z</button>
+              </div>
+            </div>
+
+            <div class="row gap-sm">
+              <div class="field" style="flex:1;margin-bottom:0">
+                <label class="label">Detection model</label>
+                <select class="select"><option selected>YOLO · pets+person</option><option>OpenAI · vision</option></select>
+              </div>
+              <div class="field" style="flex:1;margin-bottom:0">
+                <label class="label">Cool-down before re-arm</label>
+                <select class="select"><option>30 s</option><option selected>2 min</option><option>10 min</option></select>
+              </div>
+            </div>
+
+            <div class="field row-mode mt-1">
+              <div>
+                <label class="label">Confidence threshold</label>
+                <span class="hint">Only fire above this certainty.</span>
+              </div>
+              <span class="mono">68 %</span>
+            </div>
+            <input type="range" class="range" min="40" max="95" value="68" />
+
+            <div class="row gap-sm wrap mt-1">
+              <button class="btn violet" style="background:rgba(183,139,255,.15);border-color:var(--violet);color:var(--violet)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="4" cy="8" r="2"/><circle cx="11" cy="13" r="4"/><path d="M11 17v4M9 21h4"/></svg>Run detection now</button>
+              <span class="tiny muted" style="align-self:center">last triggered: 2 days ago · cat detected</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Filament colour match -->
+        <div class="card">
+          <div class="card-head">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="10.5" r="2.5"/><circle cx="8.5" cy="7.5" r="2.5"/><circle cx="6.5" cy="12.5" r="2.5"/><path d="M12 22a10 10 0 1 1 0-20 7 7 0 0 1 7 7c0 3-2 5-5 5h-1.5a1.5 1.5 0 0 0-1 2.5l.5.5a1.5 1.5 0 0 1-1 2.5Z"/></svg>
+            <span class="title">Filament colour match</span>
+          </div>
+          <div class="card-body">
+            <div class="field row-mode">
+              <div><label class="label">Enable camera colour sampling</label><span class="hint">Detect loaded filament colour and match to library.</span></div>
+              <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+            </div>
+            <div class="field row-mode">
+              <div><label class="label">Sample on every print start</label></div>
+              <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/nav.js"></script>
+  <script>init({ active: "setup", title: "Settings · Camera & AI", subnav: "camera-ai" });</script>
+</body>
+</html>

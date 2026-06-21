@@ -32,10 +32,19 @@ Each page has a banner at the top with quick links to every other page.
 | `slice.html`        | **Slice & Build** — STL/​OpenSCAD input, 3D preview, settings, GCode stats  |
 | `history.html`      | **History** — filterable table, AI evidence frames, model reasoning        |
 | `filaments.html`    | **Filaments** — extrude/​retract, guided swap, library grid, colour match   |
-| `setup.html`        | **Settings** — sub-nav + Appearance panel (theme, accent, density)         |
+| `setup.html`        | **Settings · Appearance** — theme, accent, density, default mode           |
+| `setup-account.html` | **Settings · Account** — AnkerMake login, region, API key, danger zone     |
+| `setup-printer.html` | **Settings · Printer** — active printer details, list, add                 |
+| `setup-tools.html`   | **Settings · Tools** — slicer integration, gcode archive, server           |
+| `setup-notifications.html` | **Settings · Notifications** — channels, event matrix, quiet hours  |
+| `setup-camera-ai.html` | **Settings · Camera & AI** — source, print monitor, 🐾 animal safety stop |
+| `setup-timelapse.html` | **Settings · Timelapse** — capture, storage, gallery, manual controls     |
+| `setup-mqtt.html`   | **Settings · MQTT / API** — HTTP API, broker, PPPP, trusted networks       |
+| `setup-power.html`  | **Settings · Power & Socket** — live state, config, behaviours, usage chart|
+| `setup-homeassistant.html` | **Settings · Home Assistant** — connection, discovery, entity mapping |
 | `beginner.html`     | **Beginner wizard** — all 3 steps (idea → AI → print) shown side-by-side   |
 | `assets/styles.css` | Shared design system (tokens, components, layout)                          |
-| `assets/nav.js`     | Sidebar + topbar + theme toggle bootstrap                                  |
+| `assets/nav.js`     | Sidebar + topbar + subnav + theme toggle bootstrap                         |
 
 ## The three "modes"
 
