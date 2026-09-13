@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version string embedded in binaries (defaults to the selected ref name, e.g. v0.11.0)"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -31,7 +37,7 @@ jobs:
           CGO_ENABLED: "0"
         run: |
           go build \
-            -ldflags "-s -w -X main.Version=${{ github.ref_name }}" \
+            -ldflags "-s -w -X main.Version=${{ inputs.version || github.ref_name }}" \
             -o ankerctl-ng-test \
             ./cmd/ankerctl/
 
@@ -124,7 +130,7 @@ jobs:
           CGO_ENABLED: "0"
         run: |
           go build \
-            -ldflags "-s -w -X main.Version=${{ github.ref_name }}" \
+            -ldflags "-s -w -X main.Version=${{ inputs.version || github.ref_name }}" \
             -o ankerctl-ng-${{ matrix.suffix }} \
             ./cmd/ankerctl/
 
@@ -210,6 +216,6 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            VERSION=${{ github.ref_name }}
+            VERSION=${{ inputs.version || github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

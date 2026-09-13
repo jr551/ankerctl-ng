@@ -364,12 +364,11 @@ code {
 
 .printer-power-value {
     color: var(--bs-body-color);
-    font-size: 1.05rem;
+    font-size: 0.95rem;
     font-weight: 700;
     line-height: 1.2;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
+    white-space: normal;
 }
 
 .printer-power-detail {

@@ -61,8 +61,10 @@ $(function () {
 
     /**
      * Version display + update notification.
-     * Fetches /api/ankerctl/version once on load. Shows version in footer
-     * and a permanent green badge in the header when a newer release is available.
+     * Fetches /api/ankerctl/version once on load. Shows the running build
+     * version in the footer and as a green badge in the sidebar that links to
+     * the matching release tag. When a newer release exists the badge title
+     * says so.
      */
     (function () {
         fetch("/api/ankerctl/version")
@@ -75,11 +77,18 @@ $(function () {
                     $("#ankerctl-version").text(data.current);
                 }
 
-                // Persistent green badge in the navbar — always visible, never dismissible
-                if (data.update_available && data.latest) {
-                    const releaseURL = "https://github.com/jr551/ankerctl-ng/releases/tag/" + encodeURIComponent(data.latest);
-                    $("#update-badge-version").text(data.latest);
-                    $("#update-badge").attr("href", releaseURL).show();
+                // Sidebar badge — always shows the running build version and
+                // links to its release tag (falls back to the releases page).
+                const current = data.current;
+                if (current && current !== "dev") {
+                    const releaseURL = "https://github.com/jr551/ankerctl-ng/releases/tag/" + encodeURIComponent(current);
+                    $("#update-badge-version").text(current);
+                    $("#update-badge")
+                        .attr("href", releaseURL)
+                        .attr("title", data.update_available && data.latest
+                            ? "Update available: " + data.latest
+                            : "ankerctl-ng " + current)
+                        .show();
                 }
             })
             .catch(function () { /* silently ignore if endpoint unavailable */ });
