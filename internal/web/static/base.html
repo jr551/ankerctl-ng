@@ -26,12 +26,16 @@
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-body">
-                    <p>Restarting ankerctl-ng...</p>
-                    <div class="progress">
+                    <p id="popupModal-text">Restarting ankerctl-ng...</p>
+                    <div class="progress" id="popupModal-progress" style="display:none">
                         <div class="progress-bar progress-bar-striped progress-bar-animated w-100" role="progressbar"
                             aria-valuenow="100" aria-valuemin="0" aria-valuemax="100" style="width: 100%">
                         </div>
                     </div>
+                </div>
+                <div class="modal-footer" id="popupModal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="popupModal-confirm">Reload now</button>
                 </div>
             </div>
         </div>
@@ -185,6 +189,10 @@
             });
             var ng = document.getElementById("ng-estop");
             if (ng) ng.addEventListener("click", function () {
+                if (typeof window.ankerctlEmergencyStop === "function") {
+                    window.ankerctlEmergencyStop(ng);
+                    return;
+                }
                 var real = document.getElementById("emergency-stop");
                 if (real) real.click();
             });

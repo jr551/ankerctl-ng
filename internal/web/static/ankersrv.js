@@ -86,14 +86,30 @@ $(function () {
     }());
 
     /**
-     * Redirect page when modal dialog is shown
+     * Reload-services modal: shows a confirm step first; only the explicit
+     * "Reload now" button navigates to the reload endpoint.
      */
     var popupModal = document.getElementById("popupModal");
 
     if (popupModal) {
-        popupModal.addEventListener("shown.bs.modal", function (e) {
-            window.location.href = $("#reload").data("href");
+        var popupText = document.getElementById("popupModal-text");
+        var popupFooter = document.getElementById("popupModal-footer");
+        var popupConfirm = document.getElementById("popupModal-confirm");
+        var reloadHref = "";
+        popupModal.addEventListener("show.bs.modal", function () {
+            reloadHref = $("#reload").data("href") || "";
+            if (popupText) popupText.textContent = "Restart all ankerctl-ng services (MQTT, video, PPPP)?";
+            if (popupFooter) popupFooter.style.display = "";
         });
+        if (popupConfirm) {
+            popupConfirm.addEventListener("click", function () {
+                if (popupText) popupText.textContent = "Restarting ankerctl-ng...";
+                var prog = document.getElementById("popupModal-progress");
+                if (prog) prog.style.display = "";
+                if (popupFooter) popupFooter.style.display = "none";
+                if (reloadHref) window.location.href = reloadHref;
+            });
+        }
     }
 
     /**
@@ -370,10 +386,15 @@ $(function () {
             var ws = this.ws = new WebSocket(this.url);
             if (this.binary)
                 ws.binaryType = "arraybuffer";
-            ws.addEventListener("open", this._open.bind(this));
-            ws.addEventListener("close", this._close.bind(this));
-            ws.addEventListener("error", this._error.bind(this));
-            ws.addEventListener("message", this._message.bind(this));
+            // Guard every handler against events from a superseded socket:
+            // after a reconnect, a late close/error/message on the old socket
+            // must not clobber the new connection's state or schedule a
+            // duplicate reconnect.
+            const current = (fn) => (ev) => { if (this.ws === ws) fn.call(this, ev); };
+            ws.addEventListener("open", current(this._open));
+            ws.addEventListener("close", current(this._close));
+            ws.addEventListener("error", current(this._error));
+            ws.addEventListener("message", current(this._message));
         }
     }
 
@@ -939,7 +960,7 @@ $(function () {
             } else if (data.commandType == 1043) {
                 // GCode command response — printer echoes back result text
                 const result = data.cmdResult || data.result || "";
-                if (result) { gcodeLog(`↩ ${result}`); }
+                if (result) { addCommandFeed(`gcode reply: ${result}`); }
             } else if (data.commandType == 1044) {
                 // Print start notification — extract basename from filePath, reset progress.
                 // The printer runs a prepare macro (homing, heating, priming, mesh leveling)
@@ -2039,33 +2060,37 @@ $(function () {
                 form_data.append(pair[0], pair[1]);
             }
 
-            const resp = await fetch(url, {
-                method: 'POST',
-                body: form_data
-            });
+            try {
+                const resp = await fetch(url, {
+                    method: 'POST',
+                    body: form_data
+                });
 
-            if (resp.status < 300) {
-                const data = await resp.json();
-                const input = $("#loginCaptchaText");
-                if ("redirect" in data) {
-                    document.location = data["redirect"];
+                if (resp.status < 300) {
+                    const data = await resp.json();
+                    const input = $("#loginCaptchaText");
+                    if ("redirect" in data) {
+                        document.location = data["redirect"];
+                    }
+                    else if ("error" in data) {
+                        flash_message(data["error"], "danger");
+                        input.get(0).focus();
+                    }
+                    else if ("captcha_id" in data) {
+                        input.val("");
+                        input.attr("aria-required", "true");
+                        input.prop("required", true);
+                        input.get(0).focus();
+                        $("#loginCaptchaId").val(data["captcha_id"]);
+                        $("#loginCaptchaImg").attr("src", data["captcha_url"]);
+                        $("#captchaRow").show();
+                    }
                 }
-                else if ("error" in data) {
-                    flash_message(data["error"], "danger");
-                    input.get(0).focus();
+                else {
+                    flash_message(`HTTP Error ${resp.status}: ${resp.statusText}`, "danger")
                 }
-                else if ("captcha_id" in data) {
-                    input.val("");
-                    input.attr("aria-required", "true");
-                    input.prop("required", true);
-                    input.get(0).focus();
-                    $("#loginCaptchaId").val(data["captcha_id"]);
-                    $("#loginCaptchaImg").attr("src", data["captcha_url"]);
-                    $("#captchaRow").show();
-                }
-            }
-            else {
-                flash_message(`HTTP Error ${resp.status}: ${resp.statusText}`, "danger")
+            } catch (err) {
+                flash_message(`Login request failed: ${err.message || err}`, "danger");
             }
         })();
     });
@@ -2076,23 +2101,27 @@ $(function () {
         form_data.append("upload_rate_mbps", rate);
 
         (async () => {
-            const resp = await fetch("/api/ankerctl/config/upload-rate", {
-                method: "POST",
-                body: form_data,
-            });
-            if (resp.ok) {
-                const data = await resp.json().catch(() => ({}));
-                const effectiveRate = data.effective_upload_rate_mbps ?? rate;
-                const effectiveSource = data.effective_upload_rate_source || "config";
-                if (effectiveSource === "config") {
-                    flash_message(`Upload rate set to ${effectiveRate} Mbps`, "success");
+            try {
+                const resp = await fetch("/api/ankerctl/config/upload-rate", {
+                    method: "POST",
+                    body: form_data,
+                });
+                if (resp.ok) {
+                    const data = await resp.json().catch(() => ({}));
+                    const effectiveRate = data.effective_upload_rate_mbps ?? rate;
+                    const effectiveSource = data.effective_upload_rate_source || "config";
+                    if (effectiveSource === "config") {
+                        flash_message(`Upload rate set to ${effectiveRate} Mbps`, "success");
+                    } else {
+                        flash_message(`Saved ${rate} Mbps, but effective upload rate is ${effectiveRate} Mbps from ${effectiveSource}`, "warning");
+                    }
                 } else {
-                    flash_message(`Saved ${rate} Mbps, but effective upload rate is ${effectiveRate} Mbps from ${effectiveSource}`, "warning");
+                    const data = await resp.json().catch(() => ({}));
+                    const msg = data.error ? data.error : `HTTP ${resp.status}`;
+                    flash_message(`Failed to update upload rate: ${msg}`, "danger");
                 }
-            } else {
-                const data = await resp.json().catch(() => ({}));
-                const msg = data.error ? data.error : `HTTP ${resp.status}`;
-                flash_message(`Failed to update upload rate: ${msg}`, "danger");
+            } catch (err) {
+                flash_message(`Failed to update upload rate: ${err.message || err}`, "danger");
             }
         })();
     });
@@ -2311,10 +2340,12 @@ $(function () {
     $("#control-home-all").on("click", function () { sendPrinterGCode("G28"); return false; });
 
     // Emergency stop — cut printer power via the smart socket immediately.
-    $("#emergency-stop").on("click", function () {
+    // Exposed globally so the always-visible topbar E-STOP works even when the
+    // dashboard control card (and its #emergency-stop button) isn't rendered.
+    window.ankerctlEmergencyStop = function (btn) {
         if (!confirm("EMERGENCY STOP — cut power to the printer NOW? This stops the print immediately.")) return;
-        const btn = $(this);
-        btn.prop("disabled", true);
+        const $btn = $(btn);
+        $btn.prop("disabled", true);
         fetch("/api/smart-socket/control", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -2326,7 +2357,11 @@ $(function () {
                 else flash_message("E-STOP failed: " + (d.error || r.statusText) + (r.status === 400 ? " (configure the smart socket in Camera & AI)" : ""), "danger");
             })
             .catch((e) => flash_message("E-STOP error: " + e.message, "danger"))
-            .finally(() => btn.prop("disabled", false));
+            .finally(() => $btn.prop("disabled", false));
+    };
+
+    $("#emergency-stop").on("click", function () {
+        window.ankerctlEmergencyStop(this);
         return false;
     });
 
@@ -2903,7 +2938,8 @@ $(function () {
             const resp = await fetch("/api/printer/z-offset");
             if (resp.ok) {
                 const data = await resp.json();
-                display.textContent = data.z_offset_mm.toFixed(2) + " mm";
+                const mm = data.z_offset && Number.isFinite(data.z_offset.mm) ? data.z_offset.mm : null;
+                display.textContent = mm !== null ? mm.toFixed(2) + " mm" : "-- mm";
                 if (statusEl) { statusEl.textContent = ""; statusEl.className = "small mt-1"; }
             } else {
                 const err = await resp.json().catch(() => ({}));
@@ -3048,168 +3084,6 @@ $(function () {
             })
             .catch(err => alert("Snapshot failed: " + err.message))
             .finally(() => btn.prop("disabled", false));
-    });
-
-    /**
-     * GCode Console
-     */
-    function gcodeLog(msg) {
-        const log = $("#gcode-log");
-        const logEl = log.get(0);
-        if (!logEl) return;
-        const ts = new Date().toLocaleTimeString();
-        const line = document.createTextNode(`[${ts}] ${msg}\n`);
-        log.append(line);
-        logEl.scrollTop = logEl.scrollHeight;
-    }
-
-    function normalizeGCodeText(gcode) {
-        if (!gcode) return "";
-        return gcode
-            .split(/\r?\n/)
-            .map(line => line.split(";", 1)[0].trim())
-            .filter(line => line.length > 0)
-            .join("\n");
-    }
-
-    function looksLikeGCodeJob(gcode) {
-        if (!gcode) return false;
-        const nonEmptyLines = gcode.split(/\r?\n/).filter(line => line.trim().length > 0).length;
-        return nonEmptyLines >= 100
-            || /(^|\n)\s*;LAYER_COUNT:/i.test(gcode)
-            || /(^|\n)\s*; estimated printing time/i.test(gcode)
-            || /(^|\n)\s*; generated by /i.test(gcode);
-    }
-
-    function setGCodeConsoleBusy(busy) {
-        $("#gcode-file-send").prop("disabled", busy);
-        $("#gcode-text-send").prop("disabled", busy);
-        $("#gcode-file").prop("disabled", busy);
-        $("#gcode-input").prop("disabled", busy);
-    }
-
-    async function sendGCodeWithLog(gcode) {
-        const normalized = normalizeGCodeText(gcode);
-        if (!normalized) {
-            gcodeLog("✗ No executable GCode found");
-            return false;
-        }
-        gcodeLog(`» ${normalized.replace(/\n/g, " | ")}`);
-        logInstructionLines("console", normalized, "info");
-        const resp = await fetch("/api/printer/gcode", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ gcode: normalized })
-        });
-        const data = await resp.json().catch(() => ({}));
-        if (resp.ok) {
-            gcodeLog("✓ Sent successfully");
-            return true;
-        }
-        gcodeLog(`✗ Error ${resp.status}: ${data.error || "Unknown error"}`);
-        return false;
-    }
-
-    async function uploadGCodeFileWithLog(file, startPrint = true) {
-        if (!file) {
-            gcodeLog("✗ No file selected");
-            return false;
-        }
-        const formData = new FormData();
-        formData.append("file", file, file.name);
-        formData.append("print", startPrint ? "true" : "false");
-        const action = startPrint ? "Uploading print job" : "Uploading file";
-        gcodeLog(`» ${action}: ${file.name} (${formatBytes(file.size)})`);
-        setUploadActive(true);
-        startDashboardUpload(file.name, file.size);
-        let resp;
-        try {
-            resp = await fetch("/api/files/local", {
-                method: "POST",
-                body: formData,
-            });
-        } catch (err) {
-            setUploadActive(false);
-            failDashboardUpload(err.message || "Request failed");
-            throw err;
-        }
-        if (resp.ok) {
-            const data = await resp.json().catch(() => ({}));
-            const rate = data.upload_rate_mbps;
-            const source = data.upload_rate_source;
-            const rateText = rate ? ` using ${rate} Mbps (${source})` : "";
-            const tempOverride = data.temperature_overrides || {};
-            if (tempOverride.applied) {
-                addCommandFeed(
-                    `upload override: nozzle ${tempOverride.nozzle_commands || 0}, bed ${tempOverride.bed_commands || 0}`,
-                    "warn",
-                );
-            }
-            setUploadActive(false);
-            completeDashboardUpload(file.name, file.size, ($("#print-name").text() || "").trim());
-            gcodeLog(startPrint
-                ? `✓ Upload complete${rateText}, printer start acknowledged`
-                : `✓ Upload complete${rateText}`);
-            return true;
-        }
-        setUploadActive(false);
-        const text = (await resp.text()).trim();
-        failDashboardUpload(text || "Upload failed");
-        gcodeLog(`✗ Error ${resp.status}: ${text || "Upload failed"}`);
-        return false;
-    }
-
-    // File upload via PPPP (same path as slicers — /api/files/local)
-    $("#gcode-file-send").on("click", async function () {
-        const fileInput = document.getElementById("gcode-file");
-        if (!fileInput.files.length) {
-            gcodeLog("✗ No file selected");
-            return;
-        }
-        setGCodeConsoleBusy(true);
-        try {
-            const ok = await uploadGCodeFileWithLog(fileInput.files[0], true);
-            if (ok) fileInput.value = "";
-        } catch (err) {
-            gcodeLog(`✗ Failed: ${err.message}`);
-        } finally {
-            setGCodeConsoleBusy(false);
-        }
-    });
-
-    // Custom text input
-    $("#gcode-text-send").on("click", async function () {
-        const input = $("#gcode-input");
-        const raw = input.val();
-        if (!raw || !raw.trim()) {
-            gcodeLog("✗ No GCode entered");
-            return;
-        }
-        setGCodeConsoleBusy(true);
-        try {
-            let ok = false;
-            if (looksLikeGCodeJob(raw)) {
-                const filename = `custom-gcode-${Date.now()}.gcode`;
-                const file = new File([raw], filename, { type: "text/plain" });
-                gcodeLog("Detected slicer-style GCode job, using file upload path");
-                ok = await uploadGCodeFileWithLog(file, true);
-            } else {
-                ok = await sendGCodeWithLog(raw);
-            }
-            if (ok) input.val("");
-        } catch (err) {
-            gcodeLog(`✗ Failed: ${err.message}`);
-        } finally {
-            setGCodeConsoleBusy(false);
-        }
-    });
-
-    // Enter key in textarea sends
-    $("#gcode-input").on("keydown", function (e) {
-        if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            $("#gcode-text-send").click();
-        }
     });
 
     $("#print-pause").on("click", function () {
@@ -3385,7 +3259,7 @@ $(function () {
                     tbody.html('<tr><td colspan="6" class="text-center text-muted py-4">No history yet</td></tr>');
                 }
                 data.entries.forEach(e => {
-                    const started = e.started_at ? new Date(e.started_at + "Z").toLocaleString() : "-";
+                    const started = e.started_at ? new Date(e.started_at).toLocaleString() : "-";
                     const safeFilename = escapeHtml(e.filename);
                     const viewBtn = e.archive_relpath
                         ? `<button class="btn btn-sm btn-link p-0 ms-1 gcode-view-btn" data-id="${e.id}" data-filename="${safeFilename}" title="View GCode toolpath" aria-label="View GCode toolpath"><i class="bi-bounding-box"></i></button>`
@@ -3457,7 +3331,12 @@ $(function () {
                     $("#history-load-more").hide();
                 }
             })
-            .catch(err => console.error("History load failed:", err));
+            .catch(err => {
+                console.error("History load failed:", err);
+                if (!append) {
+                    $("#history-tbody").html('<tr><td colspan="6" class="text-center text-danger py-4">Failed to load history</td></tr>');
+                }
+            });
     }
 
     // Load on tab switch — use native addEventListener because Cash.js splits
@@ -3479,10 +3358,12 @@ $(function () {
     $("#history-clear").on("click", function () {
         if (!confirm("Clear all print history?")) return;
         fetch("/api/history", { method: "DELETE" })
-            .then(() => {
+            .then((r) => {
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
                 historyOffset = 0;
                 loadHistory(false);
-            });
+            })
+            .catch((err) => flash_message(`Failed to clear history: ${err.message}`, "danger"));
     });
 
     // ── GCode toolpath viewer ───────────────────────────────────────────
@@ -3720,7 +3601,11 @@ $(function () {
                     list.appendChild(item);
                 });
             })
-            .catch(err => console.error("Timelapse load failed:", err));
+            .catch(err => {
+                console.error("Timelapse load failed:", err);
+                const list = document.getElementById("timelapse-list");
+                if (list) list.innerHTML = '<div class="text-center text-danger py-4">Failed to load timelapses</div>';
+            });
     }
 
     // Load on tab show; auto-refresh every 15 s while active.
@@ -3746,7 +3631,8 @@ $(function () {
         const file = $(this).data("file");
         if (!confirm(`Delete timelapse ${file}?`)) return;
         fetch(`/api/timelapse/${encodeURIComponent(file)}`, { method: "DELETE" })
-            .then(() => {
+            .then((r) => {
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
                 // If the deleted video is currently loaded in the player, clear it
                 const videoEl     = document.getElementById("timelapse-player");
                 const card        = document.getElementById("timelapse-player-card");
@@ -3757,7 +3643,8 @@ $(function () {
                     if (placeholder) placeholder.style.display = "";
                 }
                 loadTimelapses();
-            });
+            })
+            .catch((err) => flash_message(`Failed to delete timelapse: ${err.message}`, "danger"));
     });
 
     /**
@@ -5542,7 +5429,9 @@ $(function () {
                     const safeMaterial = escapeHtml(p.material || "");
                     const safeBrand    = escapeHtml(p.brand || "");
                     const safeId       = parseInt(p.id, 10);
-                    const dotColor     = escapeHtml(p.color || "#FFFFFF");
+                    // Color goes into a style attribute, so validate it is a
+                    // plain hex color — escapeHtml alone can't stop CSS injection.
+                    const dotColor     = /^#[0-9a-fA-F]{3,8}$/.test((p.color || "").trim()) ? p.color.trim() : "#FFFFFF";
                     const colorDot     = `<span style="display:inline-block;width:1.1rem;height:1.1rem;border-radius:50%;background:${dotColor};border:1px solid #aaa;vertical-align:middle;box-shadow:inset 0 0 0 1px rgba(0,0,0,0.08);"></span>`;
                     const tr = document.createElement("tr");
                     tr.innerHTML = `
@@ -5609,7 +5498,11 @@ $(function () {
                 filamentSyncQuickServiceTemp();
                 _renderFilaments();
             })
-            .catch(err => console.error("Filaments load failed:", err));
+            .catch(err => {
+                console.error("Filaments load failed:", err);
+                const tbody = document.getElementById("filaments-tbody");
+                if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="text-center text-danger py-4">Failed to load filament profiles</td></tr>';
+            });
     }
 
     // Sort button

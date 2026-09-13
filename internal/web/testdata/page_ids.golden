@@ -221,17 +221,10 @@ filaments
 filaments-tab
 filaments-table
 filaments-tbody
-gcode
 gcode-canvas
-gcode-custom-section
-gcode-file
-gcode-file-send
-gcode-input
 gcode-layer-label
 gcode-layer-slider
-gcode-log
 gcode-show-travel
-gcode-text-send
 gcode-viewer-modal
 gcode-viewer-status
 gcode-viewer-title

@@ -5,7 +5,6 @@ ankerctl-ng{{if .Printer}} - {{.Printer.Name}}{{end}}
 {{define "contents"}}
 {{if .Configure}}
 {{template "tabs/home.html" .}}
-{{template "tabs/gcode.html" .}}
 {{template "tabs/slice.html" .}}
 {{template "tabs/history.html" .}}
 {{template "tabs/filaments.html" .}}

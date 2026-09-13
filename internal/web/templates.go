@@ -41,7 +41,6 @@ func newTemplates() (*Templates, error) {
 		"static/index.html",
 		"static/tabs/debug.html",
 		"static/tabs/filaments.html",
-		"static/tabs/gcode.html",
 		"static/tabs/history.html",
 		"static/tabs/home.html",
 		"static/tabs/instructions.html",
