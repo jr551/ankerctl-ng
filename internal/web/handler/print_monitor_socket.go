@@ -211,7 +211,7 @@ func (h *Handler) SmartSocketControl(w http.ResponseWriter, r *http.Request) {
 	if action == "off" {
 		serviceName = "turn_off"
 	}
-	if err := client.CallService(r.Context(), "switch", serviceName, cfg.SmartSocket.SwitchEntity); err != nil {
+	if err := client.CallService(r.Context(), "homeassistant", serviceName, cfg.SmartSocket.SwitchEntity); err != nil {
 		h.writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}

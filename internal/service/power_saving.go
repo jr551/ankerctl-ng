@@ -231,7 +231,10 @@ func (s *PowerSavingService) setSocket(ctx context.Context, cfg model.SmartSocke
 	if on {
 		serviceName = "turn_on"
 	}
-	err := client.CallService(ctx, "switch", serviceName, cfg.SwitchEntity)
+	// Use the domain-agnostic homeassistant.turn_on/turn_off service: it works
+	// for switch.*, light.*, input_boolean.*, etc. Calling switch.turn_off on a
+	// non-switch entity makes HA return HTTP 400.
+	err := client.CallService(ctx, "homeassistant", serviceName, cfg.SwitchEntity)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.lastAction = action
