@@ -894,3 +894,13 @@ code {
     box-shadow: 0 2px 8px rgba(0,0,0,.4);
 }
 .autooff-banner.d-none { display: none; }
+
+/* File inputs inside .input-group have a native min-width that overflows
+   narrow (mobile) viewports — let them shrink so the button stays visible. */
+.input-group > .form-control[type="file"] {
+    min-width: 0;
+    flex: 1 1 0;
+    width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

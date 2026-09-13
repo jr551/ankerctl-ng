@@ -845,6 +845,9 @@ if (fileInput) {
         const KID_FUN = ["Designing the model…", "Generating the shape…", "Refining the model…", "Preparing it…"];
         if (kid.toggle) kid.toggle.addEventListener("click", () => { kidStep("choose"); kidShow(true); });
         if (kid.exit) kid.exit.addEventListener("click", () => kidShow(false));
+        document.addEventListener("keydown", (e) => {
+            if (e.key === "Escape" && !kid.overlay.classList.contains("d-none")) kidShow(false);
+        });
         if (kid.file) kid.file.addEventListener("change", () => { kidFile = kid.file.files && kid.file.files[0]; kid.filename.textContent = kidFile ? "📦 " + kidFile.name : ""; });
         if (kid.again) kid.again.addEventListener("click", () => { kidStep("choose"); kid.make.disabled = false; kid.prompt.value = ""; kidFile = null; if (kid.file) kid.file.value = ""; kid.filename.textContent = ""; });
 
