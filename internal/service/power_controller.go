@@ -52,7 +52,7 @@ func (c *smartSocketPowerController) PowerCycle(ctx context.Context) error {
 	client := NewHomeAssistantClient(ss.BaseURL, ss.Token)
 
 	c.log.Warn("power-controller: turning printer socket OFF")
-	if err := client.CallService(ctx, "switch", "turn_off", ss.SwitchEntity); err != nil {
+	if err := client.CallService(ctx, "homeassistant", "turn_off", ss.SwitchEntity); err != nil {
 		return fmt.Errorf("power-controller: turn off: %w", err)
 	}
 
@@ -63,7 +63,7 @@ func (c *smartSocketPowerController) PowerCycle(ctx context.Context) error {
 	}
 
 	c.log.Warn("power-controller: turning printer socket ON")
-	if err := client.CallService(ctx, "switch", "turn_on", ss.SwitchEntity); err != nil {
+	if err := client.CallService(ctx, "homeassistant", "turn_on", ss.SwitchEntity); err != nil {
 		return fmt.Errorf("power-controller: turn on: %w", err)
 	}
 

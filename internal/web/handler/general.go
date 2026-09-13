@@ -1,11 +1,14 @@
 package handler
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"strings"
+	"syscall"
 
 	"github.com/django1982/ankerctl/internal/model"
 	"github.com/django1982/ankerctl/internal/service"
@@ -76,6 +79,13 @@ func (h *Handler) Root(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.render(w, "base.html", data); err != nil {
+		// A client that disconnects mid-render surfaces as ECONNRESET/EPIPE —
+		// benign noise, not a server fault. Log at debug and skip the 500
+		// (the connection is already gone anyway).
+		if errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE) || errors.Is(err, context.Canceled) {
+			h.log.Debug("render root: client disconnected", "error", err)
+			return
+		}
 		h.log.Error("render root", "error", err)
 		h.writeError(w, http.StatusInternalServerError, "rendering failed")
 	}

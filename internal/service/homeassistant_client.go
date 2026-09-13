@@ -84,23 +84,15 @@ func (c *HomeAssistantClient) State(ctx context.Context, entityID string) (HomeA
 	return state, nil
 }
 
+// CallService invokes a Home Assistant service for a single entity.
+// It delegates to CallServiceData so error messages include the response
+// body returned by Home Assistant (essential for diagnosing HTTP 400s).
 func (c *HomeAssistantClient) CallService(ctx context.Context, domain, serviceName, entityID string) error {
-	domain = strings.TrimSpace(domain)
-	serviceName = strings.TrimSpace(serviceName)
 	entityID = strings.TrimSpace(entityID)
-	if domain == "" || serviceName == "" || entityID == "" {
-		return fmt.Errorf("homeassistant: domain, service and entity_id are required")
+	if entityID == "" {
+		return fmt.Errorf("homeassistant: entity_id is required")
 	}
-	payload := strings.NewReader(fmt.Sprintf(`{"entity_id":%q}`, entityID))
-	resp, err := c.request(ctx, http.MethodPost, "/api/services/"+domain+"/"+serviceName, payload)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("homeassistant: service %s.%s returned HTTP %d", domain, serviceName, resp.StatusCode)
-	}
-	return nil
+	return c.CallServiceData(ctx, domain, serviceName, map[string]string{"entity_id": entityID})
 }
 
 func (c *HomeAssistantClient) CallServiceData(ctx context.Context, domain, serviceName string, data any) error {

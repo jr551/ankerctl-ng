@@ -466,7 +466,7 @@ func (s *PrintMonitorService) emergencyStopForAnimal(ctx context.Context, result
 		if cfg, err := s.cfgMgr.Load(); err == nil && cfg != nil {
 			if cfg.SmartSocket.Enabled && strings.TrimSpace(cfg.SmartSocket.SwitchEntity) != "" {
 				client := NewHomeAssistantClient(cfg.SmartSocket.BaseURL, cfg.SmartSocket.Token)
-				if err := client.CallService(ctx, "switch", "turn_off", cfg.SmartSocket.SwitchEntity); err != nil {
+				if err := client.CallService(ctx, "homeassistant", "turn_off", cfg.SmartSocket.SwitchEntity); err != nil {
 					if s.log != nil {
 						s.log.Error("failed to cut printer power after animal detection", "err", err)
 					}
@@ -1085,7 +1085,7 @@ func (s *PrintMonitorService) scheduleGracefulOff(ctx context.Context, result Pr
 		cctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		client := NewHomeAssistantClient(base, token)
-		if err := client.CallService(cctx, "switch", "turn_off", sw); err != nil {
+		if err := client.CallService(cctx, "homeassistant", "turn_off", sw); err != nil {
 			if s.log != nil {
 				s.log.Error("failed to cut printer power after failure grace period", "err", err)
 			}

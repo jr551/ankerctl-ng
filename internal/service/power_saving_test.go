@@ -18,7 +18,7 @@ func TestPowerSavingWakeForDashboardSkipsDuplicateTurnOn(t *testing.T) {
 	svc.wakeForDashboard(context.Background())
 	svc.wakeForDashboard(context.Background())
 
-	if got := calls.count("/api/services/switch/turn_on"); got != 1 {
+	if got := calls.count("/api/services/homeassistant/turn_on"); got != 1 {
 		t.Fatalf("turn_on calls = %d, want 1", got)
 	}
 }
@@ -30,7 +30,7 @@ func TestPowerSavingPrintingStateSkipsDuplicateTurnOn(t *testing.T) {
 	svc.handlePrintState(context.Background(), mqttStatePrinting)
 	svc.handlePrintState(context.Background(), mqttStatePrinting)
 
-	if got := calls.count("/api/services/switch/turn_on"); got != 1 {
+	if got := calls.count("/api/services/homeassistant/turn_on"); got != 1 {
 		t.Fatalf("turn_on calls = %d, want 1", got)
 	}
 }
