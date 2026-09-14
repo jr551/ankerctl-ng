@@ -117,31 +117,32 @@
                                                         name="login_captcha_text" autocomplete="off" value="" />
                                                 </div>
                                             </div>
-                                            <div class="row g-3 justify-content-between">
-                                                <div class="col-md-4">
-                                                    <div class="input-group">
-                                                        <div class="input-group-text">Cloud Region</div>
+                                            <div class="row g-3">
+                                                <div class="col-12">
+                                                    <div class="input-group flex-nowrap">
+                                                        <div class="input-group-text">Region</div>
                                                         <select class="form-select" id="loginRegion"
                                                             name="login_region" aria-label="Cloud Region" required>
-                                                            <option value="">Select your account region...</option>
+                                                            <option value="">Select region</option>
                                                             <option value="us">United States</option>
                                                             <option value="eu">Europe</option>
                                                         </select>
                                                     </div>
                                                 </div>
-                                                <div class="col-md-4">
-                                                    <div class="input-group">
+                                                <div class="col-12">
+                                                    <div class="input-group flex-nowrap">
                                                         <div class="input-group-text">Country</div>
                                                         <select class="form-select" id="loginCountry"
                                                             name="login_country" aria-label="Country"
                                                             data-countrycodes="{{.CountryCodes}}"
                                                             data-country="{{.CurrentCountry}}">
-                                                            <option value="">Please select your country...</option>
+                                                            <option value="">Select country</option>
                                                         </select>
                                                     </div>
                                                 </div>
-
-                                                <div class="col-md-3 justify-content-end d-flex gap-2">
+                                            </div>
+                                            <div class="row g-3">
+                                                <div class="col-12 justify-content-end d-flex gap-2">
                                                     <button class="btn btn-secondary submit text-nowrap" type="submit" id="login">
                                                         <i class="bi-box-arrow-in-right"></i> Fetch
                                                     </button>
