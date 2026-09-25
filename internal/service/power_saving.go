@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -39,6 +40,11 @@ type PowerSavingService struct {
 	lastError   string
 
 	cmdCh chan any
+
+	// Idle turn_off gating: consecutive probe/call failures and the earliest
+	// time the next idle turn_off attempt may run (zero = no backoff pending).
+	failStreak  int
+	nextAttempt time.Time
 }
 
 func NewPowerSavingService(cfgMgr *config.Manager) *PowerSavingService {
@@ -222,10 +228,86 @@ func (s *PowerSavingService) evaluate(ctx context.Context) {
 	if time.Since(*idleSince) < time.Duration(idleOffSec)*time.Second {
 		return
 	}
-	s.setSocket(ctx, cfg, false, "idle cooldown expired")
+	// Backoff gate: after repeated probe/call failures the ticker keeps
+	// running but the next attempt is deferred (1m, 2m, 4m … capped 15m) so a
+	// dead plug or an unreachable HA cannot turn this 15s tick into a retry
+	// storm.
+	s.mu.Lock()
+	if !s.nextAttempt.IsZero() && time.Now().Before(s.nextAttempt) {
+		s.mu.Unlock()
+		return
+	}
+	s.mu.Unlock()
+	// State gate: only issue turn_off when the entity is actually "on". An
+	// already-off socket needs nothing; "unavailable"/"unknown" or a failed
+	// probe must not call the service at all (HA answers 200 for those, which
+	// previously caused an endless re-issue loop).
+	client := NewHomeAssistantClient(cfg.BaseURL, cfg.Token)
+	st, err := client.State(ctx, cfg.SwitchEntity)
+	if err != nil {
+		s.noteFailure(err, "state probe failed")
+		return
+	}
+	switch strings.ToLower(strings.TrimSpace(st.State)) {
+	case "on":
+		s.noteSuccess()
+		if err := s.setSocket(ctx, cfg, false, "idle cooldown expired"); err != nil {
+			s.noteFailure(err, "turn_off failed")
+		}
+	case "off":
+		// Latched: the socket is already off, nothing to do.
+		s.noteSuccess()
+	default: // unavailable, unknown, …
+		s.noteFailure(fmt.Errorf("entity %s is %s", cfg.SwitchEntity, st.State), "entity not controllable")
+	}
 }
 
-func (s *PowerSavingService) setSocket(ctx context.Context, cfg model.SmartSocketConfig, on bool, action string) {
+// noteFailure records a failed state probe or socket call and defers the next
+// idle turn_off attempt by an exponentially growing delay. It logs at DEBUG:
+// no service call was issued, so a WARN would only re-emit the same non-action.
+func (s *PowerSavingService) noteFailure(err error, reason string) {
+	s.mu.Lock()
+	s.failStreak++
+	delay := powerSavingBackoff(s.failStreak)
+	s.nextAttempt = time.Now().Add(delay)
+	s.lastError = err.Error()
+	s.mu.Unlock()
+	if s.log != nil {
+		s.log.Debug("power saving turn_off deferred", "reason", reason, "err", err, "retry_in", delay)
+	}
+}
+
+// noteSuccess clears the failure backoff after HA answered a state probe (or,
+// via setSocket, after a successful service call).
+func (s *PowerSavingService) noteSuccess() {
+	s.mu.Lock()
+	s.failStreak = 0
+	s.nextAttempt = time.Time{}
+	s.lastError = ""
+	s.mu.Unlock()
+}
+
+// powerSavingBackoff maps a consecutive-failure count to the delay before the
+// next attempt: 1m, 2m, 4m, 8m … capped at 15m.
+func powerSavingBackoff(failures int) time.Duration {
+	const (
+		base = time.Minute
+		max  = 15 * time.Minute
+	)
+	if failures <= 0 {
+		return 0
+	}
+	if failures > 16 {
+		failures = 16 // 2^15 min already exceeds the cap; avoid overflow
+	}
+	d := base << (failures - 1)
+	if d > max {
+		return max
+	}
+	return d
+}
+
+func (s *PowerSavingService) setSocket(ctx context.Context, cfg model.SmartSocketConfig, on bool, action string) error {
 	client := NewHomeAssistantClient(cfg.BaseURL, cfg.Token)
 	serviceName := "turn_off"
 	if on {
@@ -243,9 +325,12 @@ func (s *PowerSavingService) setSocket(ctx context.Context, cfg model.SmartSocke
 		if s.log != nil {
 			s.log.Warn("power saving socket action failed", "action", action, "err", err)
 		}
-		return
+		return err
 	}
 	s.lastError = ""
+	s.failStreak = 0
+	s.nextAttempt = time.Time{}
+	return nil
 }
 
 func (s *PowerSavingService) loadSmartSocketConfig() model.SmartSocketConfig {
