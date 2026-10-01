@@ -97,6 +97,7 @@ type MqttQueue struct {
 	filamentIssueCode      string
 	runoutPending          bool
 	pendingStoredFilePath  string
+	pendingStoredFileSince time.Time
 	storedFilePreviewCache map[string]string
 
 	// Temperature tracking (populated from ct=1003 / ct=1004 messages).
@@ -214,6 +215,7 @@ func (q *MqttQueue) resetPrintStateLocked() {
 	q.filamentIssueCode = ""
 	q.runoutPending = false
 	q.pendingStoredFilePath = ""
+	q.pendingStoredFileSince = time.Time{}
 	q.nozzleTemp = nil
 	q.nozzleTempTarget = nil
 	q.bedTemp = nil
@@ -486,6 +488,9 @@ func (q *MqttQueue) handleCT1044(payload map[string]any) {
 		if _, err := q.history.RecordStart(filename, "", "", 0); err != nil {
 			q.log.Warn("history record start failed", "filename", filename, "err", err)
 		}
+		if err := q.history.MarkPrintStarted(filename, ""); err != nil {
+			q.log.Warn("history mark print started failed", "filename", filename, "err", err)
+		}
 	}
 }
 
@@ -517,6 +522,7 @@ func (q *MqttQueue) handleCT1000(payload map[string]any) {
 			q.printActive = true
 			q.firstLayerNotified = false
 			q.pendingStoredFilePath = ""
+			q.pendingStoredFileSince = time.Time{}
 			if q.lastFilename != "" {
 				shouldRecord = true
 				filename = q.lastFilename
@@ -526,6 +532,7 @@ func (q *MqttQueue) handleCT1000(payload map[string]any) {
 		}
 	case mqttStatePaused:
 		q.pendingStoredFilePath = ""
+		q.pendingStoredFileSince = time.Time{}
 		if q.runoutPending && q.filamentIssue != filamentIssueRunout {
 			q.markFilamentRunoutLocked()
 		}
@@ -561,6 +568,9 @@ func (q *MqttQueue) handleCT1000(payload map[string]any) {
 	if shouldRecord && q.history != nil {
 		if _, err := q.history.RecordStart(filename, "", "", 0); err != nil {
 			q.log.Warn("history record start failed", "filename", filename, "err", err)
+		}
+		if err := q.history.MarkPrintStarted(filename, ""); err != nil {
+			q.log.Warn("history mark print started failed", "filename", filename, "err", err)
 		}
 	}
 }
@@ -599,6 +609,7 @@ func (q *MqttQueue) handlePrintSchedule(payload map[string]any) {
 		q.lastFilename = filename
 		if q.pendingStoredFilePath != "" && filepath.Base(q.pendingStoredFilePath) == filename {
 			q.pendingStoredFilePath = ""
+			q.pendingStoredFileSince = time.Time{}
 		}
 		shouldRecord = q.printActive && q.pendingHistory
 		if shouldRecord {
@@ -641,6 +652,9 @@ func (q *MqttQueue) handlePrintSchedule(payload map[string]any) {
 	if shouldRecord && q.history != nil {
 		if _, err := q.history.RecordStart(filename, "", "", 0); err != nil {
 			q.log.Warn("history record start failed", "filename", filename, "err", err)
+		}
+		if err := q.history.MarkPrintStarted(filename, ""); err != nil {
+			q.log.Warn("history mark print started failed", "filename", filename, "err", err)
 		}
 	}
 
@@ -1109,6 +1123,20 @@ func (q *MqttQueue) IsPrinting() bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	return q.printActive || q.currentPrinterStat == mqttStatePrinting || q.currentPrinterStat == mqttStatePaused
+}
+
+// ActivePrintFilename returns the filename of the most recent print, or "".
+func (q *MqttQueue) ActivePrintFilename() string {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.lastFilename
+}
+
+// PrintActive reports whether the printer is actively printing.
+func (q *MqttQueue) PrintActive() bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.printActive
 }
 
 // SetDebugLogging enables/disables verbose payload logging.

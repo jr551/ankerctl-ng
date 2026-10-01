@@ -290,10 +290,44 @@ func (q *MqttQueue) HasPendingStoredFileStart() bool {
 	return strings.TrimSpace(q.pendingStoredFilePath) != ""
 }
 
+// PendingStoredFileStart reports the in-flight stored-file start path and the
+// time it was registered. ok is false when no start is pending.
+func (q *MqttQueue) PendingStoredFileStart() (string, time.Time, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if strings.TrimSpace(q.pendingStoredFilePath) == "" {
+		return "", time.Time{}, false
+	}
+	return q.pendingStoredFilePath, q.pendingStoredFileSince, true
+}
+
+// ClearPendingStoredFileStart clears an in-flight stored-file start and reports
+// whether anything was cleared. The job reaper uses it to drop a start that
+// never produced a printing state.
+func (q *MqttQueue) ClearPendingStoredFileStart() bool {
+	q.mu.Lock()
+	path := q.pendingStoredFilePath
+	since := q.pendingStoredFileSince
+	q.pendingStoredFilePath = ""
+	q.pendingStoredFileSince = time.Time{}
+	q.mu.Unlock()
+
+	if strings.TrimSpace(path) == "" {
+		return false
+	}
+	var ageSec int64
+	if !since.IsZero() {
+		ageSec = int64(time.Since(since).Seconds())
+	}
+	q.log.Info("cleared stale pending stored-file start", "path", path, "age_sec", ageSec)
+	return true
+}
+
 func (q *MqttQueue) clearPendingStoredFileStart(filePath string) {
 	q.mu.Lock()
 	if filePath == "" || q.pendingStoredFilePath == filePath {
 		q.pendingStoredFilePath = ""
+		q.pendingStoredFileSince = time.Time{}
 	}
 	q.mu.Unlock()
 }
@@ -531,6 +565,7 @@ func (q *MqttQueue) StartStoredFile(ctx context.Context, filePath, userName, use
 
 	q.mu.Lock()
 	q.pendingStoredFilePath = filePath
+	q.pendingStoredFileSince = time.Now()
 	q.lastFilename = filepath.Base(filePath)
 	q.mu.Unlock()
 
