@@ -21,6 +21,7 @@ type Config struct {
 	Camera               CameraConfig               `json:"-"`
 	PrintMonitor         PrintMonitorConfig         `json:"-"`
 	SmartSocket          SmartSocketConfig          `json:"-"`
+	Jobs                 JobsConfig                 `json:"-"`
 }
 
 // configJSON is the JSON wire format for Config.
@@ -39,6 +40,7 @@ type configJSON struct {
 	Camera               json.RawMessage `json:"camera,omitempty"`
 	PrintMonitor         json.RawMessage `json:"print_monitor,omitempty"`
 	SmartSocket          json.RawMessage `json:"smart_socket,omitempty"`
+	Jobs                 json.RawMessage `json:"jobs,omitempty"`
 }
 
 // NewConfig creates a Config with default settings.
@@ -57,6 +59,7 @@ func NewConfig(account *Account, printers []Printer) *Config {
 		Camera:               DefaultCameraConfig(),
 		PrintMonitor:         DefaultPrintMonitorConfig(),
 		SmartSocket:          DefaultSmartSocketConfig(),
+		Jobs:                 DefaultJobsConfig(),
 	}
 }
 
@@ -135,6 +138,11 @@ func (c Config) MarshalJSON() ([]byte, error) {
 		return nil, fmt.Errorf("marshal smart_socket: %w", err)
 	}
 
+	jobsData, err := json.Marshal(c.Jobs)
+	if err != nil {
+		return nil, fmt.Errorf("marshal jobs: %w", err)
+	}
+
 	return json.Marshal(configJSON{
 		Type:                 "Config",
 		Account:              accountData,
@@ -150,6 +158,7 @@ func (c Config) MarshalJSON() ([]byte, error) {
 		Camera:               cameraData,
 		PrintMonitor:         printMonitorData,
 		SmartSocket:          smartSocketData,
+		Jobs:                 jobsData,
 	})
 }
 
@@ -275,6 +284,14 @@ func (c *Config) UnmarshalJSON(data []byte) error {
 	if raw.SmartSocket != nil && string(raw.SmartSocket) != "null" {
 		if err := json.Unmarshal(raw.SmartSocket, &c.SmartSocket); err != nil {
 			c.SmartSocket = DefaultSmartSocketConfig()
+		}
+	}
+
+	// Jobs with defaults merge
+	c.Jobs = DefaultJobsConfig()
+	if raw.Jobs != nil && string(raw.Jobs) != "null" {
+		if err := json.Unmarshal(raw.Jobs, &c.Jobs); err != nil {
+			c.Jobs = DefaultJobsConfig()
 		}
 	}
 

@@ -202,6 +202,9 @@ func runWebserver() error {
 	mqtt := service.NewMqttQueue(cfgMgr, printerIdx, database, ha, timelapse, printMonitor, powerSaving)
 	sm.Register(mqtt)
 
+	jobReaper := service.NewJobReaperService(database, cfgMgr, mqtt)
+	sm.Register(jobReaper)
+
 	notif := notifications.NewNotificationService(cfgMgr, mqtt, video).WithHistory(database)
 	sm.Register(notif)
 	// Let the AI monitor alert the user when its animal-detection emergency stop fires.
@@ -225,6 +228,9 @@ func runWebserver() error {
 		}
 		if _, err := sm.Borrow("powersaving"); err != nil {
 			slog.Warn("failed to start power saving service", "err", err)
+		}
+		if _, err := sm.Borrow("jobreaper"); err != nil {
+			slog.Warn("failed to start job reaper service", "err", err)
 		}
 		if haEnabled {
 			if _, err := sm.Borrow("homeassistant"); err != nil {

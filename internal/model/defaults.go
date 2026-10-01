@@ -426,6 +426,27 @@ func DefaultSmartSocketConfig() SmartSocketConfig {
 	}
 }
 
+// JobsConfig holds background print-job reaper settings.
+//
+// StartTimeoutMinutes is how long a queued print job may stay in the
+// 'started' state without the printer reporting an actual print start before
+// the job reaper auto-cancels it. 0 disables auto-cancel.
+//
+// CheckIntervalSec is how often the reaper scans for stuck jobs
+// (clamped to at least 30 seconds by the service layer).
+type JobsConfig struct {
+	StartTimeoutMinutes int `json:"start_timeout_minutes"`
+	CheckIntervalSec    int `json:"check_interval_sec"`
+}
+
+// DefaultJobsConfig returns the default print-job reaper settings.
+func DefaultJobsConfig() JobsConfig {
+	return JobsConfig{
+		StartTimeoutMinutes: 60,
+		CheckIntervalSec:    300,
+	}
+}
+
 func clampInt(value, minValue, maxValue int) int {
 	if value < minValue {
 		return minValue

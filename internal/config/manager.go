@@ -292,6 +292,7 @@ func MergeConfigPreferences(existing, newConfig *model.Config) *model.Config {
 	newConfig.Camera = existing.Camera
 	newConfig.PrintMonitor = existing.PrintMonitor
 	newConfig.SmartSocket = existing.SmartSocket
+	newConfig.Jobs = existing.Jobs
 
 	return newConfig
 }

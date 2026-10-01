@@ -403,6 +403,23 @@ func TestMergeConfigPreferences_PreservesSmartSocketPowerSaving(t *testing.T) {
 	}
 }
 
+func TestMergeConfigPreferences_PreservesJobs(t *testing.T) {
+	existing := makeTestConfig()
+	existing.Jobs.StartTimeoutMinutes = 15
+	existing.Jobs.CheckIntervalSec = 45
+
+	newCfg := makeTestConfig()
+	newCfg.Jobs = model.DefaultJobsConfig()
+
+	result := MergeConfigPreferences(existing, newCfg)
+	if result.Jobs.StartTimeoutMinutes != 15 {
+		t.Errorf("Jobs.StartTimeoutMinutes = %d, want 15", result.Jobs.StartTimeoutMinutes)
+	}
+	if result.Jobs.CheckIntervalSec != 45 {
+		t.Errorf("Jobs.CheckIntervalSec = %d, want 45", result.Jobs.CheckIntervalSec)
+	}
+}
+
 func TestMergeConfigPreferences_PrintersFromNew(t *testing.T) {
 	existing := makeTestConfig()
 	existing.Printers = []model.Printer{{SN: "OLD-SN"}}

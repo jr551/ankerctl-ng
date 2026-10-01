@@ -263,3 +263,48 @@ func TestConfig_Marshal_NullAccount_RoundtripOk(t *testing.T) {
 		t.Errorf("Account = %+v, want nil", restored.Account)
 	}
 }
+
+func TestConfig_Jobs_Roundtrip(t *testing.T) {
+	cfg := NewConfig(nil, []Printer{})
+	cfg.Jobs.StartTimeoutMinutes = 15
+	cfg.Jobs.CheckIntervalSec = 45
+
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(data), `"jobs"`) {
+		t.Errorf("JSON does not contain jobs section: %s", data)
+	}
+
+	var restored Config
+	if err := json.Unmarshal(data, &restored); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if restored.Jobs.StartTimeoutMinutes != 15 {
+		t.Errorf("Jobs.StartTimeoutMinutes = %d, want 15", restored.Jobs.StartTimeoutMinutes)
+	}
+	if restored.Jobs.CheckIntervalSec != 45 {
+		t.Errorf("Jobs.CheckIntervalSec = %d, want 45", restored.Jobs.CheckIntervalSec)
+	}
+}
+
+func TestConfig_Unmarshal_JobsDefaults(t *testing.T) {
+	// Missing section → defaults.
+	var cfg Config
+	if err := json.Unmarshal([]byte(`{"account": null, "printers": []}`), &cfg); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if cfg.Jobs != DefaultJobsConfig() {
+		t.Errorf("Jobs = %+v, want defaults %+v", cfg.Jobs, DefaultJobsConfig())
+	}
+
+	// Malformed section → defaults.
+	var bad Config
+	if err := json.Unmarshal([]byte(`{"account": null, "printers": [], "jobs": "nope"}`), &bad); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if bad.Jobs != DefaultJobsConfig() {
+		t.Errorf("Jobs = %+v, want defaults %+v", bad.Jobs, DefaultJobsConfig())
+	}
+}
