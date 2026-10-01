@@ -24,6 +24,15 @@ func thumbnailRelpath(archiveRelpath string) string {
 	return archiveRelpath + ".thumbnail.png"
 }
 
+// printStartedAtJSON renders the moment the printer actually reported printing
+// as an RFC3339 string, or nil when the entry never started printing.
+func printStartedAtJSON(t *time.Time) any {
+	if t == nil {
+		return nil
+	}
+	return t.UTC().Format(time.RFC3339)
+}
+
 // historyEntryJSON converts a PrintRecord into the full JSON shape expected by
 // the Python reference (web/__init__.py app_api_history).
 //
@@ -36,13 +45,14 @@ func thumbnailRelpath(archiveRelpath string) string {
 //   - failure_reason:       pass-through from DB row
 func historyEntryJSON(rec *db.PrintRecord, archiver GCodeArchiverIface) map[string]any {
 	row := map[string]any{
-		"id":           rec.ID,
-		"filename":     rec.Filename,
-		"status":       rec.Status,
-		"started_at":   rec.StartedAt,
-		"finished_at":  rec.FinishedAt,
-		"duration_sec": rec.DurationSec,
-		"progress":     rec.Progress,
+		"id":               rec.ID,
+		"filename":         rec.Filename,
+		"status":           rec.Status,
+		"started_at":       rec.StartedAt,
+		"print_started_at": printStartedAtJSON(rec.PrintStartedAt),
+		"finished_at":      rec.FinishedAt,
+		"duration_sec":     rec.DurationSec,
+		"progress":         rec.Progress,
 		// Extended fields matching Python response shape
 		"printer_name":     nil, // FORGE-NOTE: per-printer isolation deferred to Phase C
 		"archive_relpath":  rec.ArchiveRelpath,
@@ -274,6 +284,104 @@ func (h *Handler) HistoryReprint(w http.ResponseWriter, r *http.Request) {
 		"upload_rate_mbps":   effectiveRate,
 		"upload_rate_source": rateSource,
 	})
+}
+
+// HistoryCancel cancels a single print-history entry.
+//
+// POST /api/history/{id}/cancel
+//
+// Body (optional): {"stop_printer": bool}
+//
+// Response (200): {"status":"ok","changed":bool,"entry_status":string,"stopped_printer":bool}
+// Error (400): invalid history entry id.
+// Error (404): entry not found.
+// Error (409): the entry is the active print and stop_printer was not requested.
+// Error (502): the stop request to the printer failed.
+//
+// Cancelling is idempotent: an entry that is not in status='started' is
+// reported with changed=false and no error.
+func (h *Handler) HistoryCancel(w http.ResponseWriter, r *http.Request) {
+	entryID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || entryID <= 0 {
+		h.writeError(w, http.StatusBadRequest, "invalid history entry id")
+		return
+	}
+	if h.db == nil {
+		h.writeError(w, http.StatusServiceUnavailable, "database unavailable")
+		return
+	}
+
+	entry, err := h.db.GetEntry(entryID)
+	if err != nil {
+		h.log.Error("cancel: GetEntry failed", "id", entryID, "err", err)
+		h.writeError(w, http.StatusInternalServerError, "failed to load history entry")
+		return
+	}
+	if entry == nil {
+		h.writeError(w, http.StatusNotFound, "history entry not found")
+		return
+	}
+
+	// Optional body; an empty body is treated as {"stop_printer": false}.
+	var req struct {
+		StopPrinter bool `json:"stop_printer"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+
+	// Idempotent path: nothing to do for entries that already left 'started'.
+	if entry.Status != "started" {
+		h.writeJSON(w, http.StatusOK, map[string]any{
+			"status":          "ok",
+			"changed":         false,
+			"entry_status":    entry.Status,
+			"stopped_printer": false,
+		})
+		return
+	}
+
+	// Active-print guard: when this entry is the print the printer is currently
+	// running, require an explicit stop_printer request before cancelling.
+	stoppedPrinter := false
+	if mqtt, ok := h.tryBorrowMqttQueue(); ok {
+		defer h.svc.Return("mqttqueue")
+		if mqtt.IsPrinting() && sameBaseFilename(mqtt.ActivePrintFilename(), entry.Filename) {
+			if !req.StopPrinter {
+				h.writeError(w, http.StatusConflict, "entry is the active print; set stop_printer to cancel it")
+				return
+			}
+			if err := mqtt.StopPrint(r.Context()); err != nil {
+				h.log.Error("cancel: StopPrint failed", "id", entryID, "filename", entry.Filename, "err", err)
+				h.writeError(w, http.StatusBadGateway, "failed to stop printer")
+				return
+			}
+			stoppedPrinter = true
+		}
+	}
+
+	changed, err := h.db.CancelEntry(entryID, "cancelled by operator")
+	if err != nil {
+		h.log.Error("cancel: CancelEntry failed", "id", entryID, "err", err)
+		h.writeError(w, http.StatusInternalServerError, "failed to cancel history entry")
+		return
+	}
+	h.log.Info("history: cancel requested", "id", entryID, "filename", entry.Filename, "changed", changed, "stopped_printer", stoppedPrinter)
+	h.writeJSON(w, http.StatusOK, map[string]any{
+		"status":          "ok",
+		"changed":         changed,
+		"entry_status":    "cancelled",
+		"stopped_printer": stoppedPrinter,
+	})
+}
+
+// sameBaseFilename reports whether two paths refer to the same file name,
+// comparing only the base name (case-sensitive). Empty names never match.
+func sameBaseFilename(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	return filepath.Base(a) == filepath.Base(b)
 }
 
 func (h *Handler) HistoryAIImage(w http.ResponseWriter, r *http.Request) {

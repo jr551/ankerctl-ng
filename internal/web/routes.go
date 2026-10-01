@@ -130,10 +130,15 @@ func (s *Server) registerRoutes() {
 	r.Get("/api/history", h.HistoryList)
 	r.Delete("/api/history", h.HistoryClear)
 	r.Post("/api/history/delete", h.HistoryDeleteSelected)
+	r.Post("/api/history/reset-stuck", h.HistoryResetStuck)
+	r.Post("/api/history/{id}/cancel", h.HistoryCancel)
 	r.Post("/api/history/{id}/reprint", h.HistoryReprint)
 	r.Get("/api/history/{id}/thumbnail", h.HistoryThumbnail)
 	r.Get("/api/history/{id}/gcode", h.HistoryGCode)
 	r.Get("/api/history/{id}/ai/{index}/image", h.HistoryAIImage)
+
+	// Jobs / auto-cancel reaper
+	r.Get("/api/jobs/status", h.JobsStatus)
 
 	// Filaments
 	r.Get("/api/filaments", h.FilamentList)

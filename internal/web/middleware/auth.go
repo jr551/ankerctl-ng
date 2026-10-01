@@ -36,6 +36,7 @@ var protectedGETPaths = map[string]bool{
 	"/api/filaments":                          true,
 	"/api/filaments/service/swap":             true,
 	"/api/history":                            true,
+	"/api/jobs/status":                        true,
 	"/api/timelapses":                         true,
 	"/api/timelapse-snapshots":                true,
 	// WebSocket endpoints that stream sensitive printer data must require auth.
