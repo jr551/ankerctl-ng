@@ -25,6 +25,7 @@ A substantially extended AnkerMake M5C web UI & CLI — in-browser slicing, AI-a
 - 🐾 **AI safety stop** — cuts printer power via the smart socket the instant a real, live non-human animal (a curious pet!) is spotted in frame
 - 🧩 **Slice & Build** — in-browser slicing ([polyslice](https://github.com/jgphilpott/polyslice)) of STL **and** OpenSCAD, with AI-assisted OpenSCAD editing, a live 3D preview, and a post-slice AI sanity check — all off the main thread so the UI never freezes
 - 🛑 **One-tap E-STOP** on the dashboard that cuts printer power immediately
+- 🧹 **Stuck-job recovery** — queued jobs that never start printing are auto-cancelled after 1 hour (configurable), with one-click *Reset stuck* in the dashboard *Jobs & Queue* card and the history tab
 - 🎨 **Filament colour match** — detect the loaded filament colour from the camera and match it to your library
 - 📡 **PPPP upload hardening / self-healing** — keepalives, health checks, channel-close abort, and power-cycle recovery
 - 🔌 **Smart-socket power-cycle recovery** for stuck uploads

@@ -131,6 +131,28 @@ configs that carry only `kind` + `fields` still resolve. Legacy configs with no
 |--------|------|------|-------------|
 | GET | `/api/history` | Yes | List print history (`?limit=N&offset=N`) |
 | DELETE | `/api/history` | Yes | Clear all history entries |
+| POST | `/api/history/{id}/cancel` | Yes | Cancel one entry. Body `{"stop_printer":true}` is required when the entry is the print currently running (otherwise `409`); the printer is stopped first, then the row is marked `cancelled`. Idempotent: a row that already left `started` returns `changed:false` |
+| POST | `/api/history/reset-stuck` | Yes | Cancel every stuck entry (rows still `started` that never reported printing). Optional body `{"max_age_sec":N}` limits it to rows older than N seconds; the live print is never cancelled. Idempotent |
+| GET | `/api/jobs/status` | Yes | Queue/job state: stuck entries, active print, pending stored-file start, and the auto-cancel reaper status |
+
+### Jobs
+
+Print jobs are recorded in `print_history` as soon as they are submitted
+(`status='started'`). A job that the printer never actually starts printing
+stays `started` forever and blocks the queue. Two mechanisms clear those rows:
+
+- **Auto-cancel** — a background reaper (`jobreaper` service) cancels any
+  `started` row that has no recorded print start (`print_started_at IS NULL`)
+  after the start timeout, default **1 hour**. Rows that did start printing are
+  never touched, and neither is the print the printer is currently running.
+- **Operator reset** — `POST /api/history/reset-stuck` (dashboard *Jobs &
+  Queue* card, history tab *Reset stuck*) cancels every stuck row immediately,
+  regardless of age.
+
+Both paths are idempotent and auditable: the row keeps `started_at`, gains
+`finished_at`, `duration_sec` and a `failure_reason` (`auto-cancel: no print
+start within 1h0m0s` or `cancelled: stuck job reset by operator`), and the
+cancelled ids are logged.
 
 ### Filaments
 

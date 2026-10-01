@@ -219,6 +219,31 @@ See [`.env.example`](https://github.com/jr551/ankerctl-ng/blob/main/.env.example
 | `PRINT_HISTORY_RETENTION_DAYS` | `90` | Days to keep history |
 | `PRINT_HISTORY_MAX_ENTRIES` | `500` | Max history entries |
 
+### Stuck jobs / auto-cancel
+
+A job that is submitted but never starts printing is cancelled automatically
+after the start timeout (default **1 hour**). The reaper also clears a
+stored-file start that the printer never confirmed.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ANKERCTL_JOB_START_TIMEOUT_MIN` | `60` | Minutes a job may stay queued without a reported print start before it is auto-cancelled. `0` disables auto-cancel |
+
+The same value can be set in `config.json` (it is overridden by the environment
+variable above):
+
+```json
+"jobs": {
+  "start_timeout_minutes": 60,
+  "check_interval_sec": 300
+}
+```
+
+`check_interval_sec` is how often the reaper scans (minimum 30 seconds).
+Operators can also cancel stuck jobs immediately from the dashboard *Jobs &
+Queue* card or the history tab (*Reset stuck*), or via
+`POST /api/history/reset-stuck`.
+
 ### Timelapse
 
 | Variable | Default | Description |
