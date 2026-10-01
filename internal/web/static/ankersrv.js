@@ -266,6 +266,16 @@ $(function () {
         return div.innerHTML;
     }
 
+    /**
+     * Escape a string for safe use inside a double-quoted HTML attribute.
+     * Builds on escapeHtml, which does not escape quote characters.
+     * @param {string} str
+     * @returns {string} attribute-safe string
+     */
+    function escapeAttr(str) {
+        return escapeHtml(str).replace(/"/g, "&quot;");
+    }
+
     function safeHttpURL(raw) {
         try {
             const url = new URL(String(raw), window.location.origin);
@@ -554,6 +564,7 @@ $(function () {
     }
 
     function renderDashboardState() {
+        renderConnectionPrinterState();
         if (!stateFields.phase) {
             return;
         }
@@ -826,6 +837,37 @@ $(function () {
         lastDashboardPPPPStatus = status;
         const tone = status === "connected" ? "good" : (status === "dormant" ? "muted" : "bad");
         addDebugFeed(`pppp: ${status}`, tone);
+        renderConnectionPrinterState();
+    }
+
+    // Connection card: one clear printer-state line (idle / printing / paused /
+    // offline) derived from the PPPP link state and the live print phase.
+    const connectionStateEl = document.getElementById("connection-printer-state");
+
+    function connectionPrinterState() {
+        const pppp = lastDashboardPPPPStatus;
+        if (pppp === "disconnected") {
+            return { text: "Offline", cls: "text-danger" };
+        }
+        if (pppp === "dormant") {
+            return { text: "Offline (dormant)", cls: "text-body-secondary" };
+        }
+        const phase = dashboardState.phase || "Idle";
+        if (phase === "Printing") return { text: "Printing", cls: "text-success" };
+        if (phase === "Paused") return { text: "Paused", cls: "text-warning" };
+        if (phase === "Preparing") return { text: "Preparing", cls: "text-info" };
+        if (phase === "Uploading" || phase === "Upload accepted") return { text: phase, cls: "text-info" };
+        if (phase === "Upload failed") return { text: "Upload failed", cls: "text-danger" };
+        return { text: "Idle", cls: "text-body-secondary" };
+    }
+
+    function renderConnectionPrinterState() {
+        if (!connectionStateEl) {
+            return;
+        }
+        const state = connectionPrinterState();
+        connectionStateEl.textContent = `Printer: ${state.text}`;
+        connectionStateEl.className = `form-text mt-2 mb-0 ${state.cls}`;
     }
 
     function noteCameraStatus(status, tone) {
@@ -1412,11 +1454,13 @@ $(function () {
             const time = parseTime(value);
             return time ? (time.getTime() - Date.now()) / 1000 : NaN;
         };
-        const renderUnavailablePowerStrip = (detail) => {
+        const renderUnavailablePowerStrip = (data) => {
+            const detail = (data && data.error) || "Socket not configured";
+            const ps = (data && data.power_saving) || {};
             powerStrip.hidden = false;
             setPowerTileStatus(powerStripFields.stateTile, "bad");
             setPowerText(powerStripFields.state, "Unavailable");
-            setPowerText(powerStripFields.stateDetail, detail || "Socket not configured");
+            setPowerText(powerStripFields.stateDetail, detail);
             for (const tile of [powerStripFields.wattsTile, powerStripFields.uptimeTile, powerStripFields.saveTile]) {
                 setPowerTileStatus(tile, "muted");
             }
@@ -1425,17 +1469,22 @@ $(function () {
             setPowerText(powerStripFields.uptime, "--");
             setPowerText(powerStripFields.uptimeDetail, "No timestamp");
             setPowerText(powerStripFields.save, "--");
-            setPowerText(powerStripFields.saveDetail, "No power state");
+            // Surface the power-saving service's last error/action when the
+            // socket is unavailable so a failed action is never silent.
+            const psNote = [ps.last_error, ps.last_action].filter(Boolean).join(" · ");
+            setPowerText(powerStripFields.saveDetail, psNote || "No power state");
+            setEstopHint(`E-STOP unavailable: ${detail}`);
         };
         const renderPrinterPowerStrip = () => {
             const data = latestPowerState;
             if (!data) return;
             if (!data.available) {
-                renderUnavailablePowerStrip(data.error);
+                renderUnavailablePowerStrip(data);
                 return;
             }
 
             powerStrip.hidden = false;
+            setEstopHint("");
             const state = String(data.state || "unknown").toLowerCase();
             const isOn = state === "on";
             const stateLabel = state === "unknown" ? "Unknown" : state.charAt(0).toUpperCase() + state.slice(1);
@@ -1471,7 +1520,9 @@ $(function () {
             if (ps.last_error) {
                 setPowerTileStatus(powerStripFields.saveTile, "bad");
                 setPowerText(powerStripFields.save, "Error");
-                setPowerText(powerStripFields.saveDetail, ps.last_error);
+                setPowerText(powerStripFields.saveDetail, ps.last_action
+                    ? `${ps.last_error} · last: ${ps.last_action}`
+                    : ps.last_error);
             } else if (!ps.configured) {
                 setPowerTileStatus(powerStripFields.saveTile, "muted");
                 setPowerText(powerStripFields.save, "Not set");
@@ -1529,6 +1580,8 @@ $(function () {
         loadPrinterPowerStrip();
         setInterval(loadPrinterPowerStrip, 10000);
         setInterval(renderPrinterPowerStrip, 1000);
+        // Let the E-STOP flow refresh the strip immediately after cutting power.
+        window.ankerctlRefreshPowerStrip = loadPrinterPowerStrip;
     }
 
     sockets.ctrl = new AutoWebSocket({
@@ -2348,6 +2401,20 @@ $(function () {
     $("#control-home-z").on("click", function () { sendPrinterGCode("G28 Z"); return false; });
     $("#control-home-all").on("click", function () { sendPrinterGCode("G28"); return false; });
 
+    // Inline hint shown next to the E-STOP button when the smart socket is
+    // unavailable (or an E-STOP attempt failed) — never a silent failure.
+    function setEstopHint(text) {
+        const el = document.getElementById("estop-hint");
+        if (!el) return;
+        if (text) {
+            el.textContent = text;
+            el.hidden = false;
+        } else {
+            el.textContent = "";
+            el.hidden = true;
+        }
+    }
+
     // Emergency stop — cut printer power via the smart socket immediately.
     // Exposed globally so the always-visible topbar E-STOP works even when the
     // dashboard control card (and its #emergency-stop button) isn't rendered.
@@ -2362,10 +2429,44 @@ $(function () {
         })
             .then(async (r) => {
                 const d = await r.json().catch(() => ({}));
-                if (r.ok) flash_message("Emergency stop — printer power cut.", "success");
-                else flash_message("E-STOP failed: " + (d.error || r.statusText) + (r.status === 400 ? " (configure the smart socket in Camera & AI)" : ""), "danger");
+                if (r.ok) {
+                    flash_message("Emergency stop — printer power cut.", "success");
+                    setEstopHint("");
+                    // Surface the resulting socket state so the operator knows
+                    // the power actually went off.
+                    try {
+                        const stateResp = await fetch(`/api/smart-socket/state?t=${Date.now()}`, { cache: "no-store" });
+                        const state = await stateResp.json().catch(() => ({}));
+                        if (stateResp.ok && state.available) {
+                            const socketState = String(state.state || "unknown").toLowerCase();
+                            if (socketState === "off") {
+                                flash_message("Socket state: off — printer power is cut.", "success");
+                            } else {
+                                flash_message(`Socket state: ${socketState} — power may still be on, check Home Assistant.`, "warning");
+                            }
+                        } else if (state && state.error) {
+                            setEstopHint(`E-STOP sent, but socket state is unavailable: ${state.error}`);
+                        }
+                    } catch (err) {
+                        console.warn("E-STOP: socket state check failed", err);
+                    }
+                    if (typeof window.ankerctlRefreshPowerStrip === "function") {
+                        window.ankerctlRefreshPowerStrip();
+                    }
+                } else {
+                    const detail = d.error || r.statusText || `HTTP ${r.status}`;
+                    const hint = r.status === 400
+                        ? `E-STOP unavailable: ${detail} — configure the smart socket in Camera & AI.`
+                        : `E-STOP failed: ${detail}`;
+                    setEstopHint(hint);
+                    flash_message(hint, "danger");
+                }
             })
-            .catch((e) => flash_message("E-STOP error: " + e.message, "danger"))
+            .catch((e) => {
+                const detail = e && e.message ? e.message : String(e);
+                setEstopHint(`E-STOP error: ${detail}`);
+                flash_message(`E-STOP error: ${detail}`, "danger");
+            })
             .finally(() => $btn.prop("disabled", false));
     };
 
@@ -3249,11 +3350,18 @@ $(function () {
         return h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m ${s}s` : `${s}s`;
     }
 
-    function statusBadge(status) {
+    // Status vocabulary: started | finished | failed | interrupted | cancelled.
+    // A 'started' row that never reported printing is queued (and eligible for
+    // the auto-cancel reaper); once print_started_at is set it is printing.
+    function statusBadge(status, printStartedAt) {
         const map = {
-            started: '<span class="badge bg-primary">In Progress</span>',
+            started: printStartedAt
+                ? '<span class="badge bg-primary">Printing</span>'
+                : '<span class="badge bg-info text-dark">Queued</span>',
             finished: '<span class="badge bg-success">Finished</span>',
             failed: '<span class="badge bg-danger">Failed</span>',
+            interrupted: '<span class="badge bg-warning text-dark">Interrupted</span>',
+            cancelled: '<span class="badge bg-dark">Cancelled</span>',
         };
         return map[status] || `<span class="badge bg-secondary">${escapeHtml(status)}</span>`;
     }
@@ -3264,10 +3372,12 @@ $(function () {
             .then(data => {
                 const tbody = $("#history-tbody");
                 if (!append) tbody.empty();
+                if (!append) historyEntryCache.clear();
                 if (data.entries.length === 0 && !append) {
                     tbody.html('<tr><td colspan="6" class="text-center text-muted py-4">No history yet</td></tr>');
                 }
                 data.entries.forEach(e => {
+                    historyEntryCache.set(e.id, e);
                     const started = e.started_at ? new Date(e.started_at).toLocaleString() : "-";
                     const safeFilename = escapeHtml(e.filename);
                     const viewBtn = e.archive_relpath
@@ -3312,6 +3422,11 @@ $(function () {
                         if (item.response_raw) parts.push(`<details><summary>Webhook reply</summary><pre class="small mb-0">${escapeHtml(item.response_raw)}</pre></details>`);
                         return `<div class="mb-2"><div class="small text-body-secondary">${item.at ? new Date(item.at).toLocaleString() : ""}</div>${parts.join(" · ")}</div>`;
                     }).join("");
+                    const printStartedAt = e.print_started_at || null;
+                    const cancelBtn = e.status === "started"
+                        ? `<button type="button" class="btn btn-sm btn-outline-danger history-cancel-btn" data-id="${e.id}" title="Cancel this job">Cancel</button>`
+                        : "";
+                    const stuckHint = e.status === "started" && !printStartedAt ? stuckAgeHint(e.started_at) : "";
                     const row = `<tr>
                         <td style="max-width:220px;">
                             <div class="d-flex align-items-center">
@@ -3319,7 +3434,13 @@ $(function () {
                                 ${viewBtn}
                             </div>
                         </td>
-                        <td>${statusBadge(e.status)}</td>
+                        <td>
+                            <div class="d-flex align-items-center flex-wrap gap-1">
+                                ${statusBadge(e.status, printStartedAt)}
+                                ${stuckHint}
+                                ${cancelBtn}
+                            </div>
+                        </td>
                         <td class="small">${started}</td>
                         <td>${formatDuration(e.duration_sec)}</td>
                         <td class="small">${aiSummary}</td>
@@ -3339,6 +3460,7 @@ $(function () {
                 } else {
                     $("#history-load-more").hide();
                 }
+                historyNeedsStuckRefresh = !jobsStatusCache;
             })
             .catch(err => {
                 console.error("History load failed:", err);
@@ -3356,12 +3478,25 @@ $(function () {
         historyTabBtn.addEventListener("shown.bs.tab", function () {
             historyOffset = 0;
             loadHistory(false);
+            loadJobsStatus();
         });
     }
 
     $("#history-load-more").on("click", function () {
         historyOffset += HISTORY_LIMIT;
         loadHistory(true);
+    });
+
+    $("#history-tbody").on("click", ".history-cancel-btn", function () {
+        const id = Number($(this).data("id"));
+        const entry = historyEntryCache.get(id);
+        cancelHistoryEntry(id, entry ? entry.filename : "");
+        return false;
+    });
+
+    $("#history-reset-stuck").on("click", function () {
+        resetStuckJobs();
+        return false;
     });
 
     $("#history-clear").on("click", function () {
@@ -3540,6 +3675,411 @@ $(function () {
             window.openGcodeViewer($(this).data("id"), $(this).data("filename"));
         });
     })();
+
+    // ------------------------------------------------------------------
+    // Jobs & Queue — /api/jobs/status poller shared by the dashboard card
+    // and the history tab (stuck hints + cancel semantics).
+    // ------------------------------------------------------------------
+    const JOBS_POLL_MS = 10000;
+    const historyEntryCache = new Map();
+    let jobsStatusCache = null;
+    let jobsStatusError = "";
+    // Set when the history table was rendered before the first jobs-status
+    // response landed, so the stuck hints can be filled in once it arrives.
+    let historyNeedsStuckRefresh = false;
+
+    function formatJobAge(sec) {
+        const total = Math.max(0, Math.floor(Number(sec) || 0));
+        const days = Math.floor(total / 86400);
+        const hours = Math.floor((total % 86400) / 3600);
+        const minutes = Math.floor((total % 3600) / 60);
+        const seconds = total % 60;
+        if (days > 0) return `${days}d ${hours}h`;
+        if (hours > 0) return `${hours}h ${minutes}m`;
+        if (minutes > 0) return `${minutes}m ${seconds}s`;
+        return `${seconds}s`;
+    }
+
+    // The server compares base names when deciding whether an entry is the
+    // active print, so mirror that here (a row may store a full path).
+    function sameBaseName(a, b) {
+        const base = (value) => String(value || "").split(/[\\/]/).pop();
+        const left = base(a);
+        const right = base(b);
+        return left !== "" && right !== "" && left === right;
+    }
+
+    async function fetchJobsStatus() {
+        const resp = await fetch(`/api/jobs/status?t=${Date.now()}`, { cache: "no-store" });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+            const err = new Error(data.error || resp.statusText || `HTTP ${resp.status}`);
+            err.status = resp.status;
+            throw err;
+        }
+        return data;
+    }
+
+    async function loadJobsStatus() {
+        let ok = false;
+        try {
+            jobsStatusCache = await fetchJobsStatus();
+            jobsStatusError = "";
+            ok = true;
+        } catch (err) {
+            jobsStatusCache = null;
+            jobsStatusError = err && err.message ? err.message : String(err);
+        }
+        renderJobsQueueCard();
+        // The history table may have rendered before the first response; fill
+        // in the stuck hints once (never clobbering a paginated view).
+        if (ok && historyNeedsStuckRefresh && historyOffset === 0) {
+            historyNeedsStuckRefresh = false;
+            loadHistory(false);
+        }
+    }
+
+    function jobsPolicyText() {
+        const ac = (jobsStatusCache && jobsStatusCache.auto_cancel) || {};
+        const timeoutSec = Number(ac.start_timeout_sec) > 0 ? Number(ac.start_timeout_sec) : 3600;
+        if (ac.enabled === false) {
+            return `Auto-cancel disabled (queued jobs would be cancelled after ${formatJobAge(timeoutSec)}); next check paused`;
+        }
+        const parts = [`Auto-cancel queued jobs after ${formatJobAge(timeoutSec)}`];
+        const next = ac.next_run_at ? new Date(ac.next_run_at).getTime() : NaN;
+        if (Number.isFinite(next)) {
+            const remaining = Math.max(0, Math.round((next - Date.now()) / 1000));
+            parts.push(remaining > 0 ? `next check in ${formatJobAge(remaining)}` : "next check due now");
+        } else if (Number(ac.check_interval_sec) > 0) {
+            parts.push(`next check every ${formatJobAge(Number(ac.check_interval_sec))}`);
+        } else {
+            parts.push("next check unknown");
+        }
+        return parts.join("; ");
+    }
+
+    function renderJobsPolicy() {
+        const el = document.getElementById("jobs-policy");
+        if (el && jobsStatusCache) {
+            el.textContent = jobsPolicyText();
+        }
+    }
+
+    function renderJobsQueueCard() {
+        const card = document.getElementById("jobs-queue-card");
+        if (!card) return;
+        const activeNameEl = document.getElementById("jobs-active-name");
+        const activeStateEl = document.getElementById("jobs-active-state");
+        const pendingTile = document.getElementById("jobs-pending-tile");
+        const pendingPathEl = document.getElementById("jobs-pending-path");
+        const pendingAgeEl = document.getElementById("jobs-pending-age");
+        const stuckCountEl = document.getElementById("jobs-stuck-count");
+        const policyEl = document.getElementById("jobs-policy");
+        const listEl = document.getElementById("jobs-stuck-list");
+        const noteEl = document.getElementById("jobs-status-note");
+        const resetBtn = document.getElementById("jobs-reset-stuck");
+
+        if (!jobsStatusCache) {
+            setElementText(activeNameEl, "--");
+            if (activeNameEl) activeNameEl.title = "Active job";
+            setElementText(activeStateEl, "Job status unavailable");
+            if (pendingTile) pendingTile.hidden = true;
+            setElementText(stuckCountEl, "--");
+            if (policyEl) policyEl.textContent = "Auto-cancel status unavailable";
+            if (listEl) listEl.innerHTML = "";
+            if (noteEl) {
+                noteEl.textContent = jobsStatusError
+                    ? `Job status unavailable: ${jobsStatusError}`
+                    : "Job status unavailable";
+                noteEl.className = "form-text mb-0 text-body-secondary";
+            }
+            if (resetBtn) resetBtn.disabled = true;
+            return;
+        }
+
+        const active = jobsStatusCache.active_print || {};
+        const activeFilename = String(active.filename || "");
+        const printing = Boolean(active.printing);
+        setElementText(activeNameEl, activeFilename || "--");
+        if (activeNameEl) activeNameEl.title = activeFilename || "Active job";
+        setElementText(activeStateEl, printing
+            ? "Printing now"
+            : (activeFilename ? "Queued — not printing yet" : "No active print"));
+
+        const pending = jobsStatusCache.pending_stored_file || {};
+        const pendingPath = String(pending.path || "");
+        if (pendingTile) pendingTile.hidden = !pendingPath;
+        if (pendingPath) {
+            setElementText(pendingPathEl, pendingPath);
+            if (pendingPathEl) pendingPathEl.title = pendingPath;
+            setElementText(pendingAgeEl, `Waiting ${formatJobAge(pending.age_sec)}`);
+        }
+
+        const stuck = Array.isArray(jobsStatusCache.stuck) ? jobsStatusCache.stuck : [];
+        const stuckCount = Number.isFinite(Number(jobsStatusCache.stuck_count))
+            ? Number(jobsStatusCache.stuck_count)
+            : stuck.length;
+        setElementText(stuckCountEl, String(stuckCount));
+        if (policyEl) policyEl.textContent = jobsPolicyText();
+
+        if (listEl) {
+            if (!stuck.length) {
+                listEl.innerHTML = '<div class="form-text mb-0">No stuck jobs</div>';
+            } else {
+                listEl.innerHTML = stuck.map((job) => {
+                    const rawName = job.filename || `#${job.id}`;
+                    return `<div class="jobs-stuck-row">` +
+                        `<span class="jobs-stuck-name text-truncate" title="${escapeAttr(rawName)}">${escapeHtml(rawName)}</span>` +
+                        `<span class="jobs-stuck-age">${escapeHtml(formatJobAge(job.age_sec))}</span>` +
+                        `<button type="button" class="btn btn-sm btn-outline-danger jobs-cancel-btn" data-id="${Number(job.id)}" title="Cancel this stuck job">Cancel</button>` +
+                        `</div>`;
+                }).join("");
+            }
+        }
+
+        const ac = jobsStatusCache.auto_cancel || {};
+        if (noteEl) {
+            if (ac.last_error) {
+                noteEl.textContent = `Auto-cancel last error: ${ac.last_error}`;
+                noteEl.className = "form-text mb-0 text-danger";
+            } else if (ac.enabled === false) {
+                noteEl.textContent = "Auto-cancel is disabled.";
+                noteEl.className = "form-text mb-0 text-body-secondary";
+            } else {
+                noteEl.textContent = "";
+                noteEl.className = "form-text mb-0";
+            }
+        }
+        if (resetBtn) resetBtn.disabled = false;
+    }
+
+    // Cancel one history entry. stop_printer is only requested when the entry
+    // is the print the printer is currently running — the server answers 409
+    // otherwise and we surface its error text.
+    async function cancelHistoryEntry(id, filename) {
+        if (!Number.isFinite(Number(id)) || Number(id) <= 0) return;
+        let active = jobsStatusCache ? jobsStatusCache.active_print : null;
+        if (!active) {
+            try {
+                jobsStatusCache = await fetchJobsStatus();
+                active = jobsStatusCache.active_print;
+            } catch (err) {
+                // Fall through: the server still guards the active print (409).
+            }
+        }
+        const isActive = Boolean(active && active.printing && sameBaseName(active.filename, filename));
+        const label = filename || `#${id}`;
+        const message = isActive
+            ? `Cancel "${label}"?\n\nThis job is currently printing. Cancelling will STOP the printer and abort the print.`
+            : `Cancel queued job "${label}"?`;
+        if (!confirm(message)) return;
+        try {
+            const resp = await fetch(`/api/history/${id}/cancel`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ stop_printer: isActive }),
+            });
+            const data = await resp.json().catch(() => ({}));
+            if (resp.ok) {
+                flash_message(
+                    data.stopped_printer ? `Cancelled "${label}" — printer stopped` : `Cancelled "${label}"`,
+                    "success"
+                );
+                reloadHistoryAndJobs();
+            } else {
+                flash_message(`Cancel failed: ${data.error || resp.statusText || `HTTP ${resp.status}`}`, "danger");
+            }
+        } catch (err) {
+            flash_message(`Cancel failed: ${err && err.message ? err.message : err}`, "danger");
+        }
+    }
+
+    async function resetStuckJobs() {
+        if (!confirm("Cancel all stuck queued jobs?\n\nJobs that never started printing are marked cancelled.")) return;
+        try {
+            const resp = await fetch("/api/history/reset-stuck", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({}),
+            });
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok) {
+                flash_message(`Reset stuck failed: ${data.error || resp.statusText || `HTTP ${resp.status}`}`, "danger");
+                return;
+            }
+            const count = Number(data.count) || 0;
+            flash_message(
+                count > 0 ? `Cancelled ${count} stuck job(s)` : "No stuck jobs to reset",
+                count > 0 ? "success" : "info"
+            );
+            reloadHistoryAndJobs();
+        } catch (err) {
+            flash_message(`Reset stuck failed: ${err && err.message ? err.message : err}`, "danger");
+        }
+    }
+
+    function reloadHistoryAndJobs() {
+        historyOffset = 0;
+        loadHistory(false);
+        loadJobsStatus();
+    }
+
+    // Stuck hint for a queued history row: shown once the row is older than
+    // the reaper's start timeout (auto_cancel.start_timeout_sec).
+    function stuckAgeHint(startedAt) {
+        const ac = jobsStatusCache && jobsStatusCache.auto_cancel;
+        const timeoutSec = ac ? Number(ac.start_timeout_sec) : 0;
+        if (!timeoutSec || !startedAt) return "";
+        const started = new Date(startedAt).getTime();
+        if (!Number.isFinite(started)) return "";
+        const ageSec = Math.max(0, Math.round((Date.now() - started) / 1000));
+        if (ageSec <= timeoutSec) return "";
+        return `<span class="badge text-bg-warning" title="Queued longer than the auto-cancel timeout">stuck ${escapeHtml(formatJobAge(ageSec))}</span>`;
+    }
+
+    $("#jobs-reset-stuck").on("click", function () {
+        resetStuckJobs();
+        return false;
+    });
+
+    $("#jobs-stuck-list").on("click", ".jobs-cancel-btn", function () {
+        const id = Number($(this).data("id"));
+        const job = ((jobsStatusCache && jobsStatusCache.stuck) || []).find((item) => Number(item.id) === id);
+        cancelHistoryEntry(id, job ? job.filename : "");
+        return false;
+    });
+
+    if (document.getElementById("jobs-queue-card") || document.getElementById("history-tbody")) {
+        loadJobsStatus();
+        setInterval(loadJobsStatus, JOBS_POLL_MS);
+        setInterval(renderJobsPolicy, 1000);
+    }
+
+    // ------------------------------------------------------------------
+    // Calibration card (dashboard) — homing, auto-level, bed mesh, Z-offset.
+    // Reuses the existing helpers/endpoints; the full bed-mesh grid UI lives
+    // in the debug/setup tabs.
+    // ------------------------------------------------------------------
+    function setCalibrationStatus(text, tone) {
+        const el = document.getElementById("calibration-status");
+        if (!el) return;
+        el.textContent = text || "";
+        el.className = tone ? `form-text mb-0 text-${tone}` : "form-text mb-0";
+    }
+
+    $("#calibration-home-all").on("click", function () {
+        sendPrinterGCode("G28");
+        setCalibrationStatus("Homing all axes…", "body-secondary");
+        return false;
+    });
+    $("#calibration-home-xy").on("click", function () {
+        sendPrinterGCode("G28 X Y");
+        setCalibrationStatus("Homing X/Y…", "body-secondary");
+        return false;
+    });
+    $("#calibration-home-z").on("click", function () {
+        sendPrinterGCode("G28 Z");
+        setCalibrationStatus("Homing Z…", "body-secondary");
+        return false;
+    });
+
+    $("#calibration-autolevel").on("click", async function () {
+        if (!confirm("Start Auto-Leveling? Make sure the print bed is clear.")) return;
+        const btn = $(this);
+        btn.prop("disabled", true);
+        setCalibrationStatus("Starting auto-level…", "body-secondary");
+        try {
+            const resp = await fetch("/api/printer/autolevel", { method: "POST" });
+            const data = await resp.json().catch(() => ({}));
+            if (resp.ok) {
+                setCalibrationStatus("Auto-leveling started — the printer is probing the bed.", "success");
+            } else {
+                setCalibrationStatus(`Auto-level failed: ${data.error || resp.statusText || `HTTP ${resp.status}`}`, "danger");
+            }
+        } catch (err) {
+            setCalibrationStatus(`Auto-level failed: ${err && err.message ? err.message : err}`, "danger");
+        } finally {
+            btn.prop("disabled", false);
+        }
+    });
+
+    $("#calibration-bed-read").on("click", async function () {
+        const btn = $(this);
+        const summaryEl = document.getElementById("calibration-bed-summary");
+        btn.prop("disabled", true);
+        if (summaryEl) summaryEl.textContent = "";
+        setCalibrationStatus("Reading bed mesh (M420 V)…", "body-secondary");
+        try {
+            const resp = await fetch("/api/printer/bed-leveling");
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok) {
+                setCalibrationStatus(`Bed mesh read failed: ${data.error || resp.statusText || `HTTP ${resp.status}`}`, "danger");
+                return;
+            }
+            const min = Number(data.min);
+            const max = Number(data.max);
+            if (Number.isFinite(min) && Number.isFinite(max)) {
+                const grid = data.rows && data.cols ? ` (${data.rows}×${data.cols} grid)` : "";
+                if (summaryEl) {
+                    summaryEl.textContent = `Min ${min.toFixed(3)} mm · Max ${max.toFixed(3)} mm · Range ${(max - min).toFixed(3)} mm${grid}`;
+                }
+                setCalibrationStatus("Bed mesh read.", "success");
+            } else {
+                setCalibrationStatus("Bed mesh read returned no usable data.", "warning");
+            }
+        } catch (err) {
+            setCalibrationStatus(`Bed mesh read failed: ${err && err.message ? err.message : err}`, "danger");
+        } finally {
+            btn.prop("disabled", false);
+        }
+    });
+
+    async function loadCalibrationZOffset() {
+        const display = document.getElementById("calibration-zoffset-value");
+        if (!display) return;
+        try {
+            const resp = await fetch("/api/printer/z-offset");
+            const data = await resp.json().catch(() => ({}));
+            if (resp.ok) {
+                const mm = data.z_offset && Number.isFinite(Number(data.z_offset.mm)) ? Number(data.z_offset.mm) : null;
+                display.textContent = mm !== null ? `${mm.toFixed(2)} mm` : "-- mm";
+            } else {
+                display.textContent = "-- mm";
+                setCalibrationStatus(`Z-offset read failed: ${data.error || resp.statusText || `HTTP ${resp.status}`}`, "danger");
+            }
+        } catch (err) {
+            display.textContent = "-- mm";
+            setCalibrationStatus(`Z-offset read failed: ${err && err.message ? err.message : err}`, "danger");
+        }
+    }
+
+    async function nudgeCalibrationZOffset(delta) {
+        const label = `${delta > 0 ? "+" : ""}${delta.toFixed(2)} mm`;
+        setCalibrationStatus(`Nudging Z-offset ${label}…`, "body-secondary");
+        try {
+            const resp = await fetch("/api/printer/z-offset/nudge", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ delta_mm: delta }),
+            });
+            const data = await resp.json().catch(() => ({}));
+            if (resp.ok) {
+                setCalibrationStatus(`Z-offset nudged ${label}.`, "success");
+                loadCalibrationZOffset();
+            } else {
+                setCalibrationStatus(`Z-offset nudge failed: ${data.error || resp.statusText || `HTTP ${resp.status}`}`, "danger");
+            }
+        } catch (err) {
+            setCalibrationStatus(`Z-offset nudge failed: ${err && err.message ? err.message : err}`, "danger");
+        }
+    }
+
+    $("#calibration-zoffset-down").on("click", function () { nudgeCalibrationZOffset(-0.01); return false; });
+    $("#calibration-zoffset-up").on("click", function () { nudgeCalibrationZOffset(0.01); return false; });
+
+    if (document.getElementById("calibration-zoffset-value")) {
+        loadCalibrationZOffset();
+    }
 
     /**
      * Timelapse — list + player layout

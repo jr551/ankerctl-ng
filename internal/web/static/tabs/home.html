@@ -87,6 +87,7 @@
                     <span class="printer-power-detail" id="printer-power-save-detail">--</span>
                 </div>
             </div>
+            <div class="form-text text-warning mb-2" id="estop-hint" hidden></div>
             <div class="ngrow" style="align-items:flex-start; justify-content:space-around; flex-wrap:wrap; gap:18px;">
                 <div class="center">
                     <div class="tiny muted mb-1"><strong>XY</strong> · bed / extruder</div>
@@ -130,6 +131,79 @@
         </div>
         {{end}}
 
+        <!-- Jobs & Queue -->
+        <div class="ngcard" id="jobs-queue-card">
+          <div class="ngcard-head">
+            <i class="bi-list-task ic"></i><span class="title">Jobs &amp; Queue</span>
+            <button class="btn btn-sm btn-outline-warning" id="jobs-reset-stuck"
+                title="Cancel stuck queued jobs that never started printing">
+              <i class="bi-arrow-counterclockwise px-1"></i> Reset stuck
+            </button>
+          </div>
+          <div class="ngcard-body">
+            <div class="tiles mb-2">
+              <div class="tile" id="jobs-active-tile">
+                <div class="lbl">Active job</div>
+                <div class="val jobs-truncate" id="jobs-active-name" title="Active job">--</div>
+                <div class="det" id="jobs-active-state">No active print</div>
+              </div>
+              <div class="tile" id="jobs-pending-tile" hidden>
+                <div class="lbl">Pending start</div>
+                <div class="val jobs-truncate" id="jobs-pending-path" title="Pending stored file">--</div>
+                <div class="det" id="jobs-pending-age">--</div>
+              </div>
+              <div class="tile" id="jobs-stuck-tile">
+                <div class="lbl">Stuck jobs</div>
+                <div class="val" id="jobs-stuck-count">0</div>
+                <div class="det" id="jobs-policy">Auto-cancel queued jobs after 1h; next check unknown</div>
+              </div>
+            </div>
+            <div class="jobs-stuck-list" id="jobs-stuck-list"></div>
+            <div class="form-text mb-0" id="jobs-status-note"></div>
+          </div>
+        </div>
+
+        <!-- Calibration -->
+        <div class="ngcard" id="calibration-card">
+          <div class="ngcard-head">
+            <i class="bi-rulers ic"></i><span class="title">Calibration</span>
+          </div>
+          <div class="ngcard-body">
+            <div class="d-flex flex-wrap gap-2 mb-3">
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="calibration-home-all"
+                  title="Home all axes">
+                <i class="bi-house-fill px-1"></i> Home All
+              </button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="calibration-home-xy"
+                  title="Home X and Y">
+                <i class="bi-house px-1"></i> Home X Y
+              </button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="calibration-home-z"
+                  title="Home Z">
+                <i class="bi-house px-1"></i> Home Z
+              </button>
+              <button type="button" class="btn btn-sm btn-outline-info" id="calibration-autolevel"
+                  title="Run auto bed leveling">
+                <i class="bi-rulers px-1"></i> Auto-level
+              </button>
+              <button type="button" class="btn btn-sm btn-outline-info" id="calibration-bed-read"
+                  title="Read the bed mesh from the printer">
+                <i class="bi-grid-3x3 px-1"></i> Read bed mesh
+              </button>
+            </div>
+            <div class="d-flex align-items-center flex-wrap gap-2 mb-2">
+              <span class="small text-body-secondary">Z-offset</span>
+              <span class="badge text-bg-secondary" id="calibration-zoffset-value">-- mm</span>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="calibration-zoffset-down"
+                  title="Lower the nozzle by 0.01 mm">-0.01</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="calibration-zoffset-up"
+                  title="Raise the nozzle by 0.01 mm">+0.01</button>
+            </div>
+            <div class="form-text mb-1" id="calibration-bed-summary"></div>
+            <div class="form-text mb-0" id="calibration-status" aria-live="polite"></div>
+          </div>
+        </div>
+
         <!-- Temperature Graph -->
         <div class="ngcard">
             <div class="ngcard-head" data-bs-toggle="collapse" data-bs-target="#temp-graph-section" role="button"
@@ -169,6 +243,7 @@
                 <span id="badge-video" class="badge">VIDEO</span>
                 {{end}}
                 <span id="badge-ctrl" class="badge">CTRL</span>
+                <div class="form-text mt-2 mb-0" id="connection-printer-state">Printer: unknown</div>
             </div>
         </div>
         {{end}}

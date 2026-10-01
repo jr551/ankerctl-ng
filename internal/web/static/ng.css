@@ -443,3 +443,14 @@
 .ngui .ai-panel { background: linear-gradient(135deg, rgba(183, 139, 255, 0.08), rgba(136, 243, 135, 0.06)); border: 1px solid rgba(183, 139, 255, 0.2); border-radius: var(--radius); padding: 14px; }
 .ngui .ai-panel .head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; font-weight: 700; color: var(--violet); letter-spacing: 0.04em; text-transform: uppercase; }
 .ngui .ai-panel .head .sparkle { width: 16px; height: 16px; }
+
+/* ---------- Jobs & Queue ---------- */
+.ngui .jobs-truncate { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ngui .jobs-stuck-list { display: flex; flex-direction: column; gap: 6px; }
+.ngui .jobs-stuck-row {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 6px 10px;
+}
+.ngui .jobs-stuck-name { flex: 1; min-width: 0; font-size: 12.5px; font-family: var(--mono); color: var(--text-soft); }
+.ngui .jobs-stuck-age { font-size: 11px; color: var(--warning); white-space: nowrap; }

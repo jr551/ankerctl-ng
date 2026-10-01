@@ -5,9 +5,15 @@
                 <div class="card">
                     <div class="card-header fs-5 d-flex justify-content-between align-items-center">
                         <span><i class="bi-clock-history px-1"></i> Print History</span>
-                        <button class="btn btn-sm btn-outline-danger" id="history-clear">
-                            <i class="bi-trash px-1"></i> Clear
-                        </button>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-sm btn-outline-warning" id="history-reset-stuck"
+                                title="Cancel stuck queued jobs that never started printing">
+                                <i class="bi-arrow-counterclockwise px-1"></i> Reset stuck
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" id="history-clear">
+                                <i class="bi-trash px-1"></i> Clear
+                            </button>
+                        </div>
                     </div>
                     <div class="card-body p-0">
                         <div class="table-responsive">
