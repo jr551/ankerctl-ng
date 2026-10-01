@@ -55,6 +55,7 @@ var historyMigrationColumns = []struct {
 	{"archive_size", "INTEGER"},
 	{"ai_history_json", "TEXT"},
 	{"notification_history_json", "TEXT"},
+	{"print_started_at", "TEXT"},
 }
 
 // PrintRecord represents a single row in the print_history table.
@@ -63,6 +64,7 @@ type PrintRecord struct {
 	Filename         string
 	Status           string
 	StartedAt        time.Time
+	PrintStartedAt   *time.Time // set when the printer actually reported printing; nil = queued/submitted only
 	FinishedAt       *time.Time
 	DurationSec      *int64
 	Progress         int
@@ -344,6 +346,137 @@ func (d *DB) RecordFail(filename, reason, taskID string) error {
 	})
 }
 
+// MarkPrintStarted records that the printer actually began printing the
+// active entry for filename/taskID. The timestamp is written at most once
+// (COALESCE) so repeated "printing" reports do not move it. It is a no-op
+// when no open ('started') entry exists.
+func (d *DB) MarkPrintStarted(filename, taskID string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	return d.withTx(func(tx *sql.Tx) error {
+		row, err := findActive(tx, filename, taskID)
+		if err != nil {
+			return fmt.Errorf("find active: %w", err)
+		}
+		if row == nil {
+			d.log.Debug("history: no active print to mark started", "filename", filename, "task_id", taskID)
+			return nil
+		}
+
+		now := time.Now().UTC().Format(time.RFC3339Nano)
+		if _, err := tx.Exec(
+			`UPDATE print_history SET print_started_at=COALESCE(print_started_at, ?) WHERE id=?`,
+			now, row.id,
+		); err != nil {
+			return fmt.Errorf("mark print started: %w", err)
+		}
+		return nil
+	})
+}
+
+// CancelEntry cancels a single history entry by ID. It is idempotent: only
+// rows still in status='started' are changed, so a second call returns
+// (false, nil). The duration is computed from the row's started_at and an
+// empty reason is stored as NULL.
+func (d *DB) CancelEntry(id int64, reason string) (bool, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	var (
+		changed  bool
+		filename string
+	)
+	err := d.withTx(func(tx *sql.Tx) error {
+		name, ok, err := cancelStartedRow(tx, id, reason, time.Now().UTC())
+		if err != nil {
+			return err
+		}
+		filename, changed = name, ok
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	if changed {
+		d.log.Info("history: cancelled entry", "id", id, "filename", filename, "reason", reason)
+	}
+	return changed, nil
+}
+
+// StuckStartedJobs returns open ('started') entries that never reported
+// printing (print_started_at IS NULL), newest first. When timeout > 0 only
+// rows whose started_at is older than now-timeout are returned; timeout <= 0
+// returns rows of all ages.
+func (d *DB) StuckStartedJobs(timeout time.Duration, now time.Time) ([]PrintRecord, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	rows, err := d.db.Query(
+		`SELECT id, filename, status, started_at, print_started_at, finished_at, duration_sec, progress, failure_reason, task_id, archive_relpath, archive_size, ai_history_json, notification_history_json
+		   FROM print_history
+		  WHERE status='started' AND print_started_at IS NULL
+		  ORDER BY id DESC`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("StuckStartedJobs query: %w", err)
+	}
+	defer rows.Close()
+
+	records, err := scanHistoryRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	if timeout <= 0 {
+		return records, nil
+	}
+
+	// Filter in Go: started_at is stored as RFC3339Nano, whose variable-length
+	// fractional part makes lexicographic SQL comparison order-unsafe.
+	cutoff := now.Add(-timeout)
+	stuck := records[:0]
+	for _, r := range records {
+		if r.StartedAt.Before(cutoff) {
+			stuck = append(stuck, r)
+		}
+	}
+	return stuck, nil
+}
+
+// CancelStartedJobs cancels the given entries that are still in
+// status='started' in a single transaction and returns the number of rows
+// actually changed. Unknown or already-closed IDs are ignored.
+func (d *DB) CancelStartedJobs(ids []int64, reason string) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	var changed int64
+	err := d.withTx(func(tx *sql.Tx) error {
+		now := time.Now().UTC()
+		for _, id := range ids {
+			_, ok, err := cancelStartedRow(tx, id, reason, now)
+			if err != nil {
+				return err
+			}
+			if ok {
+				changed++
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	if changed > 0 {
+		d.log.Info("history: cancelled started jobs", "requested", len(ids), "cancelled", changed, "reason", reason)
+	}
+	return changed, nil
+}
+
 // GetHistory returns up to limit rows from print_history, newest first,
 // starting at the given offset.
 //
@@ -353,7 +486,7 @@ func (d *DB) GetHistory(limit, offset int) ([]PrintRecord, error) {
 	defer d.mu.Unlock()
 
 	rows, err := d.db.Query(
-		`SELECT id, filename, status, started_at, finished_at, duration_sec, progress, failure_reason, task_id, archive_relpath, archive_size, ai_history_json, notification_history_json
+		`SELECT id, filename, status, started_at, print_started_at, finished_at, duration_sec, progress, failure_reason, task_id, archive_relpath, archive_size, ai_history_json, notification_history_json
 		   FROM print_history
 		  ORDER BY id DESC
 		  LIMIT ? OFFSET ?`,
@@ -376,7 +509,7 @@ func (d *DB) GetEntry(id int64) (*PrintRecord, error) {
 	defer d.mu.Unlock()
 
 	rows, err := d.db.Query(
-		`SELECT id, filename, status, started_at, finished_at, duration_sec, progress, failure_reason, task_id, archive_relpath, archive_size, ai_history_json, notification_history_json
+		`SELECT id, filename, status, started_at, print_started_at, finished_at, duration_sec, progress, failure_reason, task_id, archive_relpath, archive_size, ai_history_json, notification_history_json
 		   FROM print_history
 		  WHERE id=?`,
 		id,
@@ -544,6 +677,41 @@ func findActive(tx *sql.Tx, filename, taskID string) (*activeRow, error) {
 	return &row, nil
 }
 
+// cancelStartedRow cancels a single row if it is still in status='started'.
+// It returns the row's filename (for logging) and whether a row was changed.
+// Callers must hold d.mu and run inside a transaction.
+func cancelStartedRow(tx *sql.Tx, id int64, reason string, now time.Time) (string, bool, error) {
+	var filename, startedAt string
+	err := tx.QueryRow(
+		`SELECT filename, started_at FROM print_history WHERE id=? AND status='started'`,
+		id,
+	).Scan(&filename, &startedAt)
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("lookup entry %d: %w", id, err)
+	}
+
+	var reasonArg any
+	if reason != "" {
+		reasonArg = reason
+	}
+
+	res, err := tx.Exec(
+		`UPDATE print_history SET status='cancelled', finished_at=?, duration_sec=?, failure_reason=? WHERE id=? AND status='started'`,
+		now.UTC().Format(time.RFC3339Nano), computeDuration(startedAt, now), reasonArg, id,
+	)
+	if err != nil {
+		return "", false, fmt.Errorf("cancel entry %d: %w", id, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return "", false, fmt.Errorf("cancel entry %d rows affected: %w", id, err)
+	}
+	return filename, n > 0, nil
+}
+
 // pruneHistory removes entries older than retentionDays and trims the
 // total count to maxEntries. (Python: PrintHistory._prune)
 func pruneHistory(tx *sql.Tx, retentionDays, maxEntries int, log *slog.Logger) error {
@@ -575,24 +743,37 @@ func pruneHistory(tx *sql.Tx, retentionDays, maxEntries int, log *slog.Logger) e
 	return nil
 }
 
+// historyTimeLayouts are the timestamp formats written by ankerctl
+// (RFC3339Nano) and by the Python reference (isoformat).
+var historyTimeLayouts = []string{
+	time.RFC3339Nano,
+	"2006-01-02T15:04:05.999999999",
+	"2006-01-02T15:04:05",
+}
+
+// parseHistoryTime parses a stored history timestamp, reporting false when
+// the value matches none of the known layouts.
+func parseHistoryTime(s string) (time.Time, bool) {
+	for _, layout := range historyTimeLayouts {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
+}
+
 // computeDuration returns the number of whole seconds between startedAt
 // (stored as RFC3339Nano or Python isoformat) and now.
 func computeDuration(startedAt string, now time.Time) int64 {
-	layouts := []string{
-		time.RFC3339Nano,
-		"2006-01-02T15:04:05.999999999",
-		"2006-01-02T15:04:05",
+	t, ok := parseHistoryTime(startedAt)
+	if !ok {
+		return 0
 	}
-	for _, layout := range layouts {
-		if t, err := time.Parse(layout, startedAt); err == nil {
-			dur := now.Sub(t).Seconds()
-			if dur < 0 {
-				return 0
-			}
-			return int64(dur)
-		}
+	dur := now.Sub(t).Seconds()
+	if dur < 0 {
+		return 0
 	}
-	return 0
+	return int64(dur)
 }
 
 // scanHistoryRows reads all rows from a *sql.Rows into a slice of PrintRecord.
@@ -601,6 +782,7 @@ func scanHistoryRows(rows *sql.Rows) ([]PrintRecord, error) {
 	for rows.Next() {
 		var (
 			r                PrintRecord
+			printStartedAtS  sql.NullString
 			finishedAtS      sql.NullString
 			durationSec      sql.NullInt64
 			failureReason    sql.NullString
@@ -614,6 +796,7 @@ func scanHistoryRows(rows *sql.Rows) ([]PrintRecord, error) {
 		if err := rows.Scan(
 			&r.ID, &r.Filename, &r.Status,
 			&startedAtS,
+			&printStartedAtS,
 			&finishedAtS,
 			&durationSec,
 			&r.Progress,
@@ -628,19 +811,19 @@ func scanHistoryRows(rows *sql.Rows) ([]PrintRecord, error) {
 		}
 
 		// Parse started_at (always present).
-		for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05.999999999", "2006-01-02T15:04:05"} {
-			if t, err := time.Parse(layout, startedAtS); err == nil {
-				r.StartedAt = t
-				break
+		if t, ok := parseHistoryTime(startedAtS); ok {
+			r.StartedAt = t
+		}
+
+		if printStartedAtS.Valid {
+			if t, ok := parseHistoryTime(printStartedAtS.String); ok {
+				r.PrintStartedAt = &t
 			}
 		}
 
 		if finishedAtS.Valid {
-			for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05.999999999", "2006-01-02T15:04:05"} {
-				if t, err := time.Parse(layout, finishedAtS.String); err == nil {
-					r.FinishedAt = &t
-					break
-				}
+			if t, ok := parseHistoryTime(finishedAtS.String); ok {
+				r.FinishedAt = &t
 			}
 		}
 		if durationSec.Valid {
